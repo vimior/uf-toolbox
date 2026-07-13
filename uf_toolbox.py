@@ -61,8 +61,13 @@ class UFToolBox(MenuUI, LogUI, ConfigUI, tk.Tk):
         # w = w
         # h = h or self.main_height
 
-        x = self.winfo_x() - 8
-        y = self.winfo_y() + self.winfo_height() + 1
+        x = self.winfo_x() - 3
+        # y = self.winfo_y() + self.winfo_height() + 1
+        y = self.winfo_y() + self.main_height + 1
+        if not w:
+            w = self.main_width
+        else:
+            x = x + (self.main_width - w) // 2
         w = w or self.main_width
         h = h or self.main_height
         win.geometry('{}x{}+{}+{}'.format(w, h, x, y))
