@@ -55,6 +55,7 @@ class MenuUI(AppState, tk.Tk):
         self._lang_var = tk.StringVar(
             value=getattr(self, '_current_lang_name', ''))
         self._topmost_var = tk.BooleanVar(value=self.always_on_top)
+        self._auto_hide_var = tk.BooleanVar(value=self.auto_hide_enabled)
 
         c = self._nav_colors(t)
 
@@ -223,6 +224,19 @@ class MenuUI(AppState, tk.Tk):
         self.lift()
         self.focus_force()
 
+    def _toggle_auto_hide(self):
+        enabled = self._auto_hide_var.get()
+        self.set_auto_hide(enabled)
+        if not enabled:
+            # Cancelled: stop any pending collapse, expand if collapsed
+            self._cancel_auto_hide()
+            if self._collapsed:
+                self._expand_bar()
+        else:
+            # Enabled: trigger check after 3s
+            self._cancel_auto_hide()
+            self._auto_hide_job = self.after(3000, self._collapse_bar)
+
     # ---- menu builders ----
 
     def _build_settings_menu(self, menu):
@@ -235,6 +249,9 @@ class MenuUI(AppState, tk.Tk):
                              variable=self._topmost_var,
                              command=lambda: self._toggle_topmost(
                                  self._topmost_var.get()))
+        menu.add_checkbutton(label=l['menu_auto_hide'],
+                             variable=self._auto_hide_var,
+                             command=self._toggle_auto_hide)
         menu.add_separator()
         menu.add_command(label=l['menu_log'],
                          command=lambda: self.notify('show-log'))
@@ -427,6 +444,7 @@ class MenuUI(AppState, tk.Tk):
         self._color_job = None
 
         def _start(event):
+            self._cancel_auto_hide()
             self._drag_x = event.x_root - self.winfo_x()
             self._drag_y = event.y_root - self.winfo_y()
 
@@ -458,31 +476,42 @@ class MenuUI(AppState, tk.Tk):
         x = (self.winfo_screenwidth() - w) // 2
         # On Linux DEs (GNOME, KDE) the top panel takes ~28px; y=1 hides the window behind it
         y = 1 if sys.platform == 'win32' else 28
-        self._dock_y = y
+        self._dock_y = y - 1
         self.geometry(f'{w}x{h}+{x}+{y}')
         self.set_main_width(w)
         self._normal_height = h
 
     # ---- auto-hide at screen top ----
 
+    @property
+    def _auto_hide_threshold(self):
+        """y threshold for auto-hide: dock_y (panel-aware) + 2px tolerance."""
+        return getattr(self, '_dock_y', 1) + 2
+
+    def _is_docked_at_top(self):
+        return self.winfo_y() <= self._auto_hide_threshold
+
     def _check_auto_hide(self):
         """If window is docked at screen top, auto-collapse after a short delay."""
+        if not self.auto_hide_enabled:
+            return
         if self._auto_hide_job is not None:
             self.after_cancel(self._auto_hide_job)
             self._auto_hide_job = None
         if self._collapsed:
             return
-        if self.winfo_y() <= 3:
+        if self._is_docked_at_top():
             self._auto_hide_job = self.after(500, self._collapse_bar)
 
     def _collapse_bar(self):
         """Shrink to a thin line at screen top."""
-        if self._collapsed or self.winfo_y() > 3:
+        if not self.auto_hide_enabled or self._collapsed or not self._is_docked_at_top():
             return
         self._collapsed = True
         self._normal_height = self.winfo_height()
         w = self.winfo_width()
-        self.geometry(f'{w}x3+{self.winfo_x()}+0')
+        y = getattr(self, '_dock_y', 0)
+        self.geometry(f'{w}x3+{self.winfo_x()}+{y}')
         # Hide navbar, show a glowing accent line
         self._navbar.pack_forget()
         self._nav_sep.pack_forget()
@@ -506,7 +535,10 @@ class MenuUI(AppState, tk.Tk):
         h = self._normal_height or self._navbar.winfo_reqheight() + 2
         w = self.winfo_width()
         x = self.winfo_x()
-        self.geometry(f'{w}x{h}+{x}+0')
+        y = getattr(self, '_dock_y', 0)
+        if not self.auto_hide_enabled:
+            y += 1
+        self.geometry(f'{w}x{h}+{x}+{y}')
         self.set_main_width(w)
         self.configure(bg=self.theme['bg'])
         # Cancel pending re-collapse on re-entry; re-collapse on leave
@@ -521,7 +553,7 @@ class MenuUI(AppState, tk.Tk):
 
     def _on_expanded_leave(self, event):
         """Mouse left the expanded bar — collapse after delay, with pointer check."""
-        if self._collapsed or self.winfo_y() > 3:
+        if self._collapsed or not self._is_docked_at_top():
             return
         # Delay the check to avoid flicker from rapid enter/leave at screen edge
         self._auto_hide_job = self.after(500, self._collapse_if_pointer_gone)

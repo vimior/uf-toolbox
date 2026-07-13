@@ -136,6 +136,14 @@ class AppState:
         self._config['topmost'] = bool(value)
         self._save_config()
 
+    @property
+    def auto_hide_enabled(self):
+        return self._config.get('auto_hide', True)
+
+    def set_auto_hide(self, value):
+        self._config['auto_hide'] = bool(value)
+        self._save_config()
+
     # ---- theme / lang ----
 
     def set_theme(self, name=None):
@@ -168,7 +176,7 @@ class AppState:
                     return json.load(f)
         except Exception:
             pass
-        return {'theme': 'dark', 'lang': 'auto', 'topmost': False}
+        return {'theme': 'dark', 'lang': 'auto', 'topmost': False, 'auto_hide': True}
 
     def _save_config(self):
         try:
