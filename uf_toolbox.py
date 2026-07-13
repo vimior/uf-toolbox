@@ -29,6 +29,9 @@ class UFToolBox(MenuUI, LogUI, ConfigUI, tk.Tk):
         self._build_menu()
         self._set_window_icon(self)
 
+        # Apply topmost setting from config on startup
+        self._apply_topmost(self.always_on_top)
+
         # ---------- data polling ----------
         self.after(100, self.poll_log_queue)
 
@@ -36,6 +39,9 @@ class UFToolBox(MenuUI, LogUI, ConfigUI, tk.Tk):
         self.deiconify()
         self.set_main_width(self.winfo_width())
         self.set_main_height(self.winfo_height())
+
+        # Trigger initial auto-hide check 5s after startup
+        self.after(5000, self._check_auto_hide)
 
     def destroy(self):
         kill_all()

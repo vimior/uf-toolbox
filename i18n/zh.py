@@ -22,6 +22,7 @@ ZH = {
     'menu_help': '帮助',
     'menu_about': '关于',
     'menu_guide': '说明',
+    'menu_topmost': '窗口置顶',
     'menu_config': '配置',
     'config_title': '配置',
     'config_tool_path': '工具路径',

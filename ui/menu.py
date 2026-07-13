@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Navbar-style menu bar with theme-aware colors."""
 import os
+import sys
 import tkinter as tk
 from common.state import AppState
 from common.common import FONT_FAMILY
@@ -53,6 +54,7 @@ class MenuUI(AppState, tk.Tk):
             value=getattr(self, '_current_theme_name', 'dark'))
         self._lang_var = tk.StringVar(
             value=getattr(self, '_current_lang_name', ''))
+        self._topmost_var = tk.BooleanVar(value=self.always_on_top)
 
         c = self._nav_colors(t)
 
@@ -209,6 +211,18 @@ class MenuUI(AppState, tk.Tk):
         y = btn.winfo_rooty() + btn.winfo_height()
         menu.tk_popup(x, y)
 
+    # ---- topmost ----
+
+    def _toggle_topmost(self, value):
+        self.set_topmost(value)
+        self._apply_topmost(value)
+
+    def _apply_topmost(self, value):
+        """Set -topmost on main window and known child windows."""
+        self.wm_attributes('-topmost', value)
+        self.lift()
+        self.focus_force()
+
     # ---- menu builders ----
 
     def _build_settings_menu(self, menu):
@@ -217,6 +231,11 @@ class MenuUI(AppState, tk.Tk):
                          menu=self._build_appearance_submenu(menu))
         menu.add_cascade(label=l['menu_language'],
                          menu=self._build_language_submenu(menu))
+        menu.add_checkbutton(label=l['menu_topmost'],
+                             variable=self._topmost_var,
+                             command=lambda: self._toggle_topmost(
+                                 self._topmost_var.get()))
+        menu.add_separator()
         menu.add_command(label=l['menu_log'],
                          command=lambda: self.notify('show-log'))
         menu.add_separator()
@@ -402,20 +421,31 @@ class MenuUI(AppState, tk.Tk):
         descendant that has no click handler of its own (the brand icon,
         separators and empty navbar space). Menu buttons and the exit button
         keep their own <Button-1> bindings and are skipped."""
+        self._collapsed = False
+        self._normal_height = None
+        self._auto_hide_job = None
+        self._color_job = None
+
         def _start(event):
             self._drag_x = event.x_root - self.winfo_x()
             self._drag_y = event.y_root - self.winfo_y()
 
         def _move(event):
+            # Expand if collapsed and user starts dragging
+            if self._collapsed:
+                self._expand_bar()
             x = event.x_root - self._drag_x
             y = event.y_root - self._drag_y
             self.geometry(f'+{x}+{y}')
 
+        def _release(event):
+            self._check_auto_hide()
+
         def _bind(w):
-            # Skip widgets that already handle left-click (menu/exit buttons).
             if not w.bind('<Button-1>'):
                 w.bind('<Button-1>', _start)
                 w.bind('<B1-Motion>', _move)
+                w.bind('<ButtonRelease-1>', _release)
             for child in w.winfo_children():
                 _bind(child)
 
@@ -426,8 +456,87 @@ class MenuUI(AppState, tk.Tk):
         w = sum(c.winfo_reqwidth() for c in self._navbar.winfo_children()) + 4
         h = self._navbar.winfo_reqheight() + 2
         x = (self.winfo_screenwidth() - w) // 2
-        self.geometry(f'{w}x{h}+{x}+5')
+        # On Linux DEs (GNOME, KDE) the top panel takes ~28px; y=1 hides the window behind it
+        y = 1 if sys.platform == 'win32' else 28
+        self._dock_y = y
+        self.geometry(f'{w}x{h}+{x}+{y}')
         self.set_main_width(w)
+        self._normal_height = h
+
+    # ---- auto-hide at screen top ----
+
+    def _check_auto_hide(self):
+        """If window is docked at screen top, auto-collapse after a short delay."""
+        if self._auto_hide_job is not None:
+            self.after_cancel(self._auto_hide_job)
+            self._auto_hide_job = None
+        if self._collapsed:
+            return
+        if self.winfo_y() <= 3:
+            self._auto_hide_job = self.after(500, self._collapse_bar)
+
+    def _collapse_bar(self):
+        """Shrink to a thin line at screen top."""
+        if self._collapsed or self.winfo_y() > 3:
+            return
+        self._collapsed = True
+        self._normal_height = self.winfo_height()
+        w = self.winfo_width()
+        self.geometry(f'{w}x3+{self.winfo_x()}+0')
+        # Hide navbar, show a glowing accent line
+        self._navbar.pack_forget()
+        self._nav_sep.pack_forget()
+        self.configure(bg='#ff6600')
+        self.bind('<Enter>', self._on_collapsed_enter)
+
+    def _on_collapsed_enter(self, event):
+        """Mouse entered the collapsed bar — expand back."""
+        self._expand_bar()
+
+    def _expand_bar(self):
+        """Restore full height."""
+        if not self._collapsed:
+            return
+        self._collapsed = False
+        self.unbind('<Enter>')
+        self.unbind('<Leave>')
+        # Restore navbar
+        self._navbar.pack(fill=tk.X, side=tk.TOP)
+        self._nav_sep.pack(fill=tk.X, side=tk.TOP)
+        h = self._normal_height or self._navbar.winfo_reqheight() + 2
+        w = self.winfo_width()
+        x = self.winfo_x()
+        self.geometry(f'{w}x{h}+{x}+0')
+        self.set_main_width(w)
+        self.configure(bg=self.theme['bg'])
+        # Cancel pending re-collapse on re-entry; re-collapse on leave
+        self.bind('<Enter>', self._cancel_auto_hide)
+        self.bind('<Leave>', self._on_expanded_leave)
+
+    def _cancel_auto_hide(self, event=None):
+        """Cancel any pending collapse timer."""
+        if self._auto_hide_job is not None:
+            self.after_cancel(self._auto_hide_job)
+            self._auto_hide_job = None
+
+    def _on_expanded_leave(self, event):
+        """Mouse left the expanded bar — collapse after delay, with pointer check."""
+        if self._collapsed or self.winfo_y() > 3:
+            return
+        # Delay the check to avoid flicker from rapid enter/leave at screen edge
+        self._auto_hide_job = self.after(500, self._collapse_if_pointer_gone)
+
+    def _collapse_if_pointer_gone(self):
+        """Only collapse if the mouse is actually outside the bar."""
+        if self._collapsed:
+            return
+        py = self.winfo_pointery()
+        bar_top = self.winfo_y()
+        bar_bottom = bar_top + self.winfo_height() + 2  # small grace margin
+        if bar_top <= py <= bar_bottom:
+            self.bind('<Leave>', self._on_expanded_leave)
+            return
+        self._collapse_bar()
 
     @staticmethod
     def _dispatch(method_name, self, *args):

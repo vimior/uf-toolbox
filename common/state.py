@@ -128,6 +128,14 @@ class AppState:
     def ttk_style(self):
         return self._ttk_style
 
+    @property
+    def always_on_top(self):
+        return self._config.get('topmost', False)
+
+    def set_topmost(self, value):
+        self._config['topmost'] = bool(value)
+        self._save_config()
+
     # ---- theme / lang ----
 
     def set_theme(self, name=None):
@@ -160,7 +168,7 @@ class AppState:
                     return json.load(f)
         except Exception:
             pass
-        return {'theme': 'dark', 'lang': 'auto'}
+        return {'theme': 'dark', 'lang': 'auto', 'topmost': False}
 
     def _save_config(self):
         try:

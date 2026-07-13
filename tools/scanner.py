@@ -20,7 +20,13 @@ def scan_tools(lang='en', menu=None, path=None):
     for tools_dir in dirs:
         if not os.path.isdir(tools_dir):
             continue
-        cfg_path = os.path.join(tools_dir, 'tools.json')
+        cfg_path = None
+        if sys.platform != 'win32':
+            linux_cfg = os.path.join(tools_dir, 'tools_linux.json')
+            if os.path.isfile(linux_cfg):
+                cfg_path = linux_cfg
+        if cfg_path is None:
+            cfg_path = os.path.join(tools_dir, 'tools.json')
         if os.path.isfile(cfg_path):
             result = _from_config(tools_dir, cfg_path, lang)
         else:

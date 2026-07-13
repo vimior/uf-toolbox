@@ -22,6 +22,7 @@ EN = {
     'menu_help': 'Help',
     'menu_about': 'About',
     'menu_guide': 'Guide',
+    'menu_topmost': 'Always on Top',
     'menu_config': 'Config',
     'config_title': 'Configuration',
     'config_tool_path': 'Tool Path',
