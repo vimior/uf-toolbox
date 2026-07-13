@@ -4,7 +4,22 @@
 import os
 
 _spec_dir = os.path.abspath(SPECPATH)
-_extra_hidden = ['psutil', 'ctypes']
+_extra_hidden = [
+    # system / process
+    'psutil', 'ctypes', '__future__', 'tempfile',
+    # tkinter sub-modules (often missed by analysis)
+    'tkinter.font', 'tkinter.ttk', 'tkinter.messagebox',
+    'tkinter.filedialog', 'tkinter.scrolledtext', 'colorsys',
+    # serialization / data (~150 KB total)
+    'json.encoder', 'json.decoder', 'json.scanner',
+    'csv', 'xml.etree.ElementTree',
+    # network / web (~170 KB total)
+    'urllib.request', 'urllib.parse', 'webbrowser',
+    # config / file / db (~830 KB total)
+    'configparser', 'logging.handlers', 'zipfile', 'shutil', 'sqlite3',
+    # introspection — plugins may load dynamically (~160 KB total)
+    'inspect', 'pkgutil', 'importlib.util',
+]
 
 a = Analysis(
     ['uf_toolbox.py'],
