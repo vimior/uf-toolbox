@@ -1,0 +1,36 @@
+# -*- coding: utf-8 -*-
+"""English translations — minimal set for the toolbox."""
+EN = {
+    # menu
+    'menu_settings': 'Settings',
+    'menu_appearance': 'Appearance',
+    'menu_theme_light': 'Light Theme',
+    'menu_theme_dark': 'Dark Theme',
+    'menu_language': 'Language',
+    'menu_lang_zh': '中文',
+    'menu_lang_en': 'English',
+    'menu_lang_auto': 'Auto',
+    'menu_plugins': 'Plugins',
+    'menu_no_plugins': '(No Plugins)',
+    'menu_tools': 'Tools',
+    'menu_no_tools': '(No Tools)',
+    'menu_system': 'System',
+    'menu_no_system': '(No System Tools)',
+    # generic
+    'window_title': 'UF ToolBox',
+    'help_title': 'Help',
+    'menu_help': 'Help',
+    'menu_about': 'About',
+    'menu_guide': 'Guide',
+    'menu_config': 'Config',
+    'config_title': 'Configuration',
+    'config_tool_path': 'Tool Path',
+    'config_plugin_path': 'Plugin Path',
+    'config_select': 'Select',
+    'config_save': 'Save',
+    'config_unsaved_msg': 'Unsaved changes. Save before closing?',
+    'menu_log': 'Log',
+    'log_title': 'Log',
+    'log_clear': 'Clear',
+    'about_text': 'UF Toolbox v1.0.0\n\nCopyright © 2026 UFACTORY\n\nAuthor: Dwen',
+}

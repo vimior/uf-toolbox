@@ -1,0 +1,36 @@
+# -*- coding: utf-8 -*-
+"""Chinese translations — minimal set for the toolbox."""
+ZH = {
+    # menu
+    'menu_settings': '设置',
+    'menu_appearance': '外观',
+    'menu_theme_light': '浅色主题',
+    'menu_theme_dark': '深色主题',
+    'menu_language': '语言',
+    'menu_lang_zh': '中文',
+    'menu_lang_en': 'English',
+    'menu_lang_auto': '自动',
+    'menu_plugins': '插件',
+    'menu_no_plugins': '(无插件)',
+    'menu_tools': '工具',
+    'menu_no_tools': '(无工具)',
+    'menu_system': '系统',
+    'menu_no_system': '(无系统工具)',
+    # generic
+    'window_title': 'UF工具箱',
+    'help_title': '帮助',
+    'menu_help': '帮助',
+    'menu_about': '关于',
+    'menu_guide': '说明',
+    'menu_config': '配置',
+    'config_title': '配置',
+    'config_tool_path': '工具路径',
+    'config_plugin_path': '插件路径',
+    'config_select': '选择',
+    'config_save': '保存',
+    'config_unsaved_msg': '有未保存的修改，是否保存后关闭？',
+    'menu_log': '日志',
+    'log_title': '日志',
+    'log_clear': '清空',
+    'about_text': 'UF Toolbox v1.0.0\n\nCopyright © 2026 UFACTORY\n\nAuthor: Dwen',
+}

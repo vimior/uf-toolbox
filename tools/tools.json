@@ -1,0 +1,306 @@
+{
+  "groups": [
+    {
+      "name": "常用",
+      "name_zh": "常用",
+      "name_en": "Common",
+      "tools": [
+        {
+          "name": "记事本",
+          "name_zh": "记事本",
+          "name_en": "Notepad",
+          "path": "notepad.exe"
+        },
+        {
+          "name": "计算器",
+          "name_zh": "计算器",
+          "name_en": "Calculator",
+          "path": "calc.exe"
+        },
+        {
+          "name": "画图",
+          "name_zh": "画图",
+          "name_en": "Paint",
+          "path": "mspaint.exe"
+        },
+        {
+          "name": "截图工具",
+          "name_zh": "截图工具",
+          "name_en": "Snipping Tool",
+          "path": "snippingtool.exe"
+        },
+        {
+          "name": "字符映射表",
+          "name_zh": "字符映射表",
+          "name_en": "Character Map",
+          "path": "charmap.exe"
+        },
+        {
+          "name": "步骤记录器",
+          "name_zh": "步骤记录器",
+          "name_en": "Steps Recorder",
+          "path": "psr.exe"
+        },
+        {
+          "name": "运行",
+          "name_zh": "运行",
+          "name_en": "Run",
+          "path": "powershell.exe",
+          "shell": true,
+          "args": "-Command \"(New-Object -ComObject 'Shell.Application').FileRun()\""
+        },
+        {
+          "name": "文件资源管理器",
+          "name_zh": "文件资源管理器",
+          "name_en": "File Explorer",
+          "path": "explorer.exe"
+        },
+        {
+          "name": "上帝模式",
+          "name_zh": "上帝模式",
+          "name_en": "God Mode",
+          "path": "explorer.exe",
+          "args": "shell:::{ED7BA470-8E54-465E-825C-99712043E01C}"
+        }
+      ],
+      "menu": "system"
+    },
+    {
+      "name": "终端",
+      "name_zh": "终端",
+      "name_en": "Terminals",
+      "tools": [
+        {
+          "name": "命令提示符",
+          "name_zh": "命令提示符",
+          "name_en": "Command Prompt",
+          "path": "cmd.exe",
+          "shell": true,
+          "console": true
+        },
+        {
+          "name": "PowerShell",
+          "name_zh": "PowerShell",
+          "name_en": "PowerShell",
+          "path": "powershell.exe",
+          "shell": true,
+          "console": true
+        },
+        {
+          "name": "Windows 终端",
+          "name_zh": "Windows 终端",
+          "name_en": "Windows Terminal",
+          "path": "wt.exe",
+          "shell": true,
+          "console": true
+        }
+      ],
+      "menu": "system"
+    },
+    {
+      "name": "网络",
+      "name_zh": "网络",
+      "name_en": "Network",
+      "tools": [
+        {
+          "name": "网络连接",
+          "name_zh": "网络连接",
+          "name_en": "Network Connections",
+          "path": "control.exe",
+          "args": "ncpa.cpl",
+          "shell": true
+        },
+        {
+          "name": "防火墙",
+          "name_zh": "防火墙",
+          "name_en": "Firewall",
+          "path": "wf.msc",
+          "shell": true
+        },
+        {
+          "name": "资源监视器",
+          "name_zh": "资源监视器",
+          "name_en": "Resource Monitor",
+          "path": "resmon.exe"
+        },
+        {
+          "name": "远程桌面",
+          "name_zh": "远程桌面",
+          "name_en": "Remote Desktop",
+          "path": "mstsc.exe"
+        },
+        {
+          "name": "Windows 安全中心",
+          "name_zh": "Windows 安全中心",
+          "name_en": "Windows Security",
+          "path": "cmd.exe",
+          "args": "/c start ms-settings:windowsdefender",
+          "shell": false,
+          "console": false
+        }
+      ],
+      "menu": "system"
+    },
+    {
+      "name": "硬件",
+      "name_zh": "硬件",
+      "name_en": "Hardware",
+      "tools": [
+        {
+          "name": "声音设置",
+          "name_zh": "声音设置",
+          "name_en": "Sound",
+          "path": "control.exe",
+          "args": "mmsys.cpl",
+          "shell": true
+        },
+        {
+          "name": "鼠标设置",
+          "name_zh": "鼠标设置",
+          "name_en": "Mouse",
+          "path": "control.exe",
+          "args": "main.cpl",
+          "shell": true
+        },
+        {
+          "name": "键盘设置",
+          "name_zh": "键盘设置",
+          "name_en": "Keyboard",
+          "path": "control.exe",
+          "args": "keyboard",
+          "shell": true
+        },
+        {
+          "name": "打印机",
+          "name_zh": "打印机",
+          "name_en": "Printers",
+          "path": "control.exe",
+          "args": "printers",
+          "shell": true
+        }
+      ],
+      "menu": "system"
+    },
+    {
+      "name": "系统管理",
+      "name_zh": "系统管理",
+      "name_en": "Administration",
+      "menu": "system",
+      "groups": [
+        {
+          "name": "系统信息",
+          "name_zh": "系统信息",
+          "name_en": "System Info",
+          "tools": [
+            {
+              "name": "任务管理器",
+              "name_zh": "任务管理器",
+              "name_en": "Task Manager",
+              "path": "taskmgr.exe"
+            },
+            {
+              "name": "系统信息",
+              "name_zh": "系统信息",
+              "name_en": "System Info",
+              "path": "msinfo32.exe"
+            },
+            {
+              "name": "性能监视器",
+              "name_zh": "性能监视器",
+              "name_en": "Performance Monitor",
+              "path": "perfmon.exe"
+            },
+            {
+              "name": "注册表编辑器",
+              "name_zh": "注册表编辑器",
+              "name_en": "Registry Editor",
+              "path": "regedit.exe"
+            },
+            {
+              "name": "控制面板",
+              "name_zh": "控制面板",
+              "name_en": "Control Panel",
+              "path": "control.exe"
+            },
+            {
+              "name": "系统配置",
+              "name_zh": "系统配置",
+              "name_en": "System Configuration",
+              "path": "msconfig.exe"
+            },
+            {
+              "name": "程序和功能",
+              "name_zh": "程序和功能",
+              "name_en": "Programs & Features",
+              "path": "control.exe",
+              "args": "appwiz.cpl",
+              "shell": true
+            },
+            {
+              "name": "环境变量",
+              "name_zh": "环境变量",
+              "name_en": "Environment Variables",
+              "path": "systempropertiesadvanced.exe"
+            }
+          ]
+        },
+        {
+          "name": "磁盘与设备",
+          "name_zh": "磁盘与设备",
+          "name_en": "Disk & Devices",
+          "tools": [
+            {
+              "name": "设备管理器",
+              "name_zh": "设备管理器",
+              "name_en": "Device Manager",
+              "path": "devmgmt.msc",
+              "shell": true
+            },
+            {
+              "name": "磁盘管理",
+              "name_zh": "磁盘管理",
+              "name_en": "Disk Management",
+              "path": "diskmgmt.msc",
+              "shell": true
+            },
+            {
+              "name": "服务",
+              "name_zh": "服务",
+              "name_en": "Services",
+              "path": "services.msc",
+              "shell": true
+            },
+            {
+              "name": "计算机管理",
+              "name_zh": "计算机管理",
+              "name_en": "Computer Management",
+              "path": "compmgmt.msc",
+              "shell": true
+            },
+            {
+              "name": "事件查看器",
+              "name_zh": "事件查看器",
+              "name_en": "Event Viewer",
+              "path": "eventvwr.msc",
+              "shell": true
+            },
+            {
+              "name": "本地用户和组",
+              "name_zh": "本地用户和组",
+              "name_en": "Local Users",
+              "path": "lusrmgr.msc",
+              "shell": true
+            },
+            {
+              "name": "任务计划器",
+              "name_zh": "任务计划器",
+              "name_en": "Task Scheduler",
+              "path": "taskschd.msc",
+              "shell": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

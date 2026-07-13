@@ -1,0 +1,448 @@
+# -*- coding: utf-8 -*-
+"""Navbar-style menu bar with theme-aware colors."""
+import os
+import tkinter as tk
+from common.state import AppState
+from common.common import FONT_FAMILY
+from tools.scanner import scan_tools, launch
+
+
+_icon_cache = {}
+
+def _load_icon(filename, size=44):
+    """Load a PNG icon from icons/. Results are cached."""
+    if filename in _icon_cache:
+        return _icon_cache[filename]
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path = os.path.join(base, 'icons', filename)
+    if not os.path.exists(path):
+        return None
+    try:
+        img = tk.PhotoImage(file=path)
+        img = img.subsample(img.width() // size, img.height() // size)
+    except Exception:
+        try:
+            from PIL import Image, ImageTk
+            img = ImageTk.PhotoImage(Image.open(path).resize((size, size), Image.LANCZOS))
+        except ImportError:
+            return None
+    _icon_cache[filename] = img
+    return img
+
+
+class MenuUI(AppState, tk.Tk):
+    """Navbar with tab-style buttons."""
+
+    # ---- color helpers ----
+
+    @staticmethod
+    def _nav_colors(theme):
+        """Return (bar_bg, fg, sep_bg, hover_bg, menu_bg, menu_hover, menu_hover_fg)."""
+        if theme['ctrl_bar_bg'] == '#333333':  # dark
+            return ('#333333', '#e0e0e0', '#4a4a4a', '#4a4a4a',
+                    '#3c3c3c', '#57616b', '#ffffff')
+        # light
+        return ('#e8ecf1', '#333333', '#cccccc', '#bfbfbf',
+                '#ffffff', '#57616b', '#ffffff')
+
+    # ---- build ----
+
+    def _build_menu(self):
+        t, l = self.theme, self.lang
+        self._theme_var = tk.StringVar(
+            value=getattr(self, '_current_theme_name', 'dark'))
+        self._lang_var = tk.StringVar(
+            value=getattr(self, '_current_lang_name', ''))
+
+        c = self._nav_colors(t)
+
+        self._navbar = bar = tk.Frame(self, bg=c[0], height=48)
+        bar.pack(fill=tk.X, side=tk.TOP)
+        bar.pack_propagate(False)
+
+        self._nav_items = {}
+        self._nav_menus = {}
+
+        # Brand icon — fixed width
+        icon_img = _load_icon('uf_toolbox.ico', size=32) or _load_icon('uf_toolbox.png', size=44)
+        if icon_img is not None:
+            self._brand_icon = icon_img
+            brand_frame = tk.Frame(bar, bg=c[0], width=52, height=48)
+            brand_frame.pack(side=tk.LEFT, fill=tk.Y)
+            brand_frame.pack_propagate(False)
+            self._brand_icon_lbl = tk.Label(brand_frame, image=icon_img, bg=c[0])
+            self._brand_icon_lbl.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
+            self._brand_lbl = brand_frame
+        else:
+            brand = tk.Label(bar, text='  UF Toolbox', bg=c[0], fg=c[1],
+                             font=(FONT_FAMILY, 10, 'bold'), padx=16)
+            brand.pack(side=tk.LEFT, fill=tk.Y)
+            self._brand_lbl = brand
+        tk.Frame(bar, bg=c[2], width=1).pack(side=tk.LEFT, fill=tk.Y)
+
+        self._add_nav_item(bar, 'settings', l['menu_settings'],
+                           self._build_settings_menu, c, first=True)
+        self._add_nav_item(bar, 'system', l['menu_system'],
+                           lambda m: self._build_tools_menu(m, 'system'), c,
+                           on_click=lambda e: self._on_tools_menu_open(e, 'system'))
+        self._add_nav_item(bar, 'tools', l['menu_tools'],
+                           lambda m: self._build_tools_menu(m, 'tools'), c,
+                           on_click=lambda e: self._on_tools_menu_open(e, 'tools'))
+        self._add_nav_item(bar, 'plugins', l['menu_plugins'],
+                           self._build_plugins_menu, c,
+                           on_click=self._on_plugins_menu_open)
+
+        # Exit icon — swaps image on hover
+        x_img = _load_icon('uf_toolbox_close.png')
+        x_hover = _load_icon('uf_toolbox_close_hover.png')
+        if x_img is not None:
+            self._exit_icon = x_img
+            self._exit_icon_hover = x_hover
+            btn = tk.Label(bar, image=x_img, bg=c[0], padx=10,
+                           cursor='hand2', borderwidth=0, highlightthickness=0)
+            btn.bind('<Enter>', lambda e, b=btn: b.config(image=x_hover))
+            btn.bind('<Leave>', lambda e, b=btn: b.config(image=x_img))
+        else:
+            btn = tk.Label(bar, text='  ✕  ', bg=c[0], fg=c[1],
+                           font=(FONT_FAMILY, 10, 'bold'), padx=16,
+                           cursor='hand2', borderwidth=0, highlightthickness=0)
+        btn.pack(side=tk.RIGHT, fill=tk.Y)
+        btn.bind('<Button-1>', lambda e: self.destroy())
+        self._exit_btn = btn
+
+        # Separator between menus and exit
+        self._exit_sep = tk.Frame(bar, bg=c[2], width=1)
+        self._exit_sep.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Make the navbar (and its non-clickable children) a drag handle.
+        self._enable_drag(bar)
+
+        self._nav_sep = tk.Frame(self, height=2, bg=t['separator2'])
+        self._nav_sep.pack(fill=tk.X, side=tk.TOP)
+        self._fit_window()
+
+    def apply_theme(self, t):
+        c = self._nav_colors(t)
+        bar_bg, fg, sep_bg, hover_bg, menu_bg, menu_hover, menu_hover_fg = c
+        self.configure(bg=t['bg'])
+        self._navbar.config(bg=bar_bg)
+        self._nav_sep.config(bg=t['separator2'])
+        self._exit_sep.config(bg=sep_bg)
+        self._brand_lbl.config(bg=bar_bg)
+        if hasattr(self, '_brand_icon_lbl'):
+            self._brand_icon_lbl.config(bg=bar_bg)
+        if isinstance(self._brand_lbl, tk.Label):
+            self._brand_lbl.config(fg=fg)
+        if hasattr(self, '_exit_icon_hover'):
+            self._exit_btn.config(image=self._exit_icon, bg=bar_bg)
+            self._exit_btn.unbind('<Enter>')
+            self._exit_btn.unbind('<Leave>')
+            self._exit_btn.bind('<Enter>', lambda e, b=self._exit_btn: b.config(image=self._exit_icon_hover))
+            self._exit_btn.bind('<Leave>', lambda e, b=self._exit_btn: b.config(image=self._exit_icon))
+        for key, widget in self._nav_items.items():
+            if key.endswith('_sep'):
+                widget.config(bg=sep_bg)
+            else:
+                widget.config(bg=bar_bg, fg=fg)
+                widget.unbind('<Enter>')
+                widget.unbind('<Leave>')
+                widget.bind('<Enter>', lambda e, b=widget, h=hover_bg: b.config(bg=h))
+                widget.bind('<Leave>', lambda e, b=widget, bg=bar_bg, c=fg: b.config(bg=bg, fg=c))
+        for menu in self._nav_menus.values():
+            menu.config(bg=menu_bg, fg=fg,
+                        activebackground=menu_hover, activeforeground=menu_hover_fg)
+
+    def _add_nav_item(self, bar, key, text, menu_builder, c,
+                       on_click=None, first=False):
+        bar_bg, fg, sep_bg, hover_bg, menu_bg, menu_hover, menu_hover_fg = c
+
+        if not first:
+            frm = tk.Frame(bar, bg=sep_bg, width=1)
+            frm.pack(side=tk.LEFT, fill=tk.Y)
+            self._nav_items[f'{key}_sep'] = frm
+
+        btn = tk.Label(bar, text=f'  {text}  ', bg=bar_bg, fg=fg,
+                       font=(FONT_FAMILY, 12), padx=16,
+                       cursor='hand2', borderwidth=0, highlightthickness=0)
+        btn.pack(side=tk.LEFT, fill=tk.Y)
+
+        btn.bind('<Enter>', lambda e, b=btn, h=hover_bg: b.config(bg=h))
+        btn.bind('<Leave>', lambda e, b=btn, bg=bar_bg, c=fg:
+                 b.config(bg=bg, fg=c))
+
+        self._nav_items[key] = btn
+
+        menu = tk.Menu(self, tearoff=0, font=(FONT_FAMILY, 12),
+                       bg=menu_bg, fg=fg,
+                       activebackground=menu_hover,
+                       activeforeground=menu_hover_fg,
+                       borderwidth=1, relief=tk.FLAT)
+        menu_builder(menu)
+        self._nav_menus[key] = menu
+
+        if on_click:
+            btn.bind('<Button-1>',
+                     lambda e, cb=on_click, m=menu, b=btn:
+                     (cb(e), self._show_menu(m, b)))
+        else:
+            btn.bind('<Button-1>',
+                     lambda e, m=menu, b=btn: self._show_menu(m, b))
+
+    def _add_nav_action(self, bar, key, text, action, c):
+        """Create a navbar button that fires *action* directly (no dropdown)."""
+        bar_bg, fg, sep_bg, hover_bg, _, _, _ = c
+        frm = tk.Frame(bar, bg=sep_bg, width=1)
+        frm.pack(side=tk.LEFT, fill=tk.Y)
+        self._nav_items[f'{key}_sep'] = frm
+        btn = tk.Label(bar, text=f'  {text}  ', bg=bar_bg, fg=fg,
+                       font=(FONT_FAMILY, 12), padx=16,
+                       cursor='hand2', borderwidth=0, highlightthickness=0)
+        btn.pack(side=tk.LEFT, fill=tk.Y)
+        btn.bind('<Enter>', lambda e, b=btn, h=hover_bg: b.config(bg=h))
+        btn.bind('<Leave>', lambda e, b=btn, bg=bar_bg, c=fg:
+                 b.config(bg=bg, fg=c))
+        btn.bind('<Button-1>', lambda e, a=action: a())
+        self._nav_items[key] = btn
+
+    def _show_menu(self, menu, btn):
+        x = btn.winfo_rootx()
+        y = btn.winfo_rooty() + btn.winfo_height()
+        menu.tk_popup(x, y)
+
+    # ---- menu builders ----
+
+    def _build_settings_menu(self, menu):
+        l = self.lang
+        menu.add_cascade(label=l['menu_appearance'],
+                         menu=self._build_appearance_submenu(menu))
+        menu.add_cascade(label=l['menu_language'],
+                         menu=self._build_language_submenu(menu))
+        menu.add_command(label=l['menu_log'],
+                         command=lambda: self.notify('show-log'))
+        menu.add_separator()
+        menu.add_command(label=l['menu_config'],
+                         command=lambda: self.notify('show-config'))
+
+    def _build_appearance_submenu(self, parent):
+        l = self.lang
+        t = self.theme
+        sub = tk.Menu(parent, tearoff=0, font=(FONT_FAMILY, 11),
+                      bg=t['label_normal'], fg=t['active_fg'],
+                      activebackground=t['highlight_not_connected'],
+                      activeforeground=t['highlight_fg'])
+        sub.add_radiobutton(label=l['menu_theme_light'],
+                            variable=self._theme_var, value='light',
+                            command=lambda: self.set_theme('light'))
+        sub.add_radiobutton(label=l['menu_theme_dark'],
+                            variable=self._theme_var, value='dark',
+                            command=lambda: self.set_theme('dark'))
+        return sub
+
+    def _build_language_submenu(self, parent):
+        l = self.lang
+        t = self.theme
+        sub = tk.Menu(parent, tearoff=0, font=(FONT_FAMILY, 11),
+                      bg=t['label_normal'], fg=t['active_fg'],
+                      activebackground=t['highlight_not_connected'],
+                      activeforeground=t['highlight_fg'])
+        sub.add_radiobutton(label=l['menu_lang_zh'],
+                            variable=self._lang_var, value='zh',
+                            command=lambda: self.set_lang('zh'))
+        sub.add_radiobutton(label=l['menu_lang_en'],
+                            variable=self._lang_var, value='en',
+                            command=lambda: self.set_lang('en'))
+        sub.add_radiobutton(label=l['menu_lang_auto'],
+                            variable=self._lang_var, value='auto',
+                            command=lambda: self.set_lang('auto'))
+        return sub
+
+    def _build_tools_menu(self, menu, filter_key='tools'):
+        if filter_key == 'system':
+            self._system_menu = menu
+        else:
+            self._tools_menu = menu
+        self._refresh_tools_menu(menu, filter_key)
+
+    def _on_tools_menu_open(self, event, filter_key='tools'):
+        self._refresh_tools_menu(
+            self._system_menu if filter_key == 'system' else self._tools_menu,
+            filter_key)
+
+    def _refresh_tools_menu(self, menu=None, filter_key='tools'):
+        if menu is None:
+            menu = getattr(self, '_tools_menu', None) or getattr(self, '_system_menu', None)
+        menu.delete(0, tk.END)
+        empty_key = 'menu_no_system' if filter_key == 'system' else 'menu_no_tools'
+        result = scan_tools(self.resolved_lang, menu=filter_key, path=self.tool_path)
+        if not result['tools'] and not result['groups']:
+            menu.add_command(
+                label=self.lang.get(empty_key, '(No Tools)'),
+                state=tk.DISABLED)
+            return
+
+        def _cmd(t):
+            return lambda: (launch(t),
+                            self.after(200, lambda: self.lift() or self.focus_force()))
+
+        def _build_group(parent_menu, groups):
+            t = self.theme
+            for g in groups:
+                sub = tk.Menu(parent_menu, tearoff=0, font=(FONT_FAMILY, 11),
+                      bg=t['label_normal'], fg=t['active_fg'],
+                              activebackground=t['highlight_not_connected'],
+                              activeforeground=t['highlight_fg'])
+                for tool in g.get('tools', []):
+                    sub.add_command(label=tool['name'], command=_cmd(tool))
+                _build_group(sub, g.get('groups', []))
+                label = g.get('name', '')
+                if sub.index(tk.END) is not None:
+                    parent_menu.add_cascade(label=label, menu=sub)
+
+        for t in result['tools']:
+            menu.add_command(label=t['name'], command=_cmd(t))
+        _build_group(menu, result['groups'])
+
+    def _build_plugins_menu(self, menu):
+        self._plugins_menu = menu
+
+    # ---- plugins ----
+
+    def _refresh_plugins_menu(self):
+        self._plugins_menu.delete(0, tk.END)
+        if not self.plugins:
+            self._plugins_menu.add_command(
+                label=self.lang.get('menu_no_plugins', '(No Plugins)'))
+            return
+        for p in sorted(self.plugins.values(),
+                        key=lambda x: x.priority, reverse=True):
+            self._plugins_menu.add_command(
+                label=p.name,
+                command=lambda plugin=p: self._show_plugin_window(plugin))
+
+    def _on_plugins_menu_open(self, event):
+        self.notify('load-plugins')
+        self._refresh_plugins_menu()
+
+    # ---- plugin window ----
+
+    def _show_plugin_window(self, plugin):
+        win = plugin.create_window(self)
+        if win is not None:
+            if plugin.fixed_position or plugin.fixed_size:
+                self._set_child_position(win,
+                    x=(self.winfo_x() + self.winfo_width() + 4
+                       if plugin.fixed_position else None),
+                    y=(self.winfo_y() if plugin.fixed_position else None),
+                    w=(420 if plugin.fixed_size else None),
+                    h=(self.main_height if plugin.fixed_size else None))
+            if plugin.use_app_icon:
+                self._set_plugin_icon(win)
+            win.lift()
+            win.focus_force()
+
+    @staticmethod
+    def _set_child_position(win, x=None, y=None, w=None, h=None):
+        if x is None and y is None and w is None and h is None:
+            return
+        parts = []
+        if w is not None and h is not None:
+            parts.append(f'{w}x{h}')
+        if x is not None and y is not None:
+            parts.append(f'+{x}+{y}')
+        if parts:
+            win.geometry(''.join(parts))
+
+    def _set_plugin_icon(self, win):
+        import sys, os
+        if sys.platform == 'win32':
+            try:
+                win.iconbitmap(self.ico_path)
+            except Exception:
+                pass
+        else:
+            path = (self.png_path
+                    if os.path.exists(self.png_path) else self.ico_path)
+            try:
+                icon = tk.PhotoImage(file=path)
+                win.iconphoto(True, icon)
+                win._icon_ref = icon
+            except Exception:
+                pass
+
+    # ---- theme / lang ----
+
+    def _apply_lang(self, l, t=None):
+        self.title(l['window_title'])
+        if isinstance(self._brand_lbl, tk.Label):
+            self._brand_lbl.config(text=f'  {l["window_title"]}')
+        self._nav_items['settings'].config(
+            text=f'  {l["menu_settings"]}  ')
+        self._nav_items['system'].config(
+            text=f'  {l["menu_system"]}  ')
+        self._nav_items['tools'].config(
+            text=f'  {l["menu_tools"]}  ')
+        self._nav_items['plugins'].config(
+            text=f'  {l["menu_plugins"]}  ')
+        # Rebuild settings submenus (theme + language labels)
+        if 'settings' in self._nav_menus:
+            m = self._nav_menus['settings']
+            m.delete(0, tk.END)
+            self._build_settings_menu(m)
+        self._theme_var.set(getattr(self, '_current_theme_name', 'dark'))
+        self._lang_var.set(getattr(self, '_current_lang_name', 'en'))
+        self._refresh_plugins_menu()
+        if hasattr(self, '_system_menu'):
+            self._refresh_tools_menu(self._system_menu, 'system')
+        if hasattr(self, '_tools_menu'):
+            self._refresh_tools_menu(self._tools_menu, 'tools')
+        self._fit_window()
+
+    def _enable_drag(self, widget):
+        """Make the borderless window draggable by grabbing *widget* and any
+        descendant that has no click handler of its own (the brand icon,
+        separators and empty navbar space). Menu buttons and the exit button
+        keep their own <Button-1> bindings and are skipped."""
+        def _start(event):
+            self._drag_x = event.x_root - self.winfo_x()
+            self._drag_y = event.y_root - self.winfo_y()
+
+        def _move(event):
+            x = event.x_root - self._drag_x
+            y = event.y_root - self._drag_y
+            self.geometry(f'+{x}+{y}')
+
+        def _bind(w):
+            # Skip widgets that already handle left-click (menu/exit buttons).
+            if not w.bind('<Button-1>'):
+                w.bind('<Button-1>', _start)
+                w.bind('<B1-Motion>', _move)
+            for child in w.winfo_children():
+                _bind(child)
+
+        _bind(widget)
+
+    def _fit_window(self):
+        self._navbar.update_idletasks()
+        w = sum(c.winfo_reqwidth() for c in self._navbar.winfo_children()) + 4
+        h = self._navbar.winfo_reqheight() + 2
+        x = (self.winfo_screenwidth() - w) // 2
+        self.geometry(f'{w}x{h}+{x}+5')
+        self.set_main_width(w)
+
+    @staticmethod
+    def _dispatch(method_name, self, *args):
+        for cls in type(self).__mro__:
+            if method_name in cls.__dict__:
+                cls.__dict__[method_name](self, *args)
+
+    def set_theme(self, name=None):
+        if name is not None:
+            AppState.set_theme(self, name)
+        self._dispatch('apply_theme', self, self.theme)
+
+    def set_lang(self, name=None):
+        if name is not None:
+            AppState.set_lang(self, name)
+        self._apply_lang(self.lang, self.theme)
+        self.after(50, lambda: self._dispatch('apply_lang', self, self.lang, self.theme))
+        # self._dispatch('apply_lang', self, self.lang, self.theme)
