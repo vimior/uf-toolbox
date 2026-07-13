@@ -364,6 +364,9 @@ class MenuUI(AppState, tk.Tk):
     def _show_plugin_window(self, plugin):
         win = plugin.create_window(self)
         if win is not None:
+            # Break transient so plugin is not forced topmost when main window is
+            if self.always_on_top:
+                win.tk.call('wm', 'transient', str(win), '')
             if plugin.fixed_position or plugin.fixed_size:
                 self._set_child_position(win,
                     x=(self.winfo_x() + self.winfo_width() + 4
