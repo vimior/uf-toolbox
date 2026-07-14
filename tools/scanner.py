@@ -186,6 +186,8 @@ def _parse_tool(tools_dir, entry, lang, prefix=''):
 
     *prefix* is the ID path from parent groups (e.g. 'system/common').
     The tool's full ID becomes 'prefix/tool_id'."""
+    if entry.get('ignore', False):
+        return None
     name = _resolve_name(entry, lang)
     exe = entry.get('path', '')
     if not name or not exe:
@@ -232,6 +234,8 @@ def _parse_groups(tools_dir, raw_groups, lang, prefix=''):
     """Recursively parse nested groups. *prefix* is the ID path from ancestors."""
     result = []
     for g in raw_groups:
+        if g.get('ignore', False):
+            continue
         gid = g.get('id', '')
         full_prefix = f'{prefix}/{gid}' if (prefix and gid) else (gid or prefix)
         # Derive tab from ID first segment, default 'tools'
