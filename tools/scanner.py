@@ -204,7 +204,7 @@ def _parse_tool(tools_dir, entry, lang, prefix=''):
         'name': name,
         '_exe_path': exe_path,
         'args': entry.get('args', ''),
-        'cwd': entry.get('cwd', '') or tools_dir,
+        'cwd': os.path.join(tools_dir, entry.get('cwd', '')) or tools_dir,
         'shell': entry.get('shell', True),
         'env': entry.get('env'),
         'console': entry.get('console', False),
