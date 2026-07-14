@@ -256,6 +256,8 @@ class MenuUI(AppState, tk.Tk):
             self._cancel_auto_hide()
             if self._collapsed:
                 self._expand_bar()
+            else:
+                self.geometry(f'+{self.winfo_x()}+{self._dock_y+1}')
         else:
             # Enabled: trigger check after 3s
             self._cancel_auto_hide()
