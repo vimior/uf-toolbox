@@ -31,5 +31,5 @@ EN = {
     'menu_log': 'Log',
     'log_title': 'Log',
     'log_clear': 'Clear',
-    'about_text': 'UF Toolbox v{}\n\nCopyright © 2026 UFACTORY\n\nAuthor: Dwen',
+    'about_text': 'UF ToolBox v{}\n\nCopyright © 2026 UFACTORY\n\nAuthor: Dwen',
 }

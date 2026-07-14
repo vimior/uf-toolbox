@@ -35,6 +35,16 @@ def _load_icon(filename, size=44):
 class MenuUI(AppState, tk.Tk):
     """Navbar with tab-style buttons."""
 
+    # ---- helpers ----
+
+    @staticmethod
+    def _destroy_submenus(menu):
+        """Recursively destroy all cascade submenus of *menu*."""
+        for child in list(menu.winfo_children()):
+            if isinstance(child, tk.Menu):
+                MenuUI._destroy_submenus(child)
+                child.destroy()
+
     # ---- color helpers ----
 
     @staticmethod
@@ -338,6 +348,7 @@ class MenuUI(AppState, tk.Tk):
     def _refresh_tools_menu(self, menu=None, filter_key='tools'):
         if menu is None:
             menu = getattr(self, '_tools_menu', None) or getattr(self, '_system_menu', None)
+        self._destroy_submenus(menu)
         menu.delete(0, tk.END)
         empty_key = 'menu_no_system' if filter_key == 'system' else 'menu_no_tools'
         result = scan_tools(self.resolved_lang, tab=filter_key, path=self.tool_path)
@@ -365,6 +376,8 @@ class MenuUI(AppState, tk.Tk):
                 label = g.get('name', '')
                 if sub.index(tk.END) is not None:
                     parent_menu.add_cascade(label=label, menu=sub)
+                else:
+                    sub.destroy()  # don't leak empty submenu
 
         for t in result['tools']:
             menu.add_command(label=t['name'], command=_cmd(t))
@@ -457,6 +470,7 @@ class MenuUI(AppState, tk.Tk):
         # Rebuild settings submenus (theme + language labels)
         if 'settings' in self._nav_menus:
             m = self._nav_menus['settings']
+            self._destroy_submenus(m)
             m.delete(0, tk.END)
             self._build_settings_menu(m)
         self._theme_var.set(getattr(self, '_current_theme_name', 'dark'))
