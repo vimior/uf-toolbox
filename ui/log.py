@@ -61,7 +61,7 @@ class LogUI(AppState, tk.Tk):
         self._log_win = win
 
         self._log_border_frame = border = tk.Frame(
-            win, bg=t['ctrl_area_border'], padx=1, pady=1,
+            win, bg=t['border'], padx=1, pady=1,
             bd=0, highlightthickness=0)
         border.pack(fill=tk.BOTH, expand=True, padx=8, pady=(8, 4))
         self._log_text = tk.Text(
@@ -89,10 +89,10 @@ class LogUI(AppState, tk.Tk):
         bottom.pack(fill=tk.X, padx=8, pady=(0, 6))
         self._log_clear_btn = tk.Button(
             bottom, text=l['log_clear'], command=self._clear_log,
-            bg=t['connect_btn'], fg=t['btn_fg'],
+            bg=t['accent'], fg=t['btn_fg'],
             font=(FONT_FAMILY, 9, 'bold'),
             relief=tk.RAISED, bd=1, padx=8, pady=1, cursor='hand2',
-            activebackground=t['active_btn_bg'],
+            activebackground=t['btn_active_bg'],
             activeforeground=t['btn_fg']
         )
         self._log_clear_btn.pack(side=tk.RIGHT, fill=tk.X, expand=True)
@@ -132,12 +132,12 @@ class LogUI(AppState, tk.Tk):
         if self._log_win is None or not self._log_win.winfo_exists():
             return
         self._log_win.config(bg=t['bg'])
-        self._log_border_frame.config(bg=t['ctrl_area_border'])
+        self._log_border_frame.config(bg=t['border'])
         self._log_bottom_frame.config(bg=t['bg'])
         if hasattr(self, '_log_clear_btn'):
             self._log_clear_btn.config(
-                bg=t['connect_btn'], fg=t['btn_fg'],
-                activebackground=t['active_btn_bg'],
+                bg=t['accent'], fg=t['btn_fg'],
+                activebackground=t['btn_active_bg'],
                 activeforeground=t['btn_fg'])
 
     def apply_lang(self, l, t=None):

@@ -7,6 +7,7 @@ from common.state import AppState
 from common.common import FONT_FAMILY
 from tools.scanner import scan_tools, launch
 
+menu_activeborderwidth = 3
 
 _icon_cache = {}
 
@@ -39,7 +40,7 @@ class MenuUI(AppState, tk.Tk):
     @staticmethod
     def _nav_colors(theme):
         """Return (bar_bg, fg, sep_bg, hover_bg, menu_bg, menu_hover, menu_hover_fg)."""
-        if theme['ctrl_bar_bg'] == '#333333':  # dark
+        if theme['navbar_bg'] == '#333333':  # dark
             return ('#333333', '#e0e0e0', '#4a4a4a', '#4a4a4a',
                     '#3c3c3c', '#57616b', '#ffffff')
         # light
@@ -181,7 +182,8 @@ class MenuUI(AppState, tk.Tk):
                        bg=menu_bg, fg=fg,
                        activebackground=menu_hover,
                        activeforeground=menu_hover_fg,
-                       borderwidth=1, relief=tk.FLAT)
+                       borderwidth=1, relief=tk.FLAT,
+                       activeborderwidth=menu_activeborderwidth)
         menu.configure(postcommand=lambda m=menu, k=key: self._on_menu_open(m, k))
         menu_builder(menu)
         self._nav_menus[key] = menu
@@ -290,9 +292,10 @@ class MenuUI(AppState, tk.Tk):
         l = self.lang
         t = self.theme
         sub = tk.Menu(parent, tearoff=0, font=(FONT_FAMILY, 11),
-                      bg=t['label_normal'], fg=t['active_fg'],
-                      activebackground=t['highlight_not_connected'],
-                      activeforeground=t['highlight_fg'])
+                      bg=t['menu_bg'], fg=t['fg'],
+                      activebackground=t['menu_hover_bg'],
+                      activeforeground=t['menu_hover_fg'],
+                      activeborderwidth=menu_activeborderwidth)
         sub.add_radiobutton(label=l['menu_theme_light'],
                             variable=self._theme_var, value='light',
                             command=lambda: self.set_theme('light'))
@@ -305,9 +308,10 @@ class MenuUI(AppState, tk.Tk):
         l = self.lang
         t = self.theme
         sub = tk.Menu(parent, tearoff=0, font=(FONT_FAMILY, 11),
-                      bg=t['label_normal'], fg=t['active_fg'],
-                      activebackground=t['highlight_not_connected'],
-                      activeforeground=t['highlight_fg'])
+                      bg=t['menu_bg'], fg=t['fg'],
+                      activebackground=t['menu_hover_bg'],
+                      activeforeground=t['menu_hover_fg'],
+                      activeborderwidth=menu_activeborderwidth)
         sub.add_radiobutton(label=l['menu_lang_zh'],
                             variable=self._lang_var, value='zh',
                             command=lambda: self.set_lang('zh'))
@@ -351,9 +355,10 @@ class MenuUI(AppState, tk.Tk):
             t = self.theme
             for g in groups:
                 sub = tk.Menu(parent_menu, tearoff=0, font=(FONT_FAMILY, 11),
-                      bg=t['label_normal'], fg=t['active_fg'],
-                              activebackground=t['highlight_not_connected'],
-                              activeforeground=t['highlight_fg'])
+                      bg=t['menu_bg'], fg=t['fg'],
+                              activebackground=t['menu_hover_bg'],
+                              activeforeground=t['menu_hover_fg'],
+                              activeborderwidth=menu_activeborderwidth)
                 for tool in g.get('tools', []):
                     sub.add_command(label=tool['name'], command=_cmd(tool))
                 _build_group(sub, g.get('groups', []))

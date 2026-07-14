@@ -29,29 +29,29 @@ class SettingsUI(AppState, tk.Tk):
         w['bottom'].config(bg=t['bg'])
 
         for key in ('tool_lbl', 'plugin_lbl'):
-            w[key].config(bg=t['bg'], fg=t['active_fg'])
+            w[key].config(bg=t['bg'], fg=t['fg'])
 
         for key in ('row1', 'row2'):
             w[key].config(bg=t['bg'])
 
         for key in ('tool_entry', 'plugin_entry'):
-            w[key].config(bg=t['ctrl_area'], fg=t['active_fg'],
-                          insertbackground=t['active_fg'],
+            w[key].config(bg=t['input_bg'], fg=t['fg'],
+                          insertbackground=t['fg'],
                           highlightbackground=t['separator'])
 
         for key in ('tool_btn', 'plugin_btn'):
-            w[key].config(bg=t['label_normal'], fg=t['active_fg'],
-                          activebackground=t['ctrl_hover_bg'],
-                          activeforeground=t['highlight_fg'])
+            w[key].config(bg=t['menu_bg'], fg=t['fg'],
+                          activebackground=t['btn_hover_bg'],
+                          activeforeground=t['menu_hover_fg'])
 
         # Save button: respect dirty state
         if self._settings_dirty:
-            w['save_btn'].config(bg=t['connect_btn'], fg=t['btn_fg'],
-                                 activebackground=t['active_btn_bg'],
+            w['save_btn'].config(bg=t['accent'], fg=t['btn_fg'],
+                                 activebackground=t['btn_active_bg'],
                                  activeforeground=t['btn_fg'])
         else:
-            w['save_btn'].config(bg=t['disabled_btn_bg'], fg=t['btn_fg'],
-                                 activebackground=t['active_btn_bg'],
+            w['save_btn'].config(bg=t['btn_disabled_bg'], fg=t['btn_fg'],
+                                 activebackground=t['btn_active_bg'],
                                  activeforeground=t['btn_fg'])
 
     def apply_lang(self, l, t=None):
@@ -94,7 +94,7 @@ class SettingsUI(AppState, tk.Tk):
 
         # Tool path
         tool_lbl = tk.Label(frame, text=l['config_tool_path'], bg=t['bg'],
-                            fg=t['active_fg'], font=(FONT_FAMILY, 10), anchor=tk.W)
+                            fg=t['fg'], font=(FONT_FAMILY, 10), anchor=tk.W)
         tool_lbl.pack(fill=tk.X)
         w['tool_lbl'] = tool_lbl
 
@@ -104,25 +104,25 @@ class SettingsUI(AppState, tk.Tk):
 
         tool_var = tk.StringVar(value=self.tool_path)
         self._orig_tool = self.tool_path
-        tool_entry = tk.Entry(row1, textvariable=tool_var, bg=t['ctrl_area'],
-                              fg=t['active_fg'], insertbackground=t['active_fg'],
+        tool_entry = tk.Entry(row1, textvariable=tool_var, bg=t['input_bg'],
+                              fg=t['fg'], insertbackground=t['fg'],
                               font=(FONT_FAMILY, 10), relief=tk.FLAT, bd=0,
                               highlightthickness=1, highlightbackground=t['separator'])
         tool_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=3)
         w['tool_entry'] = tool_entry
 
-        tool_btn = tk.Button(row1, text=l['config_select'], bg=t['label_normal'],
-                             fg=t['active_fg'], font=(FONT_FAMILY, 9),
+        tool_btn = tk.Button(row1, text=l['config_select'], bg=t['menu_bg'],
+                             fg=t['fg'], font=(FONT_FAMILY, 9),
                              relief=tk.FLAT, padx=10, cursor='hand2', bd=0,
-                             activebackground=t['ctrl_hover_bg'],
-                             activeforeground=t['highlight_fg'],
+                             activebackground=t['btn_hover_bg'],
+                             activeforeground=t['menu_hover_fg'],
                              command=lambda: self._pick_folder(tool_var))
         tool_btn.pack(side=tk.RIGHT, padx=(6, 0), ipady=1)
         w['tool_btn'] = tool_btn
 
         # Plugin path
         plugin_lbl = tk.Label(frame, text=l['config_plugin_path'], bg=t['bg'],
-                              fg=t['active_fg'], font=(FONT_FAMILY, 10), anchor=tk.W)
+                              fg=t['fg'], font=(FONT_FAMILY, 10), anchor=tk.W)
         plugin_lbl.pack(fill=tk.X)
         w['plugin_lbl'] = plugin_lbl
 
@@ -132,18 +132,18 @@ class SettingsUI(AppState, tk.Tk):
 
         plugin_var = tk.StringVar(value=self.plugin_path)
         self._orig_plugin = self.plugin_path
-        plugin_entry = tk.Entry(row2, textvariable=plugin_var, bg=t['ctrl_area'],
-                                fg=t['active_fg'], insertbackground=t['active_fg'],
+        plugin_entry = tk.Entry(row2, textvariable=plugin_var, bg=t['input_bg'],
+                                fg=t['fg'], insertbackground=t['fg'],
                                 font=(FONT_FAMILY, 10), relief=tk.FLAT, bd=0,
                                 highlightthickness=1, highlightbackground=t['separator'])
         plugin_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=3)
         w['plugin_entry'] = plugin_entry
 
-        plugin_btn = tk.Button(row2, text=l['config_select'], bg=t['label_normal'],
-                               fg=t['active_fg'], font=(FONT_FAMILY, 9),
+        plugin_btn = tk.Button(row2, text=l['config_select'], bg=t['menu_bg'],
+                               fg=t['fg'], font=(FONT_FAMILY, 9),
                                relief=tk.FLAT, padx=10, cursor='hand2', bd=0,
-                               activebackground=t['ctrl_hover_bg'],
-                               activeforeground=t['highlight_fg'],
+                               activebackground=t['btn_hover_bg'],
+                               activeforeground=t['menu_hover_fg'],
                                command=lambda: self._pick_folder(plugin_var))
         plugin_btn.pack(side=tk.RIGHT, padx=(6, 0), ipady=1)
         w['plugin_btn'] = plugin_btn
@@ -157,10 +157,10 @@ class SettingsUI(AppState, tk.Tk):
             bottom, text=l['config_save'],
             command=lambda: self._save_config_paths(
                 tool_var.get().strip(), plugin_var.get().strip(), win),
-            bg=t['disabled_btn_bg'], fg=t['btn_fg'],
+            bg=t['btn_disabled_bg'], fg=t['btn_fg'],
             font=(FONT_FAMILY, 9, 'bold'),
             relief=tk.RAISED, bd=1, padx=8, pady=1, cursor='hand2',
-            activebackground=t['active_btn_bg'],
+            activebackground=t['btn_active_bg'],
             activeforeground=t['btn_fg'],
             state=tk.DISABLED)
         save_btn.pack(side=tk.RIGHT, fill=tk.X, expand=True)
@@ -178,11 +178,11 @@ class SettingsUI(AppState, tk.Tk):
                         or cur_plugin != self._orig_plugin)
             if is_dirty and not self._settings_dirty:
                 self._settings_dirty = True
-                save_btn.config(bg=t['connect_btn'], state=tk.NORMAL,
-                                activebackground=t['active_btn_bg'])
+                save_btn.config(bg=t['accent'], state=tk.NORMAL,
+                                activebackground=t['btn_active_bg'])
             elif not is_dirty and self._settings_dirty:
                 self._settings_dirty = False
-                save_btn.config(bg=t['disabled_btn_bg'], state=tk.DISABLED)
+                save_btn.config(bg=t['btn_disabled_bg'], state=tk.DISABLED)
 
         tool_var.trace('w', _check_dirty)
         plugin_var.trace('w', _check_dirty)
