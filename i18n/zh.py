@@ -18,10 +18,7 @@ ZH = {
     'menu_no_system': '(无系统工具)',
     # generic
     'window_title': 'UF工具箱',
-    'help_title': '帮助',
-    'menu_help': '帮助',
     'menu_about': '关于',
-    'menu_guide': '说明',
     'menu_topmost': '窗口置顶',
     'menu_auto_hide': '自动收缩',
     'menu_config': '配置',

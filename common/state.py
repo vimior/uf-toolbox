@@ -18,7 +18,7 @@ class AppState:
     # ---- observer pattern ----
 
     def on(self, event, callback):
-        print(f'[EVT] {event} => {callback}')
+        print(f'[EVT] {event}')
         self._listeners.setdefault(event, []).append(callback)
 
     def notify(self, event, *args, **kwargs):

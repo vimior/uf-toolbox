@@ -5,9 +5,7 @@ import sys
 import pkgutil
 import importlib.util
 import tkinter as tk
-from common.common import get_logger
-
-logger = get_logger()
+from common.common import logger
 
 
 class PluginBase:

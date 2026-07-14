@@ -4,6 +4,8 @@ import logging
 import os
 import sys
 
+__version__ = '1.0.0'
+
 if sys.platform == 'win32':
     FONT_FAMILY = 'Microsoft YaHei'
 elif sys.platform == 'darwin':
@@ -18,10 +20,6 @@ if sys.stderr is None:
 
 LOG_FMT = '[%(levelname)s][%(asctime)s] - - %(message)s'
 LOG_DATE_FMT = '%Y-%m-%d %H:%M:%S'
-_logger = logging.getLogger('uf.toolbox')
-_logger.setLevel(logging.INFO)
-_logger.addHandler(logging.NullHandler())
-
-
-def get_logger():
-    return _logger
+logger = logging.getLogger('uf.toolbox')
+logger.setLevel(logging.INFO)
+logger.addHandler(logging.NullHandler())

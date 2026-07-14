@@ -122,6 +122,8 @@ class MenuUI(AppState, tk.Tk):
 
         self._nav_sep = tk.Frame(self, height=2, bg=t['separator2'])
         self._nav_sep.pack(fill=tk.X, side=tk.TOP)
+        self._first_focus_out = True
+        self.bind('<FocusOut>', self._on_focus_out)
         self._fit_window()
 
     def apply_theme(self, t):
@@ -180,6 +182,7 @@ class MenuUI(AppState, tk.Tk):
                        activebackground=menu_hover,
                        activeforeground=menu_hover_fg,
                        borderwidth=1, relief=tk.FLAT)
+        menu.configure(postcommand=lambda m=menu, k=key: self._on_menu_open(m, k))
         menu_builder(menu)
         self._nav_menus[key] = menu
 
@@ -211,6 +214,27 @@ class MenuUI(AppState, tk.Tk):
         x = btn.winfo_rootx()
         y = btn.winfo_rooty() + btn.winfo_height()
         menu.tk_popup(x, y)
+
+    # ---- menu open/close detection via grab ----
+
+    def _on_menu_open(self, menu, key):
+        if self._menu_open:
+            return
+        self._menu_open = True
+        # Cancel any pending collapse timer (don't use _cancel_auto_hide — it resets _menu_open)
+        if self._auto_hide_job is not None:
+            self.after_cancel(self._auto_hide_job)
+            self._auto_hide_job = None
+
+    def _on_focus_out(self, event):
+        if self._first_focus_out:
+            self._first_focus_out = False
+            return
+        if self._collapsed and not self._menu_open:
+            return
+        self._menu_open = False
+        if not self._collapsed and self._is_docked_at_top():
+            self._auto_hide_job = self.after(1000, self._collapse_bar)
 
     # ---- topmost ----
 
@@ -257,7 +281,7 @@ class MenuUI(AppState, tk.Tk):
                          command=lambda: self.notify('show-log'))
         menu.add_separator()
         menu.add_command(label=l['menu_config'],
-                         command=lambda: self.notify('show-config'))
+                         command=lambda: self.notify('show-settings'))
 
     def _build_appearance_submenu(self, parent):
         l = self.lang
@@ -445,11 +469,13 @@ class MenuUI(AppState, tk.Tk):
         self._normal_height = None
         self._auto_hide_job = None
         self._color_job = None
+        self._menu_open = False
 
         def _start(event):
             self._cancel_auto_hide()
             self._drag_x = event.x_root - self.winfo_x()
             self._drag_y = event.y_root - self.winfo_y()
+            self._was_dragged = False
 
         def _move(event):
             # Expand if collapsed and user starts dragging
@@ -458,9 +484,11 @@ class MenuUI(AppState, tk.Tk):
             x = event.x_root - self._drag_x
             y = event.y_root - self._drag_y
             self.geometry(f'+{x}+{y}')
+            self._was_dragged = True
 
         def _release(event):
-            self._check_auto_hide()
+            if self._was_dragged:
+                self._check_auto_hide()
 
         def _bind(w):
             if not w.bind('<Button-1>'):
@@ -503,7 +531,7 @@ class MenuUI(AppState, tk.Tk):
             self._auto_hide_job = None
         if self._collapsed:
             return
-        if self._is_docked_at_top():
+        if self._is_docked_at_top() and not self._menu_open:
             self._auto_hide_job = self.after(500, self._collapse_bar)
 
     def _collapse_bar(self):
@@ -545,18 +573,20 @@ class MenuUI(AppState, tk.Tk):
         self.set_main_width(w)
         self.configure(bg=self.theme['bg'])
         # Cancel pending re-collapse on re-entry; re-collapse on leave
-        self.bind('<Enter>', self._cancel_auto_hide)
+        self.bind('<Enter>', self._cancel_auto_hide)  # FIXME: triggers on inter-child moves
         self.bind('<Leave>', self._on_expanded_leave)
 
     def _cancel_auto_hide(self, event=None):
         """Cancel any pending collapse timer."""
+        if self._menu_open and not event:
+            self._menu_open = False
         if self._auto_hide_job is not None:
             self.after_cancel(self._auto_hide_job)
             self._auto_hide_job = None
 
     def _on_expanded_leave(self, event):
         """Mouse left the expanded bar — collapse after delay, with pointer check."""
-        if self._collapsed or not self._is_docked_at_top():
+        if self._collapsed or not self._is_docked_at_top() or self._menu_open:
             return
         # Delay the check to avoid flicker from rapid enter/leave at screen edge
         self._auto_hide_job = self.after(500, self._collapse_if_pointer_gone)

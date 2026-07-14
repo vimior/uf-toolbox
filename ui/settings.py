@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Configuration window for tool/plugin paths."""
+"""Settings window for tool/plugin paths."""
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
@@ -7,21 +7,21 @@ from common.common import FONT_FAMILY
 from common.state import AppState
 
 
-class ConfigUI(AppState, tk.Tk):
-    """Mixin that provides a config window — opened via 'show-config' event."""
+class SettingsUI(AppState, tk.Tk):
+    """Mixin that provides a settings window — opened via 'show-settings' event."""
 
     def init(self):
         super().init()
-        self._config_win = None
-        self._config_dirty = False
-        self.on('show-config', self._show_config_window)
+        self._settings_win = None
+        self._settings_dirty = False
+        self.on('show-settings', self._show_settings)
 
     # ---- theme / lang ----
 
     def apply_theme(self, t):
-        if self._config_win is None or not self._config_win.winfo_exists():
+        if self._settings_win is None or not self._settings_win.winfo_exists():
             return
-        win = self._config_win
+        win = self._settings_win
         win.configure(bg=t['bg'])
 
         w = self._config_widgets
@@ -45,7 +45,7 @@ class ConfigUI(AppState, tk.Tk):
                           activeforeground=t['highlight_fg'])
 
         # Save button: respect dirty state
-        if self._config_dirty:
+        if self._settings_dirty:
             w['save_btn'].config(bg=t['connect_btn'], fg=t['btn_fg'],
                                  activebackground=t['active_btn_bg'],
                                  activeforeground=t['btn_fg'])
@@ -55,23 +55,23 @@ class ConfigUI(AppState, tk.Tk):
                                  activeforeground=t['btn_fg'])
 
     def apply_lang(self, l, t=None):
-        if self._config_win is None or not self._config_win.winfo_exists():
+        if self._settings_win is None or not self._settings_win.winfo_exists():
             return
-        self._config_win.title(l['config_title'])
+        self._settings_win.title(l['config_title'])
         w = self._config_widgets
         w['tool_lbl'].config(text=l['config_tool_path'])
         w['plugin_lbl'].config(text=l['config_plugin_path'])
         w['tool_btn'].config(text=l['config_select'])
         w['plugin_btn'].config(text=l['config_select'])
         w['save_btn'].config(text=l['config_save'])
-        self.notify('set-win-position', self._config_win, h=200)
+        self.notify('set-win-position', self._settings_win, h=200)
 
     # ---- window ----
 
-    def _show_config_window(self):
-        if self._config_win is not None and self._config_win.winfo_exists():
-            self._config_win.lift()
-            self._config_win.focus_force()
+    def _show_settings(self):
+        if self._settings_win is not None and self._settings_win.winfo_exists():
+            self._settings_win.lift()
+            self._settings_win.focus_force()
             return
 
         l = self.lang
@@ -83,7 +83,7 @@ class ConfigUI(AppState, tk.Tk):
         win.title(l['config_title'])
         win.resizable(False, False)
         win.configure(bg=t['bg'])
-        self._config_win = win
+        self._settings_win = win
 
         w = {}  # widget refs for apply_theme / apply_lang
 
@@ -169,19 +169,19 @@ class ConfigUI(AppState, tk.Tk):
         self._config_widgets = w
 
         # --- Change tracking ---
-        self._config_dirty = False
+        self._settings_dirty = False
 
         def _check_dirty(*args):
             cur_tool = tool_var.get().strip()
             cur_plugin = plugin_var.get().strip()
             is_dirty = (cur_tool != self._orig_tool
                         or cur_plugin != self._orig_plugin)
-            if is_dirty and not self._config_dirty:
-                self._config_dirty = True
+            if is_dirty and not self._settings_dirty:
+                self._settings_dirty = True
                 save_btn.config(bg=t['connect_btn'], state=tk.NORMAL,
                                 activebackground=t['active_btn_bg'])
-            elif not is_dirty and self._config_dirty:
-                self._config_dirty = False
+            elif not is_dirty and self._settings_dirty:
+                self._settings_dirty = False
                 save_btn.config(bg=t['disabled_btn_bg'], state=tk.DISABLED)
 
         tool_var.trace('w', _check_dirty)
@@ -205,12 +205,12 @@ class ConfigUI(AppState, tk.Tk):
         win.bind('<Destroy>', lambda _: self._on_config_win_closed())
 
         self.notify('set-win-position', win, h=200)
-        win.lift()
-        win.focus_force()
+        # win.lift()
+        # win.focus_force()
 
     def _on_config_win_closed(self):
-        self._config_win = None
-        self._config_dirty = False
+        self._settings_win = None
+        self._settings_dirty = False
 
     @staticmethod
     def _pick_folder(var):

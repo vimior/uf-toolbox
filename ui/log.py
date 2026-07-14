@@ -6,7 +6,7 @@ import logging
 import tkinter as tk
 from tkinter import ttk
 from common.state import AppState
-from common.common import FONT_FAMILY, LOG_FMT, LOG_DATE_FMT, get_logger
+from common.common import FONT_FAMILY, LOG_FMT, LOG_DATE_FMT, logger
 
 
 class _LogRedirector:
@@ -40,13 +40,13 @@ class LogUI(AppState, tk.Tk):
         stream_handler = logging.StreamHandler(sys.stdout)
         stream_handler.setLevel(logging.DEBUG)
         stream_handler.setFormatter(logging.Formatter(LOG_FMT, LOG_DATE_FMT))
-        get_logger().addHandler(stream_handler)
+        logger.addHandler(stream_handler)
 
     def init(self):
         super().init()
-        self.on('show-log', self._show)
+        self.on('show-log', self._show_log)
 
-    def _show(self):
+    def _show_log(self):
         if self._log_win is not None and self._log_win.winfo_exists():
             self._log_win.lift()
             self._log_win.focus_force()

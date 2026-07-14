@@ -5,9 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
-from common.common import get_logger
-
-logger = get_logger()
+from common.common import logger
 
 _running = {}  # name -> [Popen, ...]
 

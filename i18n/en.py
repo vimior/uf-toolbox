@@ -18,10 +18,7 @@ EN = {
     'menu_no_system': '(No System Tools)',
     # generic
     'window_title': 'UF ToolBox',
-    'help_title': 'Help',
-    'menu_help': 'Help',
     'menu_about': 'About',
-    'menu_guide': 'Guide',
     'menu_topmost': 'Always on Top',
     'menu_auto_hide': 'Auto Hide',
     'menu_config': 'Config',
