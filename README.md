@@ -45,5 +45,5 @@ uf-toolbox
 使用 PyInstaller 打包为独立可执行文件：
 
 ```bash
-pyinstaller uf_toolbox.spec
+pyinstaller uf_toolbox.spec --clean
 ```
