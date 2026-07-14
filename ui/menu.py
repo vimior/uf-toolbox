@@ -340,7 +340,7 @@ class MenuUI(AppState, tk.Tk):
             menu = getattr(self, '_tools_menu', None) or getattr(self, '_system_menu', None)
         menu.delete(0, tk.END)
         empty_key = 'menu_no_system' if filter_key == 'system' else 'menu_no_tools'
-        result = scan_tools(self.resolved_lang, menu=filter_key, path=self.tool_path)
+        result = scan_tools(self.resolved_lang, tab=filter_key, path=self.tool_path)
         if not result['tools'] and not result['groups']:
             menu.add_command(
                 label=self.lang.get(empty_key, '(No Tools)'),

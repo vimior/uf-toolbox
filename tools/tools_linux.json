@@ -1,220 +1,61 @@
 {
   "groups": [
     {
-      "name": "常用",
-      "name_zh": "常用",
-      "name_en": "Common",
+      "id": "system/common", "name": "常用", "name_en": "Common",
       "tools": [
-        {
-          "name": "文本编辑器",
-          "name_zh": "文本编辑器",
-          "name_en": "Text Editor",
-          "path": "gedit"
-        },
-        {
-          "name": "计算器",
-          "name_zh": "计算器",
-          "name_en": "Calculator",
-          "path": "gnome-calculator"
-        },
-        {
-          "name": "截图",
-          "name_zh": "截图",
-          "name_en": "Screenshot",
-          "path": "gnome-screenshot",
-          "args": "--interactive"
-        },
-        {
-          "name": "字符映射表",
-          "name_zh": "字符映射表",
-          "name_en": "Character Map",
-          "path": "gnome-characters"
-        },
-        {
-          "name": "文件管理器",
-          "name_zh": "文件管理器",
-          "name_en": "File Manager",
-          "path": "nautilus"
-        },
-        {
-          "name": "系统监视器",
-          "name_zh": "系统监视器",
-          "name_en": "System Monitor",
-          "path": "gnome-system-monitor"
-        }
-      ],
-      "menu": "system"
+        { "id": "editor", "name": "文本编辑器", "name_en": "Text Editor", "path": "gedit" },
+        { "id": "calc", "name": "计算器", "name_en": "Calculator", "path": "gnome-calculator" },
+        { "id": "screenshot", "name": "截图", "name_en": "Screenshot", "path": "gnome-screenshot", "args": "--interactive" },
+        { "id": "charmap", "name": "字符映射表", "name_en": "Character Map", "path": "gnome-characters" },
+        { "id": "filemgr", "name": "文件管理器", "name_en": "File Manager", "path": "nautilus" },
+        { "id": "sysmon", "name": "系统监视器", "name_en": "System Monitor", "path": "gnome-system-monitor" }
+      ]
     },
     {
-      "name": "终端",
-      "name_zh": "终端",
-      "name_en": "Terminals",
+      "id": "system/terminal", "name": "终端", "name_en": "Terminals",
       "tools": [
-        {
-          "name": "GNOME 终端",
-          "name_zh": "GNOME 终端",
-          "name_en": "GNOME Terminal",
-          "path": "gnome-terminal",
-          "shell": true,
-          "console": true
-        },
-        {
-          "name": "Xterm",
-          "name_zh": "Xterm",
-          "name_en": "Xterm",
-          "path": "xterm",
-          "shell": true,
-          "console": true
-        },
-        {
-          "name": "Bash",
-          "name_zh": "Bash",
-          "name_en": "Bash",
-          "path": "bash",
-          "shell": true,
-          "console": true
-        }
-      ],
-      "menu": "system"
+        { "id": "gnome-term", "name": "GNOME 终端", "name_en": "GNOME Terminal", "path": "gnome-terminal", "shell": true, "console": true },
+        { "id": "xterm", "name": "Xterm", "name_en": "Xterm", "path": "xterm", "shell": true, "console": true },
+        { "id": "bash", "name": "Bash", "name_en": "Bash", "path": "bash", "shell": true, "console": true }
+      ]
     },
     {
-      "name": "网络",
-      "name_zh": "网络",
-      "name_en": "Network",
+      "id": "system/network", "name": "网络", "name_en": "Network",
       "tools": [
-        {
-          "name": "网络连接",
-          "name_zh": "网络连接",
-          "name_en": "Network Connections",
-          "path": "nm-connection-editor"
-        },
-        {
-          "name": "资源监视器",
-          "name_zh": "资源监视器",
-          "name_en": "Resource Monitor",
-          "path": "htop",
-          "shell": true,
-          "console": true
-        },
-        {
-          "name": "远程桌面",
-          "name_zh": "远程桌面",
-          "name_en": "Remote Desktop",
-          "path": "remmina"
-        },
-        {
-          "name": "防火墙配置",
-          "name_zh": "防火墙配置",
-          "name_en": "Firewall Config",
-          "path": "gufw"
-        }
-      ],
-      "menu": "system"
+        { "id": "nm", "name": "网络连接", "name_en": "Network Connections", "path": "nm-connection-editor" },
+        { "id": "htop", "name": "资源监视器", "name_en": "Resource Monitor", "path": "htop", "shell": true, "console": true },
+        { "id": "remmina", "name": "远程桌面", "name_en": "Remote Desktop", "path": "remmina" },
+        { "id": "gufw", "name": "防火墙配置", "name_en": "Firewall Config", "path": "gufw" }
+      ]
     },
     {
-      "name": "硬件",
-      "name_zh": "硬件",
-      "name_en": "Hardware",
+      "id": "system/hardware", "name": "硬件", "name_en": "Hardware",
       "tools": [
-        {
-          "name": "声音设置",
-          "name_zh": "声音设置",
-          "name_en": "Sound Settings",
-          "path": "pavucontrol"
-        },
-        {
-          "name": "磁盘管理",
-          "name_zh": "磁盘管理",
-          "name_en": "Disk Management",
-          "path": "gnome-disks"
-        },
-        {
-          "name": "设备列表",
-          "name_zh": "设备列表",
-          "name_en": "Device List",
-          "path": "lspci",
-          "args": "-k",
-          "shell": true,
-          "console": true
-        },
-        {
-          "name": "USB 设备",
-          "name_zh": "USB 设备",
-          "name_en": "USB Devices",
-          "path": "lsusb",
-          "shell": true,
-          "console": true
-        },
-        {
-          "name": "打印机",
-          "name_zh": "打印机",
-          "name_en": "Printers",
-          "path": "system-config-printer"
-        }
-      ],
-      "menu": "system"
+        { "id": "sound", "name": "声音设置", "name_en": "Sound Settings", "path": "pavucontrol" },
+        { "id": "disks", "name": "磁盘管理", "name_en": "Disk Management", "path": "gnome-disks" },
+        { "id": "lspci", "name": "设备列表", "name_en": "Device List", "path": "lspci", "args": "-k", "shell": true, "console": true },
+        { "id": "lsusb", "name": "USB 设备", "name_en": "USB Devices", "path": "lsusb", "shell": true, "console": true },
+        { "id": "printer", "name": "打印机", "name_en": "Printers", "path": "system-config-printer" }
+      ]
     },
     {
-      "name": "系统管理",
-      "name_zh": "系统管理",
-      "name_en": "Administration",
-      "menu": "system",
+      "id": "system/admin", "name": "系统管理", "name_en": "Administration",
       "groups": [
         {
-          "name": "系统信息",
-          "name_zh": "系统信息",
-          "name_en": "System Info",
+          "id": "info", "name": "系统信息", "name_en": "System Info",
           "tools": [
-            {
-              "name": "系统设置",
-              "name_zh": "系统设置",
-              "name_en": "Settings",
-              "path": "gnome-control-center"
-            },
-            {
-              "name": "用户管理",
-              "name_zh": "用户管理",
-              "name_en": "User Management",
-              "path": "gnome-control-center",
-              "args": "user-accounts"
-            },
-            {
-              "name": "软件管理",
-              "name_zh": "软件管理",
-              "name_en": "Software Manager",
-              "path": "gnome-software"
-            },
-            {
-              "name": "配置编辑器",
-              "name_zh": "配置编辑器",
-              "name_en": "Configuration Editor",
-              "path": "dconf-editor"
-            }
+            { "id": "settings", "name": "系统设置", "name_en": "Settings", "path": "gnome-control-center" },
+            { "id": "users", "name": "用户管理", "name_en": "User Management", "path": "gnome-control-center", "args": "user-accounts" },
+            { "id": "software", "name": "软件管理", "name_en": "Software Manager", "path": "gnome-software" },
+            { "id": "dconf", "name": "配置编辑器", "name_en": "Configuration Editor", "path": "dconf-editor" }
           ]
         },
         {
-          "name": "磁盘与设备",
-          "name_zh": "磁盘与设备",
-          "name_en": "Disk & Devices",
+          "id": "disk", "name": "磁盘与设备", "name_en": "Disk & Devices",
           "tools": [
-            {
-              "name": "系统日志",
-              "name_zh": "系统日志",
-              "name_en": "System Logs",
-              "path": "gnome-logs"
-            },
-            {
-              "name": "分区编辑器",
-              "name_zh": "分区编辑器",
-              "name_en": "Partition Editor",
-              "path": "gparted"
-            },
-            {
-              "name": "磁盘使用分析",
-              "name_zh": "磁盘使用分析",
-              "name_en": "Disk Usage Analyzer",
-              "path": "baobab"
-            }
+            { "id": "logs", "name": "系统日志", "name_en": "System Logs", "path": "gnome-logs" },
+            { "id": "gparted", "name": "分区编辑器", "name_en": "Partition Editor", "path": "gparted" },
+            { "id": "baobab", "name": "磁盘使用分析", "name_en": "Disk Usage Analyzer", "path": "baobab" }
           ]
         }
       ]

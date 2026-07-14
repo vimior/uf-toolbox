@@ -10,9 +10,13 @@ from common.common import logger
 _running = {}  # name -> [Popen, ...]
 
 
-def scan_tools(lang='en', menu=None, path=None):
-    """Return {'tools': [...], 'groups': [...]}, optionally filtered by *menu* key."""
-    all_tools = []
+def scan_tools(lang='en', tab=None, path=None):
+    """Return {'tools': [...], 'groups': [...]}, optionally filtered by *tab*.
+
+    Multiple directories are scanned in order; tools with duplicate IDs from
+    later directories override earlier ones. Tools without IDs are appended."""
+    tools_by_id = {}  # id -> tool (for dedup)
+    all_tools_no_id = []
     all_groups = []
     dirs = _resolve_dirs(path)
     for tools_dir in dirs:
@@ -29,12 +33,53 @@ def scan_tools(lang='en', menu=None, path=None):
             result = _from_config(tools_dir, cfg_path, lang)
         else:
             result = _from_scan(tools_dir)
-        all_tools.extend(result.get('tools', []))
-        all_groups.extend(result.get('groups', []))
-    if menu:
-        all_groups = [g for g in all_groups if g.get('menu', 'tools') == menu]
-        all_tools = [t for t in all_tools if t.get('menu', 'tools') == menu]
+        for t in result.get('tools', []):
+            tid = t.get('id')
+            if tid:
+                tools_by_id[tid] = t  # later overrides earlier
+            else:
+                all_tools_no_id.append(t)
+        for g in result.get('groups', []):
+            _merge_group(g, all_groups)
+    # Cross-merge: top-level ID'd tools override matching tools inside groups
+    _consumed_ids = set()
+    if tools_by_id:
+        for g in all_groups:
+            _override_group_tools(g, tools_by_id, _consumed_ids)
+    # Build final tools list: only un-consumed ID'd tools + un-identified
+    all_tools = [t for tid, t in tools_by_id.items() if tid not in _consumed_ids]
+    all_tools += all_tools_no_id
+    if tab:
+        all_groups = [g for g in all_groups if g.get('tab', 'tools') == tab]
+        all_tools = [t for t in all_tools if t.get('tab', 'tools') == tab]
     return {'tools': all_tools, 'groups': all_groups}
+
+
+def _override_group_tools(group, tools_by_id, consumed=None):
+    """Replace tools in *group* (and sub-groups) with matching entries from *tools_by_id*.
+    *consumed* tracks IDs that were used for override — those should not appear as top-level."""
+    if consumed is None:
+        consumed = set()
+    for i, t in enumerate(group.get('tools', [])):
+        tid = t.get('id')
+        if tid and tid in tools_by_id:
+            group['tools'][i] = tools_by_id[tid]
+            consumed.add(tid)
+    for sg in group.get('groups', []):
+        _override_group_tools(sg, tools_by_id, consumed)
+
+
+def _merge_group(src, dst_list):
+    """Merge *src* group into *dst_list* by ID; if ID matches, merge tools recursively."""
+    gid = src.get('id')
+    if gid:
+        for d in dst_list:
+            if d.get('id') == gid:
+                d['tools'].extend(src.get('tools', []))
+                for sg in src.get('groups', []):
+                    _merge_group(sg, d.setdefault('groups', []))
+                return
+    dst_list.append(src)
 
 
 def launch(tool):
@@ -48,8 +93,12 @@ def launch(tool):
     cwd = tool.get('cwd', '')
     env = tool.get('env')
     shell = tool.get('shell', True)
+    tool_id = tool.get('id', '')
     flags = _creation_flags(tool)
-    logger.info(f'[Tool] {name}  ->  {cmd}')
+    if tool_id:
+        logger.info(f'[Tool:{tool_id}] {name}  ->  {cmd}')
+    else:
+        logger.info(f'[Tool] {name}  ->  {cmd}')
     if name not in _running:
         _running[name] = []
     proc = subprocess.Popen(
@@ -125,13 +174,18 @@ def _resolve_name(entry, lang):
     name = entry.get('name', '')
     if lang.startswith('zh') and entry.get('name_zh'):
         return entry['name_zh']
+    if lang.startswith('zh') and entry.get('name_cn'):
+        return entry['name_cn']
     if lang == 'en' and entry.get('name_en'):
         return entry['name_en']
     return name
 
 
-def _parse_tool(tools_dir, entry, lang):
-    """Parse a single tool entry into the internal dict."""
+def _parse_tool(tools_dir, entry, lang, prefix=''):
+    """Parse a single tool entry into the internal dict.
+
+    *prefix* is the ID path from parent groups (e.g. 'system/common').
+    The tool's full ID becomes 'prefix/tool_id'."""
     name = _resolve_name(entry, lang)
     exe = entry.get('path', '')
     if not name or not exe:
@@ -141,7 +195,12 @@ def _parse_tool(tools_dir, entry, lang):
         resolved = shutil.which(exe)
         if resolved:
             exe_path = resolved
+    tool_id = entry.get('id', '')
+    full_id = f'{prefix}/{tool_id}' if (prefix and tool_id) else (tool_id or None)
+    # Derive tab from ID first segment, default 'tools'
+    tab = full_id.split('/')[0] if full_id else 'tools'
     return {
+        'id': full_id,
         'name': name,
         '_exe_path': exe_path,
         'args': entry.get('args', ''),
@@ -153,7 +212,7 @@ def _parse_tool(tools_dir, entry, lang):
         'wait': entry.get('wait', False),
         'multiple': entry.get('multiple', True),
         'kill_on_exit': entry.get('kill_on_exit', False),
-        'menu': entry.get('menu', 'tools'),
+        'tab': tab,
     }
 
 
@@ -169,18 +228,23 @@ def _from_config(tools_dir, cfg_path, lang):
     return {'tools': entries, 'groups': groups}
 
 
-def _parse_groups(tools_dir, raw_groups, lang):
-    """Recursively parse nested groups."""
+def _parse_groups(tools_dir, raw_groups, lang, prefix=''):
+    """Recursively parse nested groups. *prefix* is the ID path from ancestors."""
     result = []
     for g in raw_groups:
-        grp = {'name': _resolve_name(g, lang), 'tools': [], 'groups': [],
-               'menu': g.get('menu', 'tools')}
+        gid = g.get('id', '')
+        full_prefix = f'{prefix}/{gid}' if (prefix and gid) else (gid or prefix)
+        # Derive tab from ID first segment, default 'tools'
+        tab = full_prefix.split('/')[0] if full_prefix else 'tools'
+        grp = {'id': full_prefix or None,
+               'name': _resolve_name(g, lang), 'tools': [], 'groups': [],
+               'tab': tab}
         for entry in g.get('tools', []):
-            t = _parse_tool(tools_dir, entry, lang)
+            t = _parse_tool(tools_dir, entry, lang, prefix=full_prefix)
             if t:
                 grp['tools'].append(t)
         if g.get('groups'):
-            grp['groups'] = _parse_groups(tools_dir, g['groups'], lang)
+            grp['groups'] = _parse_groups(tools_dir, g['groups'], lang, prefix=full_prefix)
         if grp['tools'] or grp['groups']:
             result.append(grp)
     return result
@@ -207,6 +271,6 @@ def _from_scan(tools_dir):
                 'wait': False,
                 'multiple': True,
                 'kill_on_exit': False,
-                'menu': 'tools',
+                'tab': 'tools',
             })
     return {'tools': entries, 'groups': []}
