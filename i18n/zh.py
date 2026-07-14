@@ -31,5 +31,5 @@ ZH = {
     'menu_log': '日志',
     'log_title': '日志',
     'log_clear': '清空',
-    'about_text': 'UF Toolbox v1.0.0\n\nCopyright © 2026 UFACTORY\n\nAuthor: Dwen',
+    'about_text': 'UF工具箱 v{}\n\nCopyright © 2026 UFACTORY\n\n作者: Dwen',
 }

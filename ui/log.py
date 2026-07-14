@@ -57,7 +57,7 @@ class LogUI(AppState, tk.Tk):
         self.notify('set-win-icon', win)
         win.title(l['log_title'])
         win.configure(bg=t['bg'])
-        win.resizable(False, False)
+        win.resizable(True, True)
         self._log_win = win
 
         self._log_border_frame = border = tk.Frame(

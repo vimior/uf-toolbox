@@ -278,12 +278,13 @@ class MenuUI(AppState, tk.Tk):
         menu.add_checkbutton(label=l['menu_auto_hide'],
                              variable=self._auto_hide_var,
                              command=self._toggle_auto_hide)
+        menu.add_command(label=l['menu_config'],
+                         command=lambda: self.notify('show-settings'))
         menu.add_separator()
         menu.add_command(label=l['menu_log'],
                          command=lambda: self.notify('show-log'))
-        menu.add_separator()
-        menu.add_command(label=l['menu_config'],
-                         command=lambda: self.notify('show-settings'))
+        menu.add_command(label=l['menu_about'],
+                         command=lambda: self.notify('show-about'))
 
     def _build_appearance_submenu(self, parent):
         l = self.lang

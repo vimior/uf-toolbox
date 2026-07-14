@@ -7,11 +7,12 @@ import tkinter as tk
 from ui.menu import MenuUI
 from ui.log import LogUI
 from ui.settings import SettingsUI
+from ui.about import AboutUI
 from plugins.base import load_plugins
 from tools.scanner import kill_all
 
 
-class UFToolBox(MenuUI, LogUI, SettingsUI, tk.Tk):
+class UFToolBox(MenuUI, LogUI, SettingsUI, AboutUI, tk.Tk):
     """Plugin-host application with MRO-based architecture."""
 
     def __init__(self):
