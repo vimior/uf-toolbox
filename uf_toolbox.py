@@ -3,7 +3,7 @@
 import os
 import sys
 import tkinter as tk
-
+from tkinter import messagebox
 from ui.menu import MenuUI
 from ui.log import LogUI
 from ui.settings import SettingsUI
@@ -129,9 +129,49 @@ class UFToolBox(MenuUI, LogUI, SettingsUI, AboutUI, tk.Tk):
 
 
 # ================================================================
+#  Single-instance guard
+# ================================================================
+_MUTEX_NAME = 'Global\\UF_Toolbox_SingleInstance'
+
+
+def _lock_instance():
+    """Acquire single-instance lock. Returns True if this is the only instance."""
+    if sys.platform == 'win32':
+        import ctypes
+        ctypes.windll.kernel32.CreateMutexW(None, False, _MUTEX_NAME)
+        return ctypes.windll.kernel32.GetLastError() != 183  # 183 = ERROR_ALREADY_EXISTS
+    else:
+        import fcntl
+        _lock_path = os.path.join(os.path.expanduser('~'), '.uf_toolbox.lock')
+        _lock_fp = open(_lock_path, 'w')
+        try:
+            fcntl.lockf(_lock_fp, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _lock_fp.write(str(os.getpid()))
+            _lock_fp.flush()
+            return True
+        except (IOError, OSError):
+            return False
+
+
+# ================================================================
 #  Entry point
 # ================================================================
 def main():
+    if not _lock_instance():
+        # Determine language from system locale
+        try:
+            import locale
+            loc = locale.getdefaultlocale()[0]
+            is_zh = loc and loc.startswith('zh')
+        except Exception:
+            is_zh = False
+        msg = '程序已在运行中，请勿重复启动。' if is_zh else 'Application is already running.'
+
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showinfo('UF Toolbox', msg)
+        root.destroy()
+        sys.exit(1)
     toolbox = UFToolBox()
     toolbox.mainloop()
 
