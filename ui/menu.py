@@ -445,7 +445,7 @@ class MenuUI(AppState, tk.Tk):
             if not was_loaded and plugin.loaded:
                 self._refresh_plugins_menu()
         except Exception as e:
-            logger.error(f'show plugin window error, {str(e)}')
+            logger.error(f'[Plugin:{plugin.name}] show error, {str(e)}')
 
     # ---- theme / lang ----
 
