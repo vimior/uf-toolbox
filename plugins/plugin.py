@@ -68,8 +68,8 @@ class PluginManager:
         # pm.plugins is the {name: Handle} registry
     """
 
-    META_KEYS = ('name', 'priority', 'fixed_position', 'fixed_size',
-                 'use_app_icon', 'reload')
+    META_KEYS = ('name', 'name_zh', 'name_en', 'priority', 'fixed_position',
+                 'fixed_size', 'use_app_icon', 'reload')
 
     # ---- inner handle class ------------------------------------------------
 
@@ -104,7 +104,14 @@ class PluginManager:
             else:
                 # Lazy — use metadata from AST parsing (or defaults)
                 meta = metadata or {}
-                self.name = meta.get('name', module_name or 'Unnamed')
+                raw_name = meta.get('name') or module_name or 'Unnamed'
+                # Resolve i18n name: name_zh/name_en take priority over raw name
+                name_zh = meta.get('name_zh')
+                name_en = meta.get('name_en')
+                if name_zh and name_en:
+                    lang = getattr(app, 'current_lang_name', 'en')
+                    raw_name = name_zh if lang == 'zh' else name_en
+                self.name = raw_name
                 self.fixed_position = meta.get('fixed_position', True)
                 self.fixed_size = meta.get('fixed_size', True)
                 self.use_app_icon = meta.get('use_app_icon', True)
@@ -345,8 +352,8 @@ class PluginManager:
                     self.plugins[name] = self.Handle(
                         cls, app, self, pkg_dir=pkg_dir, module_name=mod_name,
                         class_name=cls_name)
-                    self.logger.info(
-                        f'Plugin reloaded: {cls.name} ({name})')
+                    # self.logger.info(
+                    #     f'Plugin reloaded: {cls.name} ({name})')
                     continue
 
                 # First discovery — use AST to get metadata, defer import
@@ -361,8 +368,8 @@ class PluginManager:
                 self.plugins[name] = self.Handle(
                     None, app, self, pkg_dir=pkg_dir, module_name=mod_name,
                     class_name=cls_name, metadata=meta)
-                self.logger.info(
-                    f'Plugin discovered: {meta.get("name", name)} ({name})')
+                # self.logger.info(
+                #     f'Plugin discovered: {meta.get("name", name)} ({name})')
 
         # Remove plugins that disappeared from disk
         for stale in list(self.plugins.keys() - on_disk):
@@ -371,4 +378,4 @@ class PluginManager:
                 continue
             h.unload()
             del self.plugins[stale]
-            self.logger.info(f'Plugin removed: {stale}')
+            # self.logger.info(f'Plugin removed: {stale}')
