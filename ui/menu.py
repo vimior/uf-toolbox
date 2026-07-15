@@ -5,7 +5,7 @@ import sys
 import tkinter as tk
 from common.state import AppState
 from common.common import FONT_FAMILY, logger
-from plugins.plugin import PluginManager
+from plugins.manager import PluginManager
 from tools.manager import ToolManager
 
 MENU_ACTIVEBORDERWIDTH = 3
