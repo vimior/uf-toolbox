@@ -12,6 +12,8 @@ ZH = {
     'menu_lang_auto': '自动',
     'menu_plugins': '插件',
     'menu_no_plugins': '(无插件)',
+    'menu_plugin_open': '打开/恢复',
+    'menu_plugin_close': '关闭/销毁',
     'menu_tools': '工具',
     'menu_no_tools': '(无工具)',
     'menu_system': '系统',

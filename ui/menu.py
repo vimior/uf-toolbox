@@ -374,16 +374,39 @@ class MenuUI(AppState, tk.Tk):
     # ---- plugins ----
 
     def _refresh_plugins_menu(self):
+        self._destroy_submenus(self._plugins_menu)
         self._plugins_menu.delete(0, tk.END)
         if not self._pm.plugins:
             self._plugins_menu.add_command(
                 label=self.lang.get('menu_no_plugins', '(No Plugins)'))
             return
+        l, t = self.lang, self.theme
         for p in sorted(self._pm.plugins.values(),
                         key=lambda x: x.priority, reverse=True):
-            self._plugins_menu.add_command(
-                label=p.name,
-                command=lambda plugin=p: self._show_plugin_window(plugin))
+            is_open = p.alive
+            dot = '● ' if is_open else '  '
+
+            if p.reload or not is_open:
+                # Plain command — click to open/focus
+                self._plugins_menu.add_command(
+                    label=f'{dot}{p.name}',
+                    command=lambda plugin=p: self._show_plugin_window(plugin))
+            else:
+                # reload=False and open: submenu with close action
+                sub = tk.Menu(self._plugins_menu, tearoff=0, font=(FONT_FAMILY, 11),
+                              bg=t['menu_bg'], fg=t['fg'],
+                              activebackground=t['menu_hover_bg'],
+                              activeforeground=t['menu_hover_fg'],
+                              activeborderwidth=MENU_ACTIVEBORDERWIDTH)
+
+                sub.add_command(
+                    label=l.get('menu_plugin_open', 'Open / Restore'),
+                    command=lambda plugin=p: self._show_plugin_window(plugin))
+                sub.add_command(
+                    label=l.get('menu_plugin_close', 'Close Window'),
+                    command=lambda plugin=p: self._close_plugin_window(plugin))
+
+                self._plugins_menu.add_cascade(label=f'{dot}{p.name}', menu=sub)
 
     def _on_plugins_menu_open(self, event):
         self._load_plugins()
@@ -423,29 +446,38 @@ class MenuUI(AppState, tk.Tk):
     def _show_plugin_window(self, plugin):
         try:
             was_loaded = plugin.loaded
+            was_open = plugin.alive
             win = plugin.create_window(self)
             if win is not None:
-                # Break transient so plugin is not forced topmost when main window is
-                if self.always_on_top:
-                    win.tk.call('wm', 'transient', str(win), '')
-                if plugin.fixed_position or plugin.fixed_size:
-                    self.emit('set-win-position', win,
-                        x=(self.winfo_x() + self.winfo_width() + 4
-                           if plugin.fixed_position else None),
-                        y=(self.winfo_y() if plugin.fixed_position else None),
-                        w=(420 if plugin.fixed_size else None),
-                        h=(self.main_height if plugin.fixed_size else None),
-                        fixed_size=plugin.fixed_size,
-                        fixed_position=plugin.fixed_position)
-                if plugin.use_app_icon:
-                    self.emit('set-win-icon', win)
-                win.lift()
-                win.focus_force()
+                if not was_open:
+                    # New window — set up position, icon, transient once
+                    if self.always_on_top:
+                        win.tk.call('wm', 'transient', str(win), '')
+                    if plugin.fixed_position or plugin.fixed_size:
+                        self.emit('set-win-position', win,
+                            x=(self.winfo_x() + self.winfo_width() + 4
+                               if plugin.fixed_position else None),
+                            y=(self.winfo_y() if plugin.fixed_position else None),
+                            w=(420 if plugin.fixed_size else None),
+                            h=(self.main_height if plugin.fixed_size else None),
+                            fixed_size=plugin.fixed_size,
+                            fixed_position=plugin.fixed_position)
+                    if plugin.use_app_icon:
+                        self.emit('set-win-icon', win)
             # If plugin was just lazy-loaded, refresh menu to show real name/priority
             if not was_loaded and plugin.loaded:
                 self._refresh_plugins_menu()
         except Exception as e:
             logger.error(f'[Plugin:{plugin.name}] show error, {str(e)}')
+
+    def _close_plugin_window(self, plugin):
+        """Explicitly destroy a plugin window from the menu."""
+        try:
+            plugin.destroy_window()
+        except Exception as e:
+            logger.error(f'[Plugin:{plugin.name}] close error, {str(e)}')
+        finally:
+            self._refresh_plugins_menu()
 
     # ---- theme / lang ----
 

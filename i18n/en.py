@@ -12,6 +12,8 @@ EN = {
     'menu_lang_auto': 'Auto',
     'menu_plugins': 'Plugins',
     'menu_no_plugins': '(No Plugins)',
+    'menu_plugin_open': 'Open / Restore',
+    'menu_plugin_close': 'Close / Destroy',
     'menu_tools': 'Tools',
     'menu_no_tools': '(No Tools)',
     'menu_system': 'System',

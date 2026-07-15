@@ -146,6 +146,30 @@ class PluginManager:
             # Reset so next click re-imports (hot-reload)
             self._cls = None
 
+        def destroy_window(self):
+            """Destroy the plugin window if alive. Does NOT clear _cls.
+
+            Use this for explicit close/reload from the UI — keeps the imported
+            class so the next create_window() can instantiate without re-importing.
+            """
+            if self._inst is not None:
+                if self._inst.winfo_exists():
+                    try:
+                        self._inst.on_destroy()
+                    except Exception as e:
+                        self._mgr.logger.error(
+                            f'[Plugin:{self.name}] on_destroy error: {e}')
+                    try:
+                        self._inst.destroy()
+                    except Exception:
+                        pass
+                self._inst = None
+
+        def reload_window(self, parent):
+            """Force destroy + recreate the plugin window (dev-time hot-reload)."""
+            self.destroy_window()
+            return self.create_window(parent)
+
         def _ensure_loaded(self):
             """Import plugin module and resolve class if not already loaded."""
             if self._cls is not None:
@@ -172,14 +196,16 @@ class PluginManager:
 
         def create_window(self, parent):
             if self.alive:
+                was_hidden = not self._inst.winfo_viewable()
                 self._inst.deiconify()
                 self._inst.lift()
                 self._inst.focus_force()
-                try:
-                    self._inst.on_show()
-                except Exception as e:
-                    self._mgr.logger.error(
-                        f'[Plugin:{self.name}] on_show error: {e}')
+                if was_hidden:
+                    try:
+                        self._inst.on_show()
+                    except Exception as e:
+                        self._mgr.logger.error(
+                            f'[Plugin:{self.name}] on_show error: {e}')
                 return self._inst
 
             if self.reload:
