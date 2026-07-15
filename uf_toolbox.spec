@@ -16,9 +16,12 @@ _extra_hidden = [
     # network / web (~170 KB total)
     'urllib.request', 'urllib.parse', 'webbrowser',
     # config / file / db (~830 KB total)
-    'configparser', 'logging.handlers', 'zipfile', 'shutil', 'sqlite3',
+    'configparser', 'logging.handlers', 'zipfile', 'shutil',
     # introspection — plugins may load dynamically (~160 KB total)
     'inspect', 'pkgutil', 'importlib.util',
+    'xarm', 'xarm.x3', 'xarm.x3.base',
+    'xarm.x3.code', 'xarm.x3.thread',
+    'xarm.x3.utils', 'xarm.wrapper'
 ]
 
 a = Analysis(
@@ -38,10 +41,7 @@ a = Analysis(
         'plugins', 'plugins.plugin',
         'common', 'common.common', 'common.state',
         'ui', 'ui.menu', 'ui.log', 'ui.settings',
-        'tools', 'tools.manager',
-        'xarm', 'xarm.x3', 'xarm.x3.base',
-        'xarm.x3.code', 'xarm.x3.thread',
-        'xarm.x3.utils', 'xarm.wrapper'
+        'tools', 'tools.manager'
     ] + _extra_hidden,
     hookspath=[],
     hooksconfig={},
