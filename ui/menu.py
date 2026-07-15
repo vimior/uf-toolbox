@@ -96,6 +96,10 @@ class MenuUI(AppState, tk.Tk):
                            self._build_plugins_menu, t,
                            on_click=self._on_plugins_menu_open)
 
+        # Separator right after plugins, packed LEFT so it hugs the button
+        self._exit_sep = tk.Frame(bar, bg=t['nav_sep'], width=1)
+        self._exit_sep.pack(side=tk.LEFT, fill=tk.Y)
+
         # Exit icon — swaps image on hover
         x_img = _load_icon('uf_toolbox_close.png')
         x_hover = _load_icon('uf_toolbox_close_hover.png')
@@ -113,10 +117,6 @@ class MenuUI(AppState, tk.Tk):
         btn.pack(side=tk.RIGHT, fill=tk.Y)
         btn.bind('<Button-1>', lambda e: self.destroy())
         self._exit_btn = btn
-
-        # Separator between menus and exit
-        self._exit_sep = tk.Frame(bar, bg=t['nav_sep'], width=1)
-        self._exit_sep.pack(side=tk.RIGHT, fill=tk.Y)
 
         # Make the navbar (and its non-clickable children) a drag handle.
         self._enable_drag(bar)
