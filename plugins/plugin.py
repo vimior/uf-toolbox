@@ -175,7 +175,11 @@ class PluginManager:
                 self._inst.deiconify()
                 self._inst.lift()
                 self._inst.focus_force()
-                self._inst.on_show()
+                try:
+                    self._inst.on_show()
+                except Exception as e:
+                    self._mgr.logger.error(
+                        f'[Plugin:{self.name}] on_show error: {e}')
                 return self._inst
 
             if self.reload:
@@ -191,22 +195,45 @@ class PluginManager:
                 return None
 
             if self._inst is None:
-                self._inst = self._cls(parent, self.app)
-                self._inst.on_show()
+                try:
+                    self._inst = self._cls(parent, self.app)
+                except Exception as e:
+                    self._mgr.logger.error(
+                        f'[Plugin:{self.name}] init error: {e}')
+                    return None
+                try:
+                    self._inst.on_show()
+                except Exception as e:
+                    self._mgr.logger.error(
+                        f'[Plugin:{self.name}] on_show error: {e}')
 
             handle = self
             if self.reload:
                 def _on_close():
                     if handle._inst is not None:
-                        handle._inst.on_destroy()
-                        handle._inst.destroy()
+                        try:
+                            handle._inst.on_destroy()
+                        except Exception as e:
+                            handle._mgr.logger.error(
+                                f'[Plugin:{handle.name}] on_destroy error: {e}')
+                        try:
+                            handle._inst.destroy()
+                        except Exception:
+                            pass
                         handle._inst = None
                 self._inst.protocol('WM_DELETE_WINDOW', _on_close)
             else:
                 def _on_close():
                     if handle._inst is not None:
-                        handle._inst.on_hide()
-                        handle._inst.withdraw()
+                        try:
+                            handle._inst.on_hide()
+                        except Exception as e:
+                            handle._mgr.logger.error(
+                                f'[Plugin:{handle.name}] on_hide error: {e}')
+                        try:
+                            handle._inst.withdraw()
+                        except Exception:
+                            pass
                 self._inst.protocol('WM_DELETE_WINDOW', _on_close)
 
             return self._inst
