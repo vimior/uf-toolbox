@@ -18,10 +18,27 @@ class AppState:
     # ---- observer pattern ----
 
     def on(self, event, callback):
-        print(f'[EVT] {event}')
+        """Register a callback for an event."""
         self._listeners.setdefault(event, []).append(callback)
+        print(f'[EVT] {event}, {len(self._listeners.get(event))}')
 
-    def notify(self, event, *args, **kwargs):
+    def off(self, event, callback):
+        """Remove a previously registered callback for an event."""
+        listeners = self._listeners.get(event)
+        if listeners:
+            try:
+                listeners.remove(callback)
+            except ValueError:
+                pass
+
+    def clear_listeners(self, event=None):
+        """Remove all listeners. If *event* is given, only clear that event."""
+        if event is None:
+            self._listeners.clear()
+        else:
+            self._listeners.pop(event, None)
+
+    def emit(self, event, *args, **kwargs):
         for cb in self._listeners.get(event, []):
             cb(*args, **kwargs)
 
@@ -43,7 +60,6 @@ class AppState:
         self._theme = DARK_THEME if theme_name == 'dark' else LIGHT_THEME
         self._lang = (ZH if lang_name == 'zh' else EN
                       if lang_name == 'en' else self._resolve_lang())
-        self._plugins = {}
         self._main_width = 520
         self._main_height = 44
         base = os.path.dirname(
@@ -73,10 +89,6 @@ class AppState:
     @property
     def current_lang_name(self):
         return self._current_lang_name
-
-    @property
-    def plugins(self):
-        return self._plugins
 
     @property
     def ico_path(self):

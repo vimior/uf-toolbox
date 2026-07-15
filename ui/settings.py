@@ -64,7 +64,7 @@ class SettingsUI(AppState, tk.Tk):
         w['tool_btn'].config(text=l['config_select'])
         w['plugin_btn'].config(text=l['config_select'])
         w['save_btn'].config(text=l['config_save'])
-        self.notify('set-win-position', self._settings_win, h=200)
+        self.emit('set-win-position', self._settings_win, h=200)
 
     # ---- window ----
 
@@ -79,7 +79,7 @@ class SettingsUI(AppState, tk.Tk):
 
         win = tk.Toplevel(self)
         win.geometry('+{}+{}'.format(-9999, -9999))
-        self.notify('set-win-icon', win)
+        self.emit('set-win-icon', win)
         win.title(l['config_title'])
         win.resizable(False, False)
         win.configure(bg=t['bg'])
@@ -204,7 +204,7 @@ class SettingsUI(AppState, tk.Tk):
         win.protocol('WM_DELETE_WINDOW', _on_close)
         win.bind('<Destroy>', lambda _: self._on_config_win_closed())
 
-        self.notify('set-win-position', win, h=200)
+        self.emit('set-win-position', win, h=200)
         # win.lift()
         # win.focus_force()
 

@@ -54,7 +54,7 @@ class LogUI(AppState, tk.Tk):
         t, l = self.theme, self.lang
         win = tk.Toplevel(self)
         win.geometry('+{}+{}'.format(-9999, -9999))
-        self.notify('set-win-icon', win)
+        self.emit('set-win-icon', win)
         win.title(l['log_title'])
         win.configure(bg=t['bg'])
         win.resizable(True, True)
@@ -97,7 +97,7 @@ class LogUI(AppState, tk.Tk):
         )
         self._log_clear_btn.pack(side=tk.RIGHT, fill=tk.X, expand=True)
 
-        self.notify('set-win-position', win, h=600)
+        self.emit('set-win-position', win, h=600)
         win.bind('<Destroy>', lambda _: self._on_log_win_closed())
 
     def _on_log_win_closed(self):
@@ -146,4 +146,4 @@ class LogUI(AppState, tk.Tk):
         self._log_win.title(l['log_title'])
         if hasattr(self, '_log_clear_btn'):
             self._log_clear_btn.config(text=l['log_clear'])
-        self.notify('set-win-position', self._log_win, h=600)
+        self.emit('set-win-position', self._log_win, h=600)

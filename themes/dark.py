@@ -4,6 +4,8 @@ DARK_THEME = {
     'bg': '#2b2b2b',
     'fg': '#e0e0e0',
     'navbar_bg': '#333333',
+    'nav_sep': '#4a4a4a',
+    'nav_hover_bg': '#4a4a4a',
     'menu_bg': '#3c3c3c',
     'menu_hover_bg': '#57616b',
     'menu_hover_fg': '#ffffff',

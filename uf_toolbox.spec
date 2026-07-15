@@ -35,10 +35,13 @@ a = Analysis(
     hiddenimports=[
         'themes', 'themes.light', 'themes.dark',
         'i18n', 'i18n.zh', 'i18n.en',
-        'plugins', 'plugins.base',
+        'plugins', 'plugins.plugin',
         'common', 'common.common', 'common.state',
-        'ui', 'ui.menu', 'ui.log', 'ui.config',
-        'tools', 'tools.scanner',
+        'ui', 'ui.menu', 'ui.log', 'ui.settings',
+        'tools', 'tools.manager',
+        'xarm', 'xarm.x3', 'xarm.x3.base',
+        'xarm.x3.code', 'xarm.x3.thread',
+        'xarm.x3.utils', 'xarm.wrapper'
     ] + _extra_hidden,
     hookspath=[],
     hooksconfig={},

@@ -4,6 +4,8 @@ LIGHT_THEME = {
     'bg': '#f5f6fa',
     'fg': '#333333',
     'navbar_bg': '#e8ecf1',
+    'nav_sep': '#cccccc',
+    'nav_hover_bg': '#bfbfbf',
     'menu_bg': '#ffffff',
     'menu_hover_bg': '#57616b',
     'menu_hover_fg': '#ffffff',

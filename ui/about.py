@@ -24,14 +24,14 @@ class AboutUI(AppState, tk.Tk):
         win.configure(bg=t['bg'])
         win.resizable(False, False)
         win.transient(self)
-        self.notify('set-win-icon', win)
+        self.emit('set-win-icon', win)
         # win.withdraw()
         frm = tk.Frame(win, bg=t['bg'], padx=30, pady=20)
         frm.pack()
         tk.Label(frm, text=l['about_text'].format(__version__), bg=t['bg'], fg=t['fg'],
                  font=(FONT_FAMILY, 10), justify=tk.CENTER).pack()
         win.update_idletasks()
-        self.notify('set-win-position', win, w=260, h=150)
+        self.emit('set-win-position', win, w=260, h=150)
         # win.deiconify()
         self._about_win = win
         win.bind('<Destroy>', lambda _: setattr(self, '_about_win', None))

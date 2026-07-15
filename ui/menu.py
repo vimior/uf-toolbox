@@ -4,10 +4,11 @@ import os
 import sys
 import tkinter as tk
 from common.state import AppState
-from common.common import FONT_FAMILY
-from tools.scanner import scan_tools, launch
+from common.common import FONT_FAMILY, logger
+from plugins.plugin import PluginManager
+from tools.manager import ToolManager
 
-menu_activeborderwidth = 3
+MENU_ACTIVEBORDERWIDTH = 3
 
 _icon_cache = {}
 
@@ -35,6 +36,11 @@ def _load_icon(filename, size=44):
 class MenuUI(AppState, tk.Tk):
     """Navbar with tab-style buttons."""
 
+    def init(self):
+        self._pm = PluginManager(logger)
+        self._tm = ToolManager(logger)
+        super().init()
+
     # ---- helpers ----
 
     @staticmethod
@@ -45,32 +51,16 @@ class MenuUI(AppState, tk.Tk):
                 MenuUI._destroy_submenus(child)
                 child.destroy()
 
-    # ---- color helpers ----
-
-    @staticmethod
-    def _nav_colors(theme):
-        """Return (bar_bg, fg, sep_bg, hover_bg, menu_bg, menu_hover, menu_hover_fg)."""
-        if theme['navbar_bg'] == '#333333':  # dark
-            return ('#333333', '#e0e0e0', '#4a4a4a', '#4a4a4a',
-                    '#3c3c3c', '#57616b', '#ffffff')
-        # light
-        return ('#e8ecf1', '#333333', '#cccccc', '#bfbfbf',
-                '#ffffff', '#57616b', '#ffffff')
-
     # ---- build ----
 
     def _build_menu(self):
         t, l = self.theme, self.lang
-        self._theme_var = tk.StringVar(
-            value=getattr(self, '_current_theme_name', 'dark'))
-        self._lang_var = tk.StringVar(
-            value=getattr(self, '_current_lang_name', ''))
+        self._theme_var = tk.StringVar(value=getattr(self, '_current_theme_name', 'dark'))
+        self._lang_var = tk.StringVar(value=getattr(self, '_current_lang_name', ''))
         self._topmost_var = tk.BooleanVar(value=self.always_on_top)
         self._auto_hide_var = tk.BooleanVar(value=self.auto_hide_enabled)
 
-        c = self._nav_colors(t)
-
-        self._navbar = bar = tk.Frame(self, bg=c[0], height=48)
+        self._navbar = bar = tk.Frame(self, bg=t['navbar_bg'], height=48)
         bar.pack(fill=tk.X, side=tk.TOP)
         bar.pack_propagate(False)
 
@@ -81,29 +71,29 @@ class MenuUI(AppState, tk.Tk):
         icon_img = _load_icon('uf_toolbox.ico', size=32) or _load_icon('uf_toolbox.png', size=44)
         if icon_img is not None:
             self._brand_icon = icon_img
-            brand_frame = tk.Frame(bar, bg=c[0], width=52, height=48)
+            brand_frame = tk.Frame(bar, bg=t['navbar_bg'], width=52, height=48)
             brand_frame.pack(side=tk.LEFT, fill=tk.Y)
             brand_frame.pack_propagate(False)
-            self._brand_icon_lbl = tk.Label(brand_frame, image=icon_img, bg=c[0])
+            self._brand_icon_lbl = tk.Label(brand_frame, image=icon_img, bg=t['navbar_bg'])
             self._brand_icon_lbl.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
             self._brand_lbl = brand_frame
         else:
-            brand = tk.Label(bar, text='  UF Toolbox', bg=c[0], fg=c[1],
+            brand = tk.Label(bar, text='  UF Toolbox', bg=t['navbar_bg'], fg=t['fg'],
                              font=(FONT_FAMILY, 10, 'bold'), padx=16)
             brand.pack(side=tk.LEFT, fill=tk.Y)
             self._brand_lbl = brand
-        tk.Frame(bar, bg=c[2], width=1).pack(side=tk.LEFT, fill=tk.Y)
+        tk.Frame(bar, bg=t['nav_sep'], width=1).pack(side=tk.LEFT, fill=tk.Y)
 
         self._add_nav_item(bar, 'settings', l['menu_settings'],
-                           self._build_settings_menu, c, first=True)
+                           self._build_settings_menu, t, first=True)
         self._add_nav_item(bar, 'system', l['menu_system'],
-                           lambda m: self._build_tools_menu(m, 'system'), c,
+                           lambda m: self._build_tools_menu(m, 'system'), t,
                            on_click=lambda e: self._on_tools_menu_open(e, 'system'))
         self._add_nav_item(bar, 'tools', l['menu_tools'],
-                           lambda m: self._build_tools_menu(m, 'tools'), c,
+                           lambda m: self._build_tools_menu(m, 'tools'), t,
                            on_click=lambda e: self._on_tools_menu_open(e, 'tools'))
         self._add_nav_item(bar, 'plugins', l['menu_plugins'],
-                           self._build_plugins_menu, c,
+                           self._build_plugins_menu, t,
                            on_click=self._on_plugins_menu_open)
 
         # Exit icon — swaps image on hover
@@ -112,12 +102,12 @@ class MenuUI(AppState, tk.Tk):
         if x_img is not None:
             self._exit_icon = x_img
             self._exit_icon_hover = x_hover
-            btn = tk.Label(bar, image=x_img, bg=c[0], padx=10,
+            btn = tk.Label(bar, image=x_img, bg=t['navbar_bg'], padx=10,
                            cursor='hand2', borderwidth=0, highlightthickness=0)
             btn.bind('<Enter>', lambda e, b=btn: b.config(image=x_hover))
             btn.bind('<Leave>', lambda e, b=btn: b.config(image=x_img))
         else:
-            btn = tk.Label(bar, text='  ✕  ', bg=c[0], fg=c[1],
+            btn = tk.Label(bar, text='  ✕  ', bg=t['navbar_bg'], fg=t['fg'],
                            font=(FONT_FAMILY, 10, 'bold'), padx=16,
                            cursor='hand2', borderwidth=0, highlightthickness=0)
         btn.pack(side=tk.RIGHT, fill=tk.Y)
@@ -125,7 +115,7 @@ class MenuUI(AppState, tk.Tk):
         self._exit_btn = btn
 
         # Separator between menus and exit
-        self._exit_sep = tk.Frame(bar, bg=c[2], width=1)
+        self._exit_sep = tk.Frame(bar, bg=t['nav_sep'], width=1)
         self._exit_sep.pack(side=tk.RIGHT, fill=tk.Y)
 
         # Make the navbar (and its non-clickable children) a drag handle.
@@ -138,62 +128,58 @@ class MenuUI(AppState, tk.Tk):
         self._fit_window()
 
     def apply_theme(self, t):
-        c = self._nav_colors(t)
-        bar_bg, fg, sep_bg, hover_bg, menu_bg, menu_hover, menu_hover_fg = c
         self.configure(bg=t['bg'])
-        self._navbar.config(bg=bar_bg)
+        self._navbar.config(bg=t['navbar_bg'])
         self._nav_sep.config(bg=t['separator2'])
-        self._exit_sep.config(bg=sep_bg)
-        self._brand_lbl.config(bg=bar_bg)
+        self._exit_sep.config(bg=t['nav_sep'])
+        self._brand_lbl.config(bg=t['navbar_bg'])
         if hasattr(self, '_brand_icon_lbl'):
-            self._brand_icon_lbl.config(bg=bar_bg)
+            self._brand_icon_lbl.config(bg=t['navbar_bg'])
         if isinstance(self._brand_lbl, tk.Label):
-            self._brand_lbl.config(fg=fg)
+            self._brand_lbl.config(fg=t['fg'])
         if hasattr(self, '_exit_icon_hover'):
-            self._exit_btn.config(image=self._exit_icon, bg=bar_bg)
+            self._exit_btn.config(image=self._exit_icon, bg=t['navbar_bg'])
             self._exit_btn.unbind('<Enter>')
             self._exit_btn.unbind('<Leave>')
             self._exit_btn.bind('<Enter>', lambda e, b=self._exit_btn: b.config(image=self._exit_icon_hover))
             self._exit_btn.bind('<Leave>', lambda e, b=self._exit_btn: b.config(image=self._exit_icon))
         for key, widget in self._nav_items.items():
             if key.endswith('_sep'):
-                widget.config(bg=sep_bg)
+                widget.config(bg=t['nav_sep'])
             else:
-                widget.config(bg=bar_bg, fg=fg)
+                widget.config(bg=t['navbar_bg'], fg=t['fg'])
                 widget.unbind('<Enter>')
                 widget.unbind('<Leave>')
-                widget.bind('<Enter>', lambda e, b=widget, h=hover_bg: b.config(bg=h))
-                widget.bind('<Leave>', lambda e, b=widget, bg=bar_bg, c=fg: b.config(bg=bg, fg=c))
+                widget.bind('<Enter>', lambda e, b=widget, h=t['nav_hover_bg']: b.config(bg=h))
+                widget.bind('<Leave>', lambda e, b=widget, bg=t['navbar_bg'], c=t['fg']: b.config(bg=bg, fg=c))
         for menu in self._nav_menus.values():
-            menu.config(bg=menu_bg, fg=fg,
-                        activebackground=menu_hover, activeforeground=menu_hover_fg)
+            menu.config(bg=t['menu_bg'], fg=t['fg'],
+                        activebackground=t['menu_hover_bg'], activeforeground=t['menu_hover_fg'])
 
-    def _add_nav_item(self, bar, key, text, menu_builder, c,
+    def _add_nav_item(self, bar, key, text, menu_builder, t,
                        on_click=None, first=False):
-        bar_bg, fg, sep_bg, hover_bg, menu_bg, menu_hover, menu_hover_fg = c
-
         if not first:
-            frm = tk.Frame(bar, bg=sep_bg, width=1)
+            frm = tk.Frame(bar, bg=t['nav_sep'], width=1)
             frm.pack(side=tk.LEFT, fill=tk.Y)
             self._nav_items[f'{key}_sep'] = frm
 
-        btn = tk.Label(bar, text=f'  {text}  ', bg=bar_bg, fg=fg,
+        btn = tk.Label(bar, text=f'  {text}  ', bg=t['navbar_bg'], fg=t['fg'],
                        font=(FONT_FAMILY, 12), padx=16,
                        cursor='hand2', borderwidth=0, highlightthickness=0)
         btn.pack(side=tk.LEFT, fill=tk.Y)
 
-        btn.bind('<Enter>', lambda e, b=btn, h=hover_bg: b.config(bg=h))
-        btn.bind('<Leave>', lambda e, b=btn, bg=bar_bg, c=fg:
+        btn.bind('<Enter>', lambda e, b=btn, h=t['nav_hover_bg']: b.config(bg=h))
+        btn.bind('<Leave>', lambda e, b=btn, bg=t['navbar_bg'], c=t['fg']:
                  b.config(bg=bg, fg=c))
 
         self._nav_items[key] = btn
 
         menu = tk.Menu(self, tearoff=0, font=(FONT_FAMILY, 12),
-                       bg=menu_bg, fg=fg,
-                       activebackground=menu_hover,
-                       activeforeground=menu_hover_fg,
+                       bg=t['menu_bg'], fg=t['fg'],
+                       activebackground=t['menu_hover_bg'],
+                       activeforeground=t['menu_hover_fg'],
                        borderwidth=1, relief=tk.FLAT,
-                       activeborderwidth=menu_activeborderwidth)
+                       activeborderwidth=MENU_ACTIVEBORDERWIDTH)
         menu.configure(postcommand=lambda m=menu, k=key: self._on_menu_open(m, k))
         menu_builder(menu)
         self._nav_menus[key] = menu
@@ -206,18 +192,17 @@ class MenuUI(AppState, tk.Tk):
             btn.bind('<Button-1>',
                      lambda e, m=menu, b=btn: self._show_menu(m, b))
 
-    def _add_nav_action(self, bar, key, text, action, c):
+    def _add_nav_action(self, bar, key, text, action, t):
         """Create a navbar button that fires *action* directly (no dropdown)."""
-        bar_bg, fg, sep_bg, hover_bg, _, _, _ = c
-        frm = tk.Frame(bar, bg=sep_bg, width=1)
+        frm = tk.Frame(bar, bg=t['nav_sep'], width=1)
         frm.pack(side=tk.LEFT, fill=tk.Y)
         self._nav_items[f'{key}_sep'] = frm
-        btn = tk.Label(bar, text=f'  {text}  ', bg=bar_bg, fg=fg,
+        btn = tk.Label(bar, text=f'  {text}  ', bg=t['navbar_bg'], fg=t['fg'],
                        font=(FONT_FAMILY, 12), padx=16,
                        cursor='hand2', borderwidth=0, highlightthickness=0)
         btn.pack(side=tk.LEFT, fill=tk.Y)
-        btn.bind('<Enter>', lambda e, b=btn, h=hover_bg: b.config(bg=h))
-        btn.bind('<Leave>', lambda e, b=btn, bg=bar_bg, c=fg:
+        btn.bind('<Enter>', lambda e, b=btn, h=t['nav_hover_bg']: b.config(bg=h))
+        btn.bind('<Leave>', lambda e, b=btn, bg=t['navbar_bg'], c=t['fg']:
                  b.config(bg=bg, fg=c))
         btn.bind('<Button-1>', lambda e, a=action: a())
         self._nav_items[key] = btn
@@ -291,12 +276,12 @@ class MenuUI(AppState, tk.Tk):
                              variable=self._auto_hide_var,
                              command=self._toggle_auto_hide)
         menu.add_command(label=l['menu_config'],
-                         command=lambda: self.notify('show-settings'))
+                         command=lambda: self.emit('show-settings'))
         menu.add_separator()
         menu.add_command(label=l['menu_log'],
-                         command=lambda: self.notify('show-log'))
+                         command=lambda: self.emit('show-log'))
         menu.add_command(label=l['menu_about'],
-                         command=lambda: self.notify('show-about'))
+                         command=lambda: self.emit('show-about'))
 
     def _build_appearance_submenu(self, parent):
         l = self.lang
@@ -305,7 +290,7 @@ class MenuUI(AppState, tk.Tk):
                       bg=t['menu_bg'], fg=t['fg'],
                       activebackground=t['menu_hover_bg'],
                       activeforeground=t['menu_hover_fg'],
-                      activeborderwidth=menu_activeborderwidth)
+                      activeborderwidth=MENU_ACTIVEBORDERWIDTH)
         sub.add_radiobutton(label=l['menu_theme_light'],
                             variable=self._theme_var, value='light',
                             command=lambda: self.set_theme('light'))
@@ -321,7 +306,7 @@ class MenuUI(AppState, tk.Tk):
                       bg=t['menu_bg'], fg=t['fg'],
                       activebackground=t['menu_hover_bg'],
                       activeforeground=t['menu_hover_fg'],
-                      activeborderwidth=menu_activeborderwidth)
+                      activeborderwidth=MENU_ACTIVEBORDERWIDTH)
         sub.add_radiobutton(label=l['menu_lang_zh'],
                             variable=self._lang_var, value='zh',
                             command=lambda: self.set_lang('zh'))
@@ -351,7 +336,7 @@ class MenuUI(AppState, tk.Tk):
         self._destroy_submenus(menu)
         menu.delete(0, tk.END)
         empty_key = 'menu_no_system' if filter_key == 'system' else 'menu_no_tools'
-        result = scan_tools(self.resolved_lang, tab=filter_key, path=self.tool_path)
+        result = self._tm.scan(self.resolved_lang, tab=filter_key, path=self.tool_path)
         if not result['tools'] and not result['groups']:
             menu.add_command(
                 label=self.lang.get(empty_key, '(No Tools)'),
@@ -359,7 +344,7 @@ class MenuUI(AppState, tk.Tk):
             return
 
         def _cmd(t):
-            return lambda: (launch(t),
+            return lambda: (self._tm.launch(t),
                             self.after(200, lambda: self.lift() or self.focus_force()))
 
         def _build_group(parent_menu, groups):
@@ -369,7 +354,7 @@ class MenuUI(AppState, tk.Tk):
                       bg=t['menu_bg'], fg=t['fg'],
                               activebackground=t['menu_hover_bg'],
                               activeforeground=t['menu_hover_fg'],
-                              activeborderwidth=menu_activeborderwidth)
+                              activeborderwidth=MENU_ACTIVEBORDERWIDTH)
                 for tool in g.get('tools', []):
                     sub.add_command(label=tool['name'], command=_cmd(tool))
                 _build_group(sub, g.get('groups', []))
@@ -390,68 +375,77 @@ class MenuUI(AppState, tk.Tk):
 
     def _refresh_plugins_menu(self):
         self._plugins_menu.delete(0, tk.END)
-        if not self.plugins:
+        if not self._pm.plugins:
             self._plugins_menu.add_command(
                 label=self.lang.get('menu_no_plugins', '(No Plugins)'))
             return
-        for p in sorted(self.plugins.values(),
+        for p in sorted(self._pm.plugins.values(),
                         key=lambda x: x.priority, reverse=True):
             self._plugins_menu.add_command(
                 label=p.name,
                 command=lambda plugin=p: self._show_plugin_window(plugin))
 
     def _on_plugins_menu_open(self, event):
-        self.notify('load-plugins')
+        self._load_plugins()
         self._refresh_plugins_menu()
+
+    def _load_plugins(self):
+        """Resolve plugin directories and delegate to PluginManager."""
+        if getattr(sys, 'frozen', False):
+            plugin_dirs = [os.path.join(sys._MEIPASS, 'plugins')]
+            base = os.path.dirname(sys.executable)
+            plugin_path = os.path.join(base, 'plugins')
+            if os.path.isdir(plugin_path):
+                if base not in sys.path:
+                    sys.path.insert(0, base)
+                if plugin_path not in plugin_dirs:
+                    plugin_dirs.append(plugin_path)
+            if self.plugin_path and self.plugin_path != 'plugins':
+                plugin_path = os.path.join(base, self.plugin_path)
+                if os.path.isdir(plugin_path):
+                    root = os.path.dirname(plugin_path)
+                    if root not in sys.path:
+                        sys.path.insert(0, root)
+                    if plugin_path not in plugin_dirs:
+                        plugin_dirs.append(plugin_path)
+        else:
+            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            plugin_dirs = [
+                os.path.join(base, 'plugins'),
+                os.path.join(base, 'dist', 'plugins'),
+            ]
+            if self.plugin_path and self.plugin_path != 'tools':
+                plugin_dirs.append(os.path.join(base, 'dist', self.plugin_path))
+        self._pm.load(self, plugin_dirs)
 
     # ---- plugin window ----
 
     def _show_plugin_window(self, plugin):
-        win = plugin.create_window(self)
-        if win is not None:
-            # Break transient so plugin is not forced topmost when main window is
-            if self.always_on_top:
-                win.tk.call('wm', 'transient', str(win), '')
-            if plugin.fixed_position or plugin.fixed_size:
-                self._set_child_position(win,
-                    x=(self.winfo_x() + self.winfo_width() + 4
-                       if plugin.fixed_position else None),
-                    y=(self.winfo_y() if plugin.fixed_position else None),
-                    w=(420 if plugin.fixed_size else None),
-                    h=(self.main_height if plugin.fixed_size else None))
-            if plugin.use_app_icon:
-                self._set_plugin_icon(win)
-            win.lift()
-            win.focus_force()
-
-    @staticmethod
-    def _set_child_position(win, x=None, y=None, w=None, h=None):
-        if x is None and y is None and w is None and h is None:
-            return
-        parts = []
-        if w is not None and h is not None:
-            parts.append(f'{w}x{h}')
-        if x is not None and y is not None:
-            parts.append(f'+{x}+{y}')
-        if parts:
-            win.geometry(''.join(parts))
-
-    def _set_plugin_icon(self, win):
-        import sys, os
-        if sys.platform == 'win32':
-            try:
-                win.iconbitmap(self.ico_path)
-            except Exception:
-                pass
-        else:
-            path = (self.png_path
-                    if os.path.exists(self.png_path) else self.ico_path)
-            try:
-                icon = tk.PhotoImage(file=path)
-                win.iconphoto(True, icon)
-                win._icon_ref = icon
-            except Exception:
-                pass
+        try:
+            was_loaded = plugin.loaded
+            win = plugin.create_window(self)
+            if win is not None:
+                # Break transient so plugin is not forced topmost when main window is
+                if self.always_on_top:
+                    win.tk.call('wm', 'transient', str(win), '')
+                if plugin.fixed_position or plugin.fixed_size:
+                    self.emit('set-win-position', win,
+                        x=(self.winfo_x() + self.winfo_width() + 4
+                           if plugin.fixed_position else None),
+                        y=(self.winfo_y() if plugin.fixed_position else None),
+                        w=(420 if plugin.fixed_size else None),
+                        h=(self.main_height if plugin.fixed_size else None),
+                        fixed_size=plugin.fixed_size,
+                        fixed_position=plugin.fixed_position)
+                if plugin.use_app_icon:
+                    self.emit('set-win-icon', win)
+                win.lift()
+                win.focus_force()
+            # If plugin was just lazy-loaded, refresh menu to show real name/priority
+            if not was_loaded and plugin.loaded:
+                self._refresh_plugins_menu()
+        except Exception as e:
+            logger.error(f'show plugin window error, {str(e)}')
 
     # ---- theme / lang ----
 
