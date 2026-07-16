@@ -8,6 +8,9 @@ from tkinter import ttk
 
 from themes import DARK_THEME, LIGHT_THEME
 from i18n import ZH, EN
+from common.eventbus import EventBus
+from common.store import Store
+from common.services import Services
 
 _CONFIG_PATH = os.path.join(os.path.expanduser('~'), '.uf_toolbox.json')
 
@@ -15,42 +18,61 @@ _CONFIG_PATH = os.path.join(os.path.expanduser('~'), '.uf_toolbox.json')
 class AppState:
     """Cross-component shared state. Writes use set_xxx() methods."""
 
-    # ---- observer pattern ----
+    # ---- event bus / store / services -------------------------------
+
+    @property
+    def eventbus(self):
+        return self._eventbus
+
+    @property
+    def store(self):
+        return self._store
+
+    @property
+    def services(self):
+        return self._services
+
+    # ---- event bus delegates ----------------------------------------
 
     def on(self, event, callback):
-        """Register a callback for an event."""
-        self._listeners.setdefault(event, []).append(callback)
-        print(f'[EVT] {event}, {len(self._listeners.get(event))}')
+        self._eventbus.on(event, callback)
 
     def off(self, event, callback):
-        """Remove a previously registered callback for an event."""
-        listeners = self._listeners.get(event)
-        if listeners:
-            try:
-                listeners.remove(callback)
-            except ValueError:
-                pass
+        self._eventbus.off(event, callback)
 
-    def clear_listeners(self, event=None):
-        """Remove all listeners. If *event* is given, only clear that event."""
-        if event is None:
-            self._listeners.clear()
-        else:
-            self._listeners.pop(event, None)
+    def clear(self, event):
+        self._eventbus.clear(event)
 
     def emit(self, event, *args, **kwargs):
-        for cb in self._listeners.get(event, []):
-            cb(*args, **kwargs)
+        self._eventbus.emit(event, *args, **kwargs)
+
+    # ---- lifecycle hooks -------------------------------------------
+    #
+    #   hook:plugin:will-show   hook:plugin:did-show
+    #   hook:plugin:will-hide   hook:plugin:did-hide
+    #   hook:plugin:will-destroy  hook:plugin:did-destroy
+    #
+    # AppState listens for did-destroy to release store/services.
 
     def init(self):
         """Override in subclasses to register event listeners."""
+        self._eventbus.on('hook:plugin:did-destroy', self._on_plugin_destroyed)
         try:
             super().init()
         except AttributeError:
             pass
 
+    def _on_plugin_destroyed(self, plugin):
+        """Clean up store/services when a plugin window is destroyed."""
+        self._store.cleanup(plugin.name)
+        self._services.cleanup(plugin.name)
+
     def init_state(self):
         """Initialize all state. Called once from main.py.__init__."""
+        self._eventbus = EventBus()
+        self._store = Store(self._eventbus)
+        self._services = Services(self._eventbus)
+
         self._listeners = {}
         self._config = self._load_config()
         theme_name = self._config.get('theme', 'dark')

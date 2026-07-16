@@ -29,6 +29,9 @@ class PluginBase(tk.Toplevel):
 
     def __init__(self, parent=None, app=None):
         self.app = app
+        # Namespaced handles — auto-prefix with plugin name
+        self.store = app.store.module(self.name) if app else None
+        self.services = app.services.module(self.name) if app else None
         super().__init__(parent)
 
     def on_show(self):

@@ -83,11 +83,13 @@ class PluginManager:
             """Call on_destroy, destroy window, clean sys.path, reset to lazy state."""
             if self._inst is not None:
                 if self._inst.winfo_exists():
+                    self.app.emit('hook:plugin:will-destroy', self._inst)
                     try:
                         self._inst.on_destroy()
                     except Exception as e:
                         self._mgr.logger.error(
                             f'Plugin {self.name} on_destroy error: {e}')
+                    self.app.emit('hook:plugin:did-destroy', self._inst)
                     try:
                         self._inst.destroy()
                     except Exception:
@@ -106,11 +108,13 @@ class PluginManager:
             """
             if self._inst is not None:
                 if self._inst.winfo_exists():
+                    self.app.emit('hook:plugin:will-destroy', self._inst)
                     try:
                         self._inst.on_destroy()
                     except Exception as e:
                         self._mgr.logger.error(
                             f'[Plugin:{self.name}] on_destroy error: {e}')
+                    self.app.emit('hook:plugin:did-destroy', self._inst)
                     try:
                         self._inst.destroy()
                     except Exception:
@@ -153,11 +157,13 @@ class PluginManager:
                 self._inst.lift()
                 self._inst.focus_force()
                 if was_hidden:
+                    self.app.emit('hook:plugin:will-show', self._inst)
                     try:
                         self._inst.on_show()
                     except Exception as e:
                         self._mgr.logger.error(
                             f'[Plugin:{self.name}] on_show error: {e}')
+                    self.app.emit('hook:plugin:did-show', self._inst)
                 return self._inst
 
             if self.reload:
@@ -179,11 +185,13 @@ class PluginManager:
                     self._mgr.logger.error(
                         f'[Plugin:{self.name}] init error: {e}')
                     return None
+                self.app.emit('hook:plugin:will-show', self._inst)
                 try:
                     self._inst.on_show()
                 except Exception as e:
                     self._mgr.logger.error(
                         f'[Plugin:{self.name}] on_show error: {e}')
+                self.app.emit('hook:plugin:did-show', self._inst)
 
             handle = self
             if self.reload:
@@ -193,11 +201,13 @@ class PluginManager:
             else:
                 def _on_close():
                     if handle._inst is not None:
+                        handle.app.emit('hook:plugin:will-hide', handle._inst)
                         try:
                             handle._inst.on_hide()
                         except Exception as e:
                             handle._mgr.logger.error(
                                 f'[Plugin:{handle.name}] on_hide error: {e}')
+                        handle.app.emit('hook:plugin:did-hide', handle._inst)
                         try:
                             handle._inst.withdraw()
                         except Exception:
