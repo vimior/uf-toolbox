@@ -71,9 +71,9 @@ class PluginManager:
                 # Resolve i18n name: name_zh/name_en take priority over raw name
                 name_zh = meta.get('name_zh')
                 name_en = meta.get('name_en')
-                if name_zh and name_en:
+                if name_zh or name_en:
                     lang = getattr(app, 'current_lang_name', 'en')
-                    raw_name = name_zh if lang == 'zh' else name_en
+                    raw_name = (name_zh if lang == 'zh' else name_en) or raw_name
                 self.name = raw_name
                 self.fixed_position = meta.get('fixed_position', True)
                 self.fixed_size = meta.get('fixed_size', True)
@@ -444,4 +444,3 @@ class PluginManager:
                 continue
             h.unload()
             del self.plugins[stale]
-

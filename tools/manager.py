@@ -163,7 +163,9 @@ class ToolManager:
                 os.path.join(base, 'dist', 'tools'),
             ]
             if path and path != 'tools':
-                dirs.append(os.path.join(base, 'dist', path))
+                other_tool_path = os.path.join(base, 'dist', path)
+                if other_tool_path != dirs[1]:
+                    dirs.append(other_tool_path)
         return dirs
 
     @staticmethod

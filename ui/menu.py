@@ -461,8 +461,10 @@ class MenuUI(AppState, tk.Tk):
                 os.path.join(base, 'plugins'),
                 os.path.join(base, 'dist', 'plugins'),
             ]
-            if self.plugin_path and self.plugin_path != 'tools':
-                plugin_dirs.append(os.path.join(base, 'dist', self.plugin_path))
+            if self.plugin_path and self.plugin_path != 'plugins':
+                other_plugin_path = os.path.join(base, 'dist', self.plugin_path)
+                if other_plugin_path != plugin_dirs[1]:
+                    plugin_dirs.append(other_plugin_path)
         self._pm.load(self, plugin_dirs)
 
     # ---- plugin window ----
