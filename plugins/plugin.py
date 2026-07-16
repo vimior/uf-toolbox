@@ -26,12 +26,13 @@ class PluginBase(tk.Toplevel):
     fixed_size = True
     reload = True
     priority = 0
+    auto_start = False
 
     def __init__(self, parent=None, app=None):
         self.app = app
-        # Namespaced handles — auto-prefix with plugin name
-        self.store = app.store.module(self.name) if app else None
-        self.services = app.services.module(self.name) if app else None
+        ns = getattr(type(self), 'namespace', None) or type(self).__name__
+        self.store = app.store.module(ns) if app else None
+        self.services = app.services.module(ns) if app else None
         super().__init__(parent)
 
     def on_show(self):
@@ -49,3 +50,36 @@ class PluginBase(tk.Toplevel):
         unregister event listeners (self.app.off(...)), join threads, etc.
         """
         print(f'[plugin] on_destroy: {self.name}')
+
+
+class ServicePlugin:
+    """Headless plugin — provides services without a window.
+
+    Inherit from this if your plugin has no UI and only exists to register
+    services that other plugins call via ``app.services.call(...)``.
+
+    Subclasses MUST set:
+        name: str — display name shown in the menu
+    Subclasses MAY override:
+        __init__(self, app=None) — register services here; call super().__init__(app)
+        on_show(self) — called when the service starts (first start or restart)
+        on_destroy(self) — called before shutdown (final cleanup)
+    """
+
+    name = "Unnamed Service"
+    priority = 0
+    auto_start = False
+
+    def __init__(self, app=None):
+        self.app = app
+        ns = getattr(type(self), 'namespace', None) or type(self).__name__
+        self.store = app.store.module(ns) if app else None
+        self.services = app.services.module(ns) if app else None
+
+    def on_start(self):
+        """Called when the service starts — first start or restart."""
+        print(f'[plugin] on_start: {self.name}')
+
+    def on_stop(self):
+        """Called before shutdown — final cleanup."""
+        print(f'[plugin] on_stop: {self.name}')

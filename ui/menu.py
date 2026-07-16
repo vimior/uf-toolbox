@@ -40,6 +40,15 @@ class MenuUI(AppState, tk.Tk):
         self._pm = PluginManager(logger)
         self._tm = ToolManager(logger)
         super().init()
+        # Listen for one-shot auto-start signal (emitted once by UFToolBox
+        # after the main window is fully ready).
+        def _on_auto_start():
+            self._load_plugins()
+            for h in self._pm.plugins.values():
+                if h.auto_start and not h.alive:
+                    self._show_plugin_window(h)
+            self.off('auto-start-plugins', _on_auto_start)
+        self.on('auto-start-plugins', _on_auto_start)
 
     # ---- helpers ----
 
@@ -384,28 +393,43 @@ class MenuUI(AppState, tk.Tk):
         for p in sorted(self._pm.plugins.values(),
                         key=lambda x: x.priority, reverse=True):
             is_open = p.alive
+            is_service = p.is_service
             dot = '● ' if is_open else '  '
 
-            if p.reload or not is_open:
-                # Plain command — click to open/focus
+            if not is_open:
+                # Plain command — click to start/open
                 self._plugins_menu.add_command(
                     label=f'{dot}{p.name}',
                     command=lambda plugin=p: self._show_plugin_window(plugin))
-            else:
-                # reload=False and open: submenu with close action
+            elif is_service:
+                # ServicePlugin running: submenu with Stop
                 sub = tk.Menu(self._plugins_menu, tearoff=0, font=(FONT_FAMILY, 11),
                               bg=t['menu_bg'], fg=t['fg'],
                               activebackground=t['menu_hover_bg'],
                               activeforeground=t['menu_hover_fg'],
                               activeborderwidth=MENU_ACTIVEBORDERWIDTH)
-
+                sub.add_command(
+                    label=l.get('menu_service_stop', 'Stop'),
+                    command=lambda plugin=p: self._close_plugin_window(plugin))
+                self._plugins_menu.add_cascade(label=f'{dot}{p.name}', menu=sub)
+            elif p.reload:
+                # GUI reload=True: plain command — click to focus
+                self._plugins_menu.add_command(
+                    label=f'{dot}{p.name}',
+                    command=lambda plugin=p: self._show_plugin_window(plugin))
+            else:
+                # GUI reload=False: submenu with Open / Close
+                sub = tk.Menu(self._plugins_menu, tearoff=0, font=(FONT_FAMILY, 11),
+                              bg=t['menu_bg'], fg=t['fg'],
+                              activebackground=t['menu_hover_bg'],
+                              activeforeground=t['menu_hover_fg'],
+                              activeborderwidth=MENU_ACTIVEBORDERWIDTH)
                 sub.add_command(
                     label=l.get('menu_plugin_open', 'Open / Restore'),
                     command=lambda plugin=p: self._show_plugin_window(plugin))
                 sub.add_command(
                     label=l.get('menu_plugin_close', 'Close Window'),
                     command=lambda plugin=p: self._close_plugin_window(plugin))
-
                 self._plugins_menu.add_cascade(label=f'{dot}{p.name}', menu=sub)
 
     def _on_plugins_menu_open(self, event):
@@ -447,7 +471,7 @@ class MenuUI(AppState, tk.Tk):
         try:
             was_loaded = plugin.loaded
             was_open = plugin.alive
-            win = plugin.create_window(self)
+            win = plugin.start(self)
             if win is not None:
                 if not was_open:
                     # New window — set up position, icon, transient once
@@ -473,7 +497,7 @@ class MenuUI(AppState, tk.Tk):
     def _close_plugin_window(self, plugin):
         """Explicitly destroy a plugin window from the menu."""
         try:
-            plugin.destroy_window()
+            plugin.stop()
         except Exception as e:
             logger.error(f'[Plugin:{plugin.name}] close error, {str(e)}')
         finally:

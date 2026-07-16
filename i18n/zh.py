@@ -14,6 +14,7 @@ ZH = {
     'menu_no_plugins': '(无插件)',
     'menu_plugin_open': '打开/恢复',
     'menu_plugin_close': '关闭/销毁',
+    'menu_service_stop': '停止',
     'menu_tools': '工具',
     'menu_no_tools': '(无工具)',
     'menu_system': '系统',

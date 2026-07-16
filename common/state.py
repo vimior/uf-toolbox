@@ -63,9 +63,10 @@ class AppState:
             pass
 
     def _on_plugin_destroyed(self, plugin):
-        """Clean up store/services when a plugin window is destroyed."""
-        self._store.cleanup(plugin.name)
-        self._services.cleanup(plugin.name)
+        """Clean up store/services when a plugin instance is destroyed."""
+        ns = getattr(type(plugin), 'namespace', None) or type(plugin).__name__
+        self._store.cleanup(ns)
+        self._services.cleanup(ns)
 
     def init_state(self):
         """Initialize all state. Called once from main.py.__init__."""

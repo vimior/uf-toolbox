@@ -29,7 +29,7 @@ class Services:
         self._services[name] = fn
         if owner:
             self._owners[name] = owner
-        print(f'[services] register {name}  {owner or "?"}')
+        print(f'[services] register {name}')
         self._eventbus.emit('service:registered', name)
 
     def call(self, name, *args, **kwargs):
@@ -85,10 +85,7 @@ class Services:
         """Remove all traces of *owner* (called on plugin destroy)."""
         for event, callback in self._subscriptions.pop(owner, []):
             self._eventbus.off(event, callback)
-        names = self.keys(owner=owner)
-        if names:
-            print(f'[services] cleanup {owner} {names}')
-        for name in names:
+        for name in self.keys(owner=owner):
             self.unregister(name)
 
 
