@@ -44,9 +44,10 @@ class Services:
 
     def unregister(self, name):
         """Remove *name* from the registry.  Emits ``service:unregistered``."""
-        self._services.pop(name, None)
+        fn = self._services.pop(name, None)
         self._owners.pop(name, None)
-        print(f'[services] unregister {name}')
+        if fn:
+            print(f'[services] unregister {name}')
         self._eventbus.emit('service:unregistered', name)
 
     def has(self, name):
@@ -85,7 +86,8 @@ class Services:
         for event, callback in self._subscriptions.pop(owner, []):
             self._eventbus.off(event, callback)
         names = self.keys(owner=owner)
-        print(f'[services] cleanup {owner}  {names}')
+        if names:
+            print(f'[services] cleanup {owner} {names}')
         for name in names:
             self.unregister(name)
 

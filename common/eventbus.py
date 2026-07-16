@@ -39,21 +39,25 @@ class EventBus:
 
     def off(self, event, callback):
         """Remove a previously registered *callback* for *event*."""
-        listeners = self._listeners.get(event)
-        if listeners:
-            try:
-                listeners.remove(callback)
-            except ValueError:
-                pass
+        listeners = self._listeners.get(event, [])
+        if not listeners or callback not in listeners:
+            return
+        try:
+            listeners.remove(callback)
+        except ValueError:
+            pass
         print(f'[eventbus] off {event} => <{self._name(callback)}>')
 
     def clear(self, event):
         """Remove all listeners for *event*."""
-        self._listeners.pop(event, None)
-        print(f'[eventbus] clear {event}')
+        listeners = self._listeners.pop(event, None)
+        if listeners:
+            print(f'[eventbus] clear {event}')
 
     def emit(self, event, *args, **kwargs):
         """Publish *event* to all registered callbacks."""
-        print(f'[eventbus] emit {event}')
-        for cb in self._listeners.get(event, []):
-            cb(*args, **kwargs)
+        listeners = self._listeners.get(event, [])
+        if listeners:
+            print(f'[eventbus] emit {event}')
+            for cb in listeners:
+                cb(*args, **kwargs)
