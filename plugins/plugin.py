@@ -27,6 +27,7 @@ class PluginBase(tk.Toplevel):
     reload = True
     priority = 0
     auto_start = False
+    start_hidden = False
 
     def __init__(self, parent=None, app=None):
         self.app = app

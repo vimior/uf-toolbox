@@ -21,7 +21,8 @@ class PluginManager:
     """
 
     META_KEYS = ('name', 'name_zh', 'name_en', 'priority', 'fixed_position',
-                 'fixed_size', 'use_app_icon', 'reload', 'auto_start')
+                 'fixed_size', 'use_app_icon', 'reload', 'auto_start',
+                 'start_hidden')
 
     # ---- inner handle class ------------------------------------------------
 
@@ -32,9 +33,9 @@ class PluginManager:
         Otherwise it behaves eagerly (legacy / reload path)."""
 
         __slots__ = ('name', 'fixed_position', 'fixed_size', 'use_app_icon',
-                     'reload', 'priority', 'auto_start', '_cls', 'app',
-                     '_inst', '_pkg_dir', '_module_name', '_class_name',
-                     '_mgr')
+                     'reload', 'priority', 'auto_start', 'start_hidden',
+                     '_cls', 'app', '_inst', '_pkg_dir', '_module_name',
+                     '_class_name', '_mgr', '_shown')
 
         def __init__(self, cls, app, mgr, pkg_dir=None, module_name=None,
                      class_name=None, metadata=None):
@@ -45,12 +46,14 @@ class PluginManager:
             self._pkg_dir = pkg_dir
             self._module_name = module_name
             self._class_name = class_name
+            self._shown = False
 
             if cls is not None:
                 # Eager — class attributes are available directly
                 self.name = cls.name
                 self.priority = cls.priority
                 self.auto_start = getattr(cls, 'auto_start', False)
+                self.start_hidden = getattr(cls, 'start_hidden', False)
                 if issubclass(cls, PluginBase):
                     self.reload = cls.reload
                     self.fixed_position = cls.fixed_position
@@ -78,6 +81,7 @@ class PluginManager:
                 self.reload = meta.get('reload', True)
                 self.priority = meta.get('priority', 0)
                 self.auto_start = meta.get('auto_start', False)
+                self.start_hidden = meta.get('start_hidden', False)
 
         @property
         def is_service(self):
@@ -128,6 +132,7 @@ class PluginManager:
                         except Exception:
                             pass
                 self._inst = None
+                self._shown = False
             if self._pkg_dir is not None and self._pkg_dir in sys.path:
                 sys.path.remove(self._pkg_dir)
             # Reset so next click re-imports (hot-reload)
@@ -155,6 +160,7 @@ class PluginManager:
                         except Exception:
                             pass
                 self._inst = None
+                self._shown = False
 
         def restart(self, parent):
             """Force destroy + recreate the plugin window (dev-time hot-reload)."""
@@ -203,7 +209,8 @@ class PluginManager:
                     self._inst.deiconify()
                     self._inst.lift()
                     self._inst.focus_force()
-                    if was_hidden:
+                    if was_hidden or not self._shown:
+                        self._shown = True
                         self.app.emit('hook:plugin:will-show', self._inst)
                         try:
                             self._start(self._inst)
@@ -231,13 +238,20 @@ class PluginManager:
                 self._mgr.logger.error(
                     f'[Plugin:{self.name}] init error: {e}')
                 return None
-            self.app.emit('hook:plugin:will-show', self._inst)
-            try:
-                self._start(self._inst)
-            except Exception as e:
-                self._mgr.logger.error(
-                    f'[Plugin:{self.name}] on_show error: {e}')
-            self.app.emit('hook:plugin:did-show', self._inst)
+            hidden = not is_service and self.auto_start and self.start_hidden
+            if hidden:
+                self._inst.withdraw()
+                self._shown = False
+                self.start_hidden = False  # only on first auto-start
+            else:
+                self._shown = True
+                self.app.emit('hook:plugin:will-show', self._inst)
+                try:
+                    self._start(self._inst)
+                except Exception as e:
+                    self._mgr.logger.error(
+                        f'[Plugin:{self.name}] on_show error: {e}')
+                self.app.emit('hook:plugin:did-show', self._inst)
 
             # ---- window close protocol (GUI only) ----
             if not is_service:
@@ -400,12 +414,14 @@ class PluginManager:
                     cls = self._import_class(pkg_dir, mod_name, cls_name)
                     if cls is None:
                         continue
-                    # Update the handle with new class
+                    # Update the handle with new class, keep mutable state
                     old_h = self.plugins[name]
+                    saved = old_h.start_hidden, old_h._shown
                     old_h.unload()
                     self.plugins[name] = self.Handle(
                         cls, app, self, pkg_dir=pkg_dir, module_name=mod_name,
                         class_name=cls_name)
+                    self.plugins[name].start_hidden, self.plugins[name]._shown = saved
                     continue
 
                 # First discovery — use AST to get metadata, defer import
