@@ -48,23 +48,27 @@ class AppState:
 
     # ---- lifecycle hooks -------------------------------------------
     #
-    #   hook:plugin:will-show   hook:plugin:did-show
-    #   hook:plugin:will-hide   hook:plugin:did-hide
-    #   hook:plugin:will-destroy  hook:plugin:did-destroy
+    #   hook:plugin:will-start  hook:plugin:did-start   (ServicePlugin)
+    #   hook:plugin:will-stop   hook:plugin:did-stop    (ServicePlugin)
+    #   hook:plugin:will-show   hook:plugin:did-show    (GUI plugin)
+    #   hook:plugin:will-hide   hook:plugin:did-hide    (GUI plugin)
+    #   hook:plugin:will-destroy  hook:plugin:did-destroy  (GUI plugin)
     #
-    # AppState listens for did-destroy to release store/services.
+    # AppState listens for did-stop / did-destroy to release store/services.
 
     def init(self):
         """Override in subclasses to register event listeners."""
         self._eventbus.on('hook:plugin:did-destroy', self._on_plugin_destroyed)
+        self._eventbus.on('hook:plugin:did-stop', self._on_plugin_destroyed)
         try:
             super().init()
         except AttributeError:
             pass
 
-    def _on_plugin_destroyed(self, plugin):
-        """Clean up store/services when a plugin instance is destroyed."""
-        ns = getattr(type(plugin), 'namespace', None) or type(plugin).__name__
+    def _on_plugin_destroyed(self, handle):
+        """Clean up store/services when a plugin is stopped/destroyed."""
+        cls = handle._cls
+        ns = (getattr(cls, 'namespace', None) if cls else None) or handle._class_name or 'Unknown'
         self._store.cleanup(ns)
         self._services.cleanup(ns)
 

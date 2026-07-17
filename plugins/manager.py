@@ -32,10 +32,11 @@ class PluginManager:
         When *cls* is None (lazy mode), the plugin module is imported on first use.
         Otherwise it behaves eagerly (legacy / reload path)."""
 
-        __slots__ = ('name', 'fixed_position', 'fixed_size', 'use_app_icon',
+        __slots__ = ('fixed_position', 'fixed_size', 'use_app_icon',
                      'reload', 'priority', 'auto_start', 'start_hidden',
                      '_cls', 'app', '_inst', '_pkg_dir', '_module_name',
-                     '_class_name', '_mgr', '_shown')
+                     '_class_name', '_mgr', '_shown',
+                     '_name_raw', '_name_zh', '_name_en', '_src_mtime')
 
         def __init__(self, cls, app, mgr, pkg_dir=None, module_name=None,
                      class_name=None, metadata=None):
@@ -47,10 +48,16 @@ class PluginManager:
             self._module_name = module_name
             self._class_name = class_name
             self._shown = False
+            self._name_raw = None
+            self._name_zh = None
+            self._name_en = None
+            self._src_mtime = 0
 
             if cls is not None:
                 # Eager — class attributes are available directly
-                self.name = cls.name
+                self._name_raw = cls.name
+                self._name_zh = getattr(cls, 'name_zh', None)
+                self._name_en = getattr(cls, 'name_en', None)
                 self.priority = cls.priority
                 self.auto_start = getattr(cls, 'auto_start', False)
                 self.start_hidden = getattr(cls, 'start_hidden', False)
@@ -67,14 +74,9 @@ class PluginManager:
             else:
                 # Lazy — use metadata from AST parsing (or defaults)
                 meta = metadata or {}
-                raw_name = meta.get('name') or module_name or 'Unnamed'
-                # Resolve i18n name: name_zh/name_en take priority over raw name
-                name_zh = meta.get('name_zh')
-                name_en = meta.get('name_en')
-                if name_zh or name_en:
-                    lang = getattr(app, 'current_lang_name', 'en')
-                    raw_name = (name_zh if lang == 'zh' else name_en) or raw_name
-                self.name = raw_name
+                self._name_raw = meta.get('name') or module_name or 'Unnamed'
+                self._name_zh = meta.get('name_zh')
+                self._name_en = meta.get('name_en')
                 self.fixed_position = meta.get('fixed_position', True)
                 self.fixed_size = meta.get('fixed_size', True)
                 self.use_app_icon = meta.get('use_app_icon', True)
@@ -118,14 +120,21 @@ class PluginManager:
             """Call on_destroy, destroy window, clean sys.path, reset to lazy state."""
             if self._inst is not None:
                 is_service = isinstance(self._inst, ServicePlugin)
+                if is_service:
+                    self.app.emit('hook:plugin:will-stop', self)
+                elif self._inst.winfo_exists():
+                    self.app.emit('hook:plugin:will-destroy', self)
                 if is_service or self._inst.winfo_exists():
-                    self.app.emit('hook:plugin:will-destroy', self._inst)
                     try:
                         self._stop(self._inst)
                     except Exception as e:
+                        action = 'on_stop' if is_service else 'on_destroy'
                         self._mgr.logger.error(
-                            f'Plugin {self.name} on_destroy error: {e}')
-                    self.app.emit('hook:plugin:did-destroy', self._inst)
+                            f'Plugin {self.get_name()} {action} error: {e}')
+                    if is_service:
+                        self.app.emit('hook:plugin:did-stop', self)
+                    else:
+                        self.app.emit('hook:plugin:did-destroy', self)
                     if not is_service:
                         try:
                             self._inst.destroy()
@@ -146,14 +155,21 @@ class PluginManager:
             """
             if self._inst is not None:
                 is_service = isinstance(self._inst, ServicePlugin)
+                if is_service:
+                    self.app.emit('hook:plugin:will-stop', self)
+                elif self._inst.winfo_exists():
+                    self.app.emit('hook:plugin:will-destroy', self)
                 if is_service or self._inst.winfo_exists():
-                    self.app.emit('hook:plugin:will-destroy', self._inst)
                     try:
                         self._stop(self._inst)
                     except Exception as e:
+                        action = 'on_stop' if is_service else 'on_destroy'
                         self._mgr.logger.error(
-                            f'[Plugin:{self.name}] on_destroy error: {e}')
-                    self.app.emit('hook:plugin:did-destroy', self._inst)
+                            f'[Plugin:{self.get_name()}] {action} error: {e}')
+                    if is_service:
+                        self.app.emit('hook:plugin:did-stop', self)
+                    else:
+                        self.app.emit('hook:plugin:did-destroy', self)
                     if not is_service:
                         try:
                             self._inst.destroy()
@@ -167,6 +183,19 @@ class PluginManager:
             self.stop()
             return self.start(parent)
 
+        def get_name(self, lang=None):
+            """Return the display name for *lang* (defaults to current app language).
+
+            Pure method — reads stored metadata, no side effects.
+            """
+            if lang is None:
+                lang = getattr(self.app, 'current_lang_name', 'en')
+            if lang == 'zh' and self._name_zh:
+                return self._name_zh
+            if lang == 'en' and self._name_en:
+                return self._name_en
+            return self._name_raw or 'Unnamed'
+
         def _ensure_loaded(self):
             """Import plugin module and resolve class if not already loaded."""
             if self._cls is not None:
@@ -178,12 +207,10 @@ class PluginManager:
                     f'Plugin {self._module_name} could not be loaded')
                 return False
             self._cls = cls
-            # Update metadata from actual class (may differ from AST-parsed values,
-            # e.g. dynamic name_zh/name_en resolution)
-            if hasattr(cls, 'name_zh'):
-                lang = getattr(self.app, 'current_lang_name', 'en')
-                cls.name = cls.name_zh if lang == 'zh' else cls.name_en
-            self.name = cls.name
+            # Sync metadata from loaded class (overrides AST-parsed values)
+            self._name_raw = cls.name
+            self._name_zh = getattr(cls, 'name_zh', None)
+            self._name_en = getattr(cls, 'name_en', None)
             self.priority = cls.priority
             if issubclass(cls, PluginBase):
                 self.reload = cls.reload
@@ -199,6 +226,7 @@ class PluginManager:
                 return None
 
             is_service = issubclass(self._cls, ServicePlugin)
+            name = self.get_name()
 
             # ---- already running ----
             if self.alive:
@@ -216,7 +244,7 @@ class PluginManager:
                             self._start(self._inst)
                         except Exception as e:
                             self._mgr.logger.error(
-                                f'[Plugin:{self.name}] on_show error: {e}')
+                                f'[Plugin:{name}] on_show error: {e}')
                         self.app.emit('hook:plugin:did-show', self._inst)
                     return self._inst
 
@@ -236,7 +264,7 @@ class PluginManager:
                     self._inst = self._cls(parent, self.app)
             except Exception as e:
                 self._mgr.logger.error(
-                    f'[Plugin:{self.name}] init error: {e}')
+                    f'[Plugin:{name}] init error: {e}')
                 return None
             hidden = not is_service and self.auto_start and self.start_hidden
             if hidden:
@@ -245,13 +273,22 @@ class PluginManager:
                 self.start_hidden = False  # only on first auto-start
             else:
                 self._shown = True
-                self.app.emit('hook:plugin:will-show', self._inst)
+                if is_service:
+                    self.app.emit('hook:plugin:will-start', self._inst)
+                else:
+                    self.app.emit('hook:plugin:will-show', self._inst)
                 try:
                     self._start(self._inst)
                 except Exception as e:
+                    action = 'on_start' if is_service else 'on_show'
                     self._mgr.logger.error(
-                        f'[Plugin:{self.name}] on_show error: {e}')
-                self.app.emit('hook:plugin:did-show', self._inst)
+                        f'[Plugin:{name}] {action} error: {e}')
+                    if is_service:
+                        return None  # did-start only emitted on success
+                if is_service:
+                    self.app.emit('hook:plugin:did-start', self._inst)
+                else:
+                    self.app.emit('hook:plugin:did-show', self._inst)
 
             # ---- window close protocol (GUI only) ----
             if not is_service:
@@ -268,7 +305,7 @@ class PluginManager:
                                 handle._inst.on_hide()
                             except Exception as e:
                                 handle._mgr.logger.error(
-                                    f'[Plugin:{handle.name}] on_hide error: {e}')
+                                    f'[Plugin:{handle.get_name()}] on_hide error: {e}')
                             handle.app.emit('hook:plugin:did-hide', handle._inst)
                             try:
                                 handle._inst.withdraw()
@@ -424,18 +461,39 @@ class PluginManager:
                     self.plugins[name].start_hidden, self.plugins[name]._shown = saved
                     continue
 
-                # First discovery — use AST to get metadata, defer import
+                # (Re)discover lazily — refresh metadata from source if changed
                 if name in self.plugins:
-                    # Already discovered lazily, skip
+                    h = self.plugins[name]
+                    module_file = os.path.join(pkg_dir, f'{h._module_name}.py')
+                    try:
+                        cur_mtime = os.path.getmtime(module_file)
+                    except OSError:
+                        cur_mtime = 0
+                    if cur_mtime == h._src_mtime:
+                        continue  # unchanged, skip re-parse
+                    h._src_mtime = cur_mtime
+                    mod_name, cls_name, meta = self._parse_metadata(pkg_dir)
+                    if mod_name and cls_name:
+                        h._name_raw = meta.get('name') or mod_name or 'Unnamed'
+                        h._name_zh = meta.get('name_zh')
+                        h._name_en = meta.get('name_en')
+                        h.priority = meta.get('priority', 0)
                     continue
 
                 mod_name, cls_name, meta = self._parse_metadata(pkg_dir)
                 if not mod_name:
                     continue
 
-                self.plugins[name] = self.Handle(
+                h = self.Handle(
                     None, app, self, pkg_dir=pkg_dir, module_name=mod_name,
                     class_name=cls_name, metadata=meta)
+                # Record source mtime for change detection on subsequent scans
+                module_file = os.path.join(pkg_dir, f'{mod_name}.py')
+                try:
+                    h._src_mtime = os.path.getmtime(module_file)
+                except OSError:
+                    pass
+                self.plugins[name] = h
 
         # Remove plugins that disappeared from disk
         for stale in list(self.plugins.keys() - on_disk):

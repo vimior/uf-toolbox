@@ -395,11 +395,12 @@ class MenuUI(AppState, tk.Tk):
             is_open = p.alive
             is_service = p.is_service
             dot = '● ' if is_open else '  '
+            name = p.get_name(self.current_lang_name)
 
             if not is_open:
                 # Plain command — click to start/open
                 self._plugins_menu.add_command(
-                    label=f'{dot}{p.name}',
+                    label=f'{dot}{name}',
                     command=lambda plugin=p: self._show_plugin_window(plugin))
             elif is_service:
                 # ServicePlugin running: submenu with Stop
@@ -411,11 +412,11 @@ class MenuUI(AppState, tk.Tk):
                 sub.add_command(
                     label=l.get('menu_service_stop', 'Stop'),
                     command=lambda plugin=p: self._close_plugin_window(plugin))
-                self._plugins_menu.add_cascade(label=f'{dot}{p.name}', menu=sub)
+                self._plugins_menu.add_cascade(label=f'{dot}{name}', menu=sub)
             elif p.reload:
                 # GUI reload=True: plain command — click to focus
                 self._plugins_menu.add_command(
-                    label=f'{dot}{p.name}',
+                    label=f'{dot}{name}',
                     command=lambda plugin=p: self._show_plugin_window(plugin))
             else:
                 # GUI reload=False: submenu with Open / Close
@@ -430,7 +431,7 @@ class MenuUI(AppState, tk.Tk):
                 sub.add_command(
                     label=l.get('menu_plugin_close', 'Close Window'),
                     command=lambda plugin=p: self._close_plugin_window(plugin))
-                self._plugins_menu.add_cascade(label=f'{dot}{p.name}', menu=sub)
+                self._plugins_menu.add_cascade(label=f'{dot}{name}', menu=sub)
 
     def _on_plugins_menu_open(self, event):
         self._load_plugins()
@@ -494,14 +495,14 @@ class MenuUI(AppState, tk.Tk):
             if not was_loaded and plugin.loaded:
                 self._refresh_plugins_menu()
         except Exception as e:
-            logger.error(f'[Plugin:{plugin.name}] show error, {str(e)}')
+            logger.error(f'[Plugin:{plugin.get_name(self.current_lang_name)}] show error, {str(e)}')
 
     def _close_plugin_window(self, plugin):
         """Explicitly destroy a plugin window from the menu."""
         try:
             plugin.stop()
         except Exception as e:
-            logger.error(f'[Plugin:{plugin.name}] close error, {str(e)}')
+            logger.error(f'[Plugin:{plugin.get_name(self.current_lang_name)}] close error, {str(e)}')
         finally:
             self._refresh_plugins_menu()
 
