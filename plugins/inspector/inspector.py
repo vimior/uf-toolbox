@@ -5,6 +5,29 @@ import tkinter as tk
 
 from plugins.plugin import PluginBase
 
+_STYLE = {
+    'dark': {
+        'bg':        '#2b2b2b',
+        'bar':       '#333333',
+        'text_bg':   '#363636',
+        'fg':        '#e0e0e0',
+        'hint':      '#888888',
+        'hover':     '#4a4a4a',
+        'accent':    '#2d5a8a',
+        'accent_fg': '#ffffff',
+    },
+    'light': {
+        'bg':        '#f5f5f5',
+        'bar':       '#e0e0e0',
+        'text_bg':   '#ffffff',
+        'fg':        '#333333',
+        'hint':      '#999999',
+        'hover':     '#d0d0d0',
+        'accent':    '#2d5a8a',
+        'accent_fg': '#ffffff',
+    },
+}
+
 
 class Inspector(PluginBase):
     name = "Inspector"
@@ -17,62 +40,62 @@ class Inspector(PluginBase):
 
     def __init__(self, parent, app):
         super().__init__(parent, app)
-        t = self.app.theme
+        theme_name = getattr(app, 'current_theme_name', 'dark')
+        self._s = _STYLE.get(theme_name, _STYLE['dark'])
+        s = self._s
 
         self.title(self.name)
         self.geometry("520x520")
         self.resizable(True, True)
-        self.configure(bg=t['bg'])
+        self.configure(bg=s['bg'])
 
         # ---- header ----
-        header = tk.Frame(self, bg=t['navbar_bg'], height=32)
+        header = tk.Frame(self, bg=s['bar'], height=32)
         header.pack(fill=tk.X, side=tk.TOP)
         header.pack_propagate(False)
 
-        tk.Label(header, text="  Inspector", bg=t['navbar_bg'], fg=t['fg'],
+        tk.Label(header, text="  Inspector", bg=s['bar'], fg=s['fg'],
                  font=("Microsoft YaHei", 10, "bold")).pack(side=tk.LEFT, pady=4)
 
-        self._status = tk.Label(header, text="", bg=t['navbar_bg'],
-                                fg=t['menu_hover_bg'], font=("Consolas", 8))
+        self._status = tk.Label(header, text="", bg=s['bar'],
+                                fg=s['hint'], font=("Consolas", 8))
         self._status.pack(side=tk.RIGHT, padx=8, pady=4)
 
         # ---- tab bar ----
         self._tabs = {}
         self._active_tab = None
-        tab_bar = tk.Frame(self, bg=t['bg'], height=30)
+        tab_bar = tk.Frame(self, bg=s['bg'], height=30)
         tab_bar.pack(fill=tk.X, side=tk.TOP, padx=6, pady=(4, 0))
         tab_bar.pack_propagate(False)
 
         for key, label in [("events", "Events"), ("store", "Store"), ("services", "Services")]:
             btn = tk.Label(tab_bar, text=f" {label} ", font=("Microsoft YaHei", 10),
-                           bg=t['bg'], fg=t['fg'], padx=14, pady=3,
+                           bg=s['bg'], fg=s['fg'], padx=14, pady=3,
                            cursor="hand2", relief=tk.FLAT)
             btn.pack(side=tk.LEFT)
             btn.bind("<Button-1>", lambda _, k=key: self._switch_tab(k))
-            btn.bind("<Enter>", lambda _, b=btn, c=t['nav_hover_bg']: b.config(bg=c))
+            btn.bind("<Enter>", lambda _, b=btn: b.config(bg=s['hover']))
             btn.bind("<Leave>",
-                     lambda _, b=btn, k=key, c=t['bg'], a=t['btn_active_bg']:
-                     b.config(bg=a if self._active_tab == k else c))
+                     lambda _, b=btn, k=key:
+                     b.config(bg=s['accent'] if self._active_tab == k else s['bg']))
             self._tabs[key] = btn
 
-        sep = tk.Frame(self, bg=t['btn_active_bg'], height=2)
-        sep.pack(fill=tk.X, side=tk.TOP, padx=6)
-        self._tab_sep = sep
+        tk.Frame(self, bg=s['accent'], height=2).pack(fill=tk.X, side=tk.TOP, padx=6)
 
         # ---- content ----
-        content = tk.Frame(self, bg=t['bg'])
+        content = tk.Frame(self, bg=s['bg'])
         content.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0, 2))
 
         self._frames = {}
         self._texts = {}
         for key in ("events", "store", "services"):
-            frm = tk.Frame(content, bg=t['bg'])
+            frm = tk.Frame(content, bg=s['bg'])
             frm.pack(fill=tk.BOTH, expand=True)
             frm.pack_forget()
             txt = tk.Text(frm, wrap=tk.NONE, state=tk.DISABLED,
                           font=("Consolas", 9),
-                          bg=t['input_bg'], fg=t['fg'],
-                          insertbackground=t['fg'],
+                          bg=s['text_bg'], fg=s['fg'],
+                          insertbackground=s['fg'],
                           relief=tk.FLAT, borderwidth=0,
                           padx=10, pady=6)
             txt.pack(fill=tk.BOTH, expand=True)
@@ -80,20 +103,20 @@ class Inspector(PluginBase):
             self._texts[key] = txt
 
         # ---- footer ----
-        bar = tk.Frame(self, bg=t['navbar_bg'], height=32)
+        bar = tk.Frame(self, bg=s['bar'], height=32)
         bar.pack(fill=tk.X, side=tk.BOTTOM)
         bar.pack_propagate(False)
 
         self._filter_var = tk.BooleanVar(value=False)
         tk.Checkbutton(bar, text=" All events",
                        variable=self._filter_var, command=self._refresh,
-                       bg=t['navbar_bg'], fg=t['fg'], font=("Microsoft YaHei", 8),
-                       selectcolor=t['navbar_bg'], relief=tk.FLAT,
-                       activebackground=t['navbar_bg'], activeforeground=t['fg']
+                       bg=s['bar'], fg=s['fg'], font=("Microsoft YaHei", 8),
+                       selectcolor=s['bar'], relief=tk.FLAT,
+                       activebackground=s['bar'], activeforeground=s['fg']
                        ).pack(side=tk.LEFT, padx=8, pady=4)
 
         tk.Button(bar, text=" Refresh ", command=self._refresh,
-                  bg=t['btn_active_bg'], fg=t['menu_hover_fg'],
+                  bg=s['accent'], fg=s['accent_fg'],
                   font=("Microsoft YaHei", 9, "bold"),
                   relief=tk.FLAT, padx=14, borderwidth=0,
                   activebackground='#3a6fa8', activeforeground='#ffffff'
@@ -102,13 +125,13 @@ class Inspector(PluginBase):
         self._switch_tab("events")
 
     def _switch_tab(self, key):
-        t = self.app.theme
+        s = self._s
         for k, btn in self._tabs.items():
             if k == key:
-                btn.config(bg=t['btn_active_bg'], fg=t['menu_hover_fg'])
+                btn.config(bg=s['accent'], fg=s['accent_fg'])
                 self._frames[k].pack(fill=tk.BOTH, expand=True)
             else:
-                btn.config(bg=t['bg'], fg=t['fg'])
+                btn.config(bg=s['bg'], fg=s['fg'])
                 self._frames[k].pack_forget()
         self._active_tab = key
 
@@ -152,7 +175,7 @@ class Inspector(PluginBase):
         for event in sorted(active.keys()):
             cbs = active[event]
             ns_info = ns_map.get(event, {})
-            lines.append(f"  ▸ {event}")
+            lines.append(f"  ● {event}")
             for i, cb in enumerate(cbs):
                 ns = ns_info.get(cb, '-')
                 prefix = "    └─" if i == len(cbs) - 1 else "    ├─"
@@ -176,7 +199,7 @@ class Inspector(PluginBase):
         lines = ["  TOTAL KEYS: " + str(len(state)), ""]
 
         for owner in sorted(by_owner.keys()):
-            lines.append(f"  ▸ [{owner}]")
+            lines.append(f"  ● [{owner}]")
             items = by_owner[owner]
             for i, (k, v) in enumerate(items):
                 val = str(v)[:80]
@@ -205,7 +228,7 @@ class Inspector(PluginBase):
         lines = ["  TOTAL SERVICES: " + str(len(svc)), ""]
 
         for owner in sorted(by_owner.keys()):
-            lines.append(f"  ▸ [{owner}]")
+            lines.append(f"  ● [{owner}]")
             names = sorted(by_owner[owner])
             for i, name in enumerate(names):
                 prefix = "    └─" if i == len(names) - 1 else "    ├─"
