@@ -12,7 +12,7 @@ class Inspector(PluginBase):
     name_en = "Inspector"
     namespace = "inspector"
     priority = 99
-    reload = False
+    reload = True
     fixed_size = False
 
     def __init__(self, parent, app):
