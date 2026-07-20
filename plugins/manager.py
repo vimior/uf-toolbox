@@ -16,7 +16,7 @@ class PluginManager:
 
         from common.common import logger
         pm = PluginManager(logger)
-        pm.load(app, plugin_dirs)
+        pm.load(app, path=app.plugin_path)
         # pm.plugins is the {name: Handle} registry
     """
 
@@ -418,14 +418,48 @@ class PluginManager:
 
     # -- main entry point --
 
-    def load(self, app, plugin_dirs):
-        """Scan *plugin_dirs* for plugin packages, populating self.plugins.
+    @staticmethod
+    def _resolve_plugin_dirs(path=None):
+        """Return a list of plugin directories to scan.
+
+        *path* is the optional custom plugin path from app config.
+        """
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        dirs = [os.path.join(base, 'plugins')]
+
+        exe_ext = os.path.splitext(sys.argv[0])[1].lower()
+        if exe_ext not in ('.py', '.pyw'):
+            # packaged
+            exe_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+            p = os.path.join(exe_dir, 'plugins')
+            if os.path.isdir(p) and p not in dirs:
+                dirs.append(p)
+                if exe_dir not in sys.path:
+                    sys.path.insert(0, exe_dir)
+            if path and path != 'plugins':
+                p = os.path.join(exe_dir, path)
+                if os.path.isdir(p) and p not in dirs:
+                    dirs.append(p)
+                    root = os.path.dirname(p)
+                    if root not in sys.path:
+                        sys.path.insert(0, root)
+        else:
+            # dev
+            dirs.append(os.path.join(base, 'dist', 'plugins'))
+            if path and path != 'plugins':
+                p = os.path.join(base, 'dist', path)
+                if os.path.isdir(p) and p not in dirs:
+                    dirs.append(p)
+        return dirs
+
+    def load(self, app, path=None):
+        """Resolve plugin directories, scan for packages, populate self.plugins.
 
         First call discovers plugins using AST parsing (no import).
         Actual module import is deferred until the user opens a plugin window.
         Subsequent calls refresh already-loaded and newly-appearing plugins.
         """
-
+        plugin_dirs = self._resolve_plugin_dirs(path)
         on_disk = set()
         for plugin_dir in plugin_dirs:
             if not os.path.isdir(plugin_dir):

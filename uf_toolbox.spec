@@ -19,9 +19,10 @@ _extra_hidden = [
     'configparser', 'logging.handlers', 'zipfile', 'shutil',
     # introspection — plugins may load dynamically (~160 KB total)
     'inspect', 'pkgutil', 'importlib.util',
-    'xarm', 'xarm.x3', 'xarm.x3.base',
-    'xarm.x3.code', 'xarm.x3.thread',
-    'xarm.x3.utils', 'xarm.wrapper'
+    'xarm', 'xarm.core', 'xarm.core.comm',
+    'xarm.core.config', 'xarm.core.utils', 'xarm.core.wrapper',
+    'xarm.tools', 'xarm.tools.blockly',
+    'xarm.wrapper', 'xarm.x3'
 ]
 
 a = Analysis(

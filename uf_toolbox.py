@@ -2,6 +2,14 @@
 """UF Toolbox — plugin-host application."""
 import os
 import sys
+
+# PyInstaller / Nuitka console=False 时 stdout/stderr 为 None，
+# 第三方库的 StreamHandler 写入 None 会崩溃
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, 'w')
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, 'w')
+
 import tkinter as tk
 from tkinter import messagebox
 from ui.menu import MenuUI

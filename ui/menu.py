@@ -439,34 +439,7 @@ class MenuUI(AppState, tk.Tk):
 
     def _load_plugins(self):
         """Resolve plugin directories and delegate to PluginManager."""
-        if getattr(sys, 'frozen', False):
-            plugin_dirs = [os.path.join(sys._MEIPASS, 'plugins')]
-            base = os.path.dirname(sys.executable)
-            plugin_path = os.path.join(base, 'plugins')
-            if os.path.isdir(plugin_path):
-                if base not in sys.path:
-                    sys.path.insert(0, base)
-                if plugin_path not in plugin_dirs:
-                    plugin_dirs.append(plugin_path)
-            if self.plugin_path and self.plugin_path != 'plugins':
-                plugin_path = os.path.join(base, self.plugin_path)
-                if os.path.isdir(plugin_path):
-                    root = os.path.dirname(plugin_path)
-                    if root not in sys.path:
-                        sys.path.insert(0, root)
-                    if plugin_path not in plugin_dirs:
-                        plugin_dirs.append(plugin_path)
-        else:
-            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            plugin_dirs = [
-                os.path.join(base, 'plugins'),
-                os.path.join(base, 'dist', 'plugins'),
-            ]
-            if self.plugin_path and self.plugin_path != 'plugins':
-                other_plugin_path = os.path.join(base, 'dist', self.plugin_path)
-                if other_plugin_path != plugin_dirs[1]:
-                    plugin_dirs.append(other_plugin_path)
-        self._pm.load(self, plugin_dirs)
+        self._pm.load(self, path=self.plugin_path)
 
     # ---- plugin window ----
 

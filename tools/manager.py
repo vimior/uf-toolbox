@@ -33,7 +33,7 @@ class ToolManager:
         tools_by_id = {}
         all_tools_no_id = []
         all_groups = []
-        dirs = self._resolve_dirs(path)
+        dirs = self._resolve_tool_dirs(path)
         for tools_dir in dirs:
             if not os.path.isdir(tools_dir):
                 continue
@@ -145,27 +145,33 @@ class ToolManager:
         dst_list.append(src)
 
     @staticmethod
-    def _resolve_dirs(path=None):
-        if getattr(sys, 'frozen', False):
-            dirs = [os.path.join(sys._MEIPASS, 'tools')]
-            base = os.path.dirname(sys.executable)
-            tool_path = os.path.join(base, 'tools')
-            if os.path.isdir(tool_path) and tool_path not in dirs:
-                dirs.append(tool_path)
+    def _resolve_tool_dirs(path=None):
+        """Return a list of tool directories to scan.
+
+        *path* is the optional custom tool path from app config.
+        """
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        dirs = [os.path.join(base, 'tools')]
+
+        # External tools alongside the exe (packaged: argv[0] is .exe / no extension)
+        exe_ext = os.path.splitext(sys.argv[0])[1].lower()
+        if exe_ext not in ('.py', '.pyw'):
+            # packaged
+            exe_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+            p = os.path.join(exe_dir, 'tools')
+            if os.path.isdir(p) and p not in dirs:
+                dirs.append(p)
             if path and path != 'tools':
-                tool_path = os.path.join(base, path)
-                if os.path.isdir(tool_path) and tool_path not in dirs:
-                    dirs.append(tool_path)
+                p = os.path.join(exe_dir, path)
+                if os.path.isdir(p) and p not in dirs:
+                    dirs.append(p)
         else:
-            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            dirs = [
-                os.path.join(base, 'tools'),
-                os.path.join(base, 'dist', 'tools'),
-            ]
+            # dev
+            dirs.append(os.path.join(base, 'dist', 'tools'))
             if path and path != 'tools':
-                other_tool_path = os.path.join(base, 'dist', path)
-                if other_tool_path != dirs[1]:
-                    dirs.append(other_tool_path)
+                p = os.path.join(base, 'dist', path)
+                if p != dirs[1]:
+                    dirs.append(p)
         return dirs
 
     @staticmethod
