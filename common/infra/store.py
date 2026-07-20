@@ -70,11 +70,11 @@ class Store:
         """
         for event, callback in self._subscriptions.pop(owner, []):
             self._eventbus.off(event, callback)
-        keys = [k for k, v in self._owners.items() if v == owner]
-        for k in keys:
+        for k in [k for k, v in self._owners.items() if v == owner]:
             self._state.pop(k, None)
             self._owners.pop(k, None)
-            self._eventbus.clear(f'store:changed:{k}')
+            # Don't clear listeners — other plugins may still listen to this
+            # key and expect callbacks when the key is re-committed later.
 
 
 class _StoreModule:

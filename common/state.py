@@ -8,9 +8,7 @@ from tkinter import ttk
 
 from themes import DARK_THEME, LIGHT_THEME
 from i18n import ZH, EN
-from common.eventbus import EventBus
-from common.store import Store
-from common.services import Services
+from common.infra import Infrastructure
 
 _CONFIG_PATH = os.path.join(os.path.expanduser('~'), '.uf_toolbox.json')
 
@@ -22,29 +20,34 @@ class AppState:
 
     @property
     def eventbus(self):
-        return self._eventbus
+        return self._infra.eventbus
 
     @property
     def store(self):
-        return self._store
+        return self._infra.store
 
     @property
     def services(self):
-        return self._services
+        return self._infra.services
+
+    def module(self, name):
+        """Return a namespaced app handle for a plugin — same pattern as
+        ``store.module(name)`` and ``services.module(name)``."""
+        return self._infra.module(name, app=self)
 
     # ---- event bus delegates ----------------------------------------
 
     def on(self, event, callback):
-        self._eventbus.on(event, callback)
+        self._infra.on(event, callback)
 
     def off(self, event, callback):
-        self._eventbus.off(event, callback)
+        self._infra.off(event, callback)
 
     def clear(self, event):
-        self._eventbus.clear(event)
+        self._infra.clear(event)
 
     def emit(self, event, *args, **kwargs):
-        self._eventbus.emit(event, *args, **kwargs)
+        self._infra.emit(event, *args, **kwargs)
 
     # ---- lifecycle hooks -------------------------------------------
     #
@@ -58,8 +61,8 @@ class AppState:
 
     def init(self):
         """Override in subclasses to register event listeners."""
-        self._eventbus.on('hook:plugin:did-destroy', self._on_plugin_destroyed)
-        self._eventbus.on('hook:plugin:did-stop', self._on_plugin_destroyed)
+        self._infra.on('hook:plugin:did-destroy', self._on_plugin_destroyed)
+        self._infra.on('hook:plugin:did-stop', self._on_plugin_destroyed)
         try:
             super().init()
         except AttributeError:
@@ -69,14 +72,11 @@ class AppState:
         """Clean up store/services when a plugin is stopped/destroyed."""
         cls = handle._cls
         ns = (getattr(cls, 'namespace', None) if cls else None) or handle._class_name or 'Unknown'
-        self._store.cleanup(ns)
-        self._services.cleanup(ns)
+        self._infra.cleanup(ns)
 
     def init_state(self):
         """Initialize all state. Called once from main.py.__init__."""
-        self._eventbus = EventBus()
-        self._store = Store(self._eventbus)
-        self._services = Services(self._eventbus)
+        self._infra = Infrastructure()
 
         self._listeners = {}
         self._config = self._load_config()

@@ -17,7 +17,8 @@ class PluginBase(tk.Toplevel):
         on_hide(self) — called when the window is hidden (reload=False only, user closes → withdraw)
         on_destroy(self) — called before the instance is destroyed (final cleanup)
 
-    The app reference is available as self.app.
+    self.app is a namespaced proxy — listeners registered via
+    ``self.app.on()`` are auto-cleaned on destroy.
     """
 
     name = "Unnamed Plugin"
@@ -30,10 +31,10 @@ class PluginBase(tk.Toplevel):
     start_hidden = False
 
     def __init__(self, parent=None, app=None):
-        self.app = app
         ns = getattr(type(self), 'namespace', None) or type(self).__name__
-        self.store = app.store.module(ns) if app else None
-        self.services = app.services.module(ns) if app else None
+        self.app = app.module(ns)
+        self.store = self.app.store
+        self.services = self.app.services
         super().__init__(parent)
 
     def on_show(self):
@@ -45,11 +46,7 @@ class PluginBase(tk.Toplevel):
         print(f'[plugin] on_hide: {self.name}')
 
     def on_destroy(self):
-        """Called before the instance is destroyed — final cleanup.
-
-        Override to release resources: cancel timers, close connections,
-        unregister event listeners (self.app.off(...)), join threads, etc.
-        """
+        """Called before the instance is destroyed — final cleanup."""
         print(f'[plugin] on_destroy: {self.name}')
 
 
@@ -65,6 +62,9 @@ class ServicePlugin:
         __init__(self, app=None) — register services here; call super().__init__(app)
         on_show(self) — called when the service starts (first start or restart)
         on_destroy(self) — called before shutdown (final cleanup)
+
+    self.app is a namespaced proxy — listeners registered via
+    ``self.app.on()`` are auto-cleaned on stop.
     """
 
     name = "Unnamed Service"
@@ -72,10 +72,10 @@ class ServicePlugin:
     auto_start = False
 
     def __init__(self, app=None):
-        self.app = app
         ns = getattr(type(self), 'namespace', None) or type(self).__name__
-        self.store = app.store.module(ns) if app else None
-        self.services = app.services.module(ns) if app else None
+        self.app = app.module(ns)
+        self.store = self.app.store
+        self.services = self.app.services
 
     def on_start(self):
         """Called when the service starts — first start or restart."""

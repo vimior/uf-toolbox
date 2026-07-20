@@ -11,6 +11,7 @@ class EventBus:
 
     def __init__(self):
         self._listeners = {}
+        self._namespaced = {}  # ns → [(event, callback), ...]
 
     # ---- helpers ----
 
@@ -61,3 +62,41 @@ class EventBus:
             print(f'[eventbus] emit {event}')
             for cb in listeners:
                 cb(*args, **kwargs)
+
+    # ---- namespaced access ----
+
+    def module(self, ns):
+        """Return a namespace-scoped handle — on/off tracked for cleanup(ns)."""
+        return _EventBusModule(self, ns)
+
+    def cleanup(self, ns):
+        """Remove all listeners registered under namespace *ns*."""
+        for event, callback in self._namespaced.pop(ns, []):
+            self.off(event, callback)
+
+
+class _EventBusModule:
+    """Namespaced eventbus handle — on/off calls are tracked in the parent.
+    emit / clear / cleanup pass through to the real eventbus.
+    """
+
+    __slots__ = ('_bus', '_ns')
+
+    def __init__(self, bus, ns):
+        self._bus = bus
+        self._ns = ns
+
+    def on(self, event, callback):
+        self._bus.on(event, callback)
+        self._bus._namespaced.setdefault(self._ns, []).append((event, callback))
+
+    def off(self, event, callback):
+        self._bus.off(event, callback)
+        items = self._bus._namespaced.get(self._ns, [])
+        try:
+            items.remove((event, callback))
+        except ValueError:
+            pass
+
+    def __getattr__(self, name):
+        return getattr(self._bus, name)
