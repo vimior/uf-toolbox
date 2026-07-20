@@ -35,6 +35,7 @@ a = Analysis(
         ('icons/uf_toolbox_close.png', 'icons'),
         ('icons/uf_toolbox_close_hover.png', 'icons'),
         ('tools/tools.json', 'tools'),
+        ('plugins/inspector', 'plugins/inspector'),
     ],
     hiddenimports=[
         'themes', 'themes.light', 'themes.dark',

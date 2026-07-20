@@ -19,6 +19,7 @@ python -m nuitka \
     --include-package=i18n.en \
     --include-package=plugins \
     --include-package=plugins.plugin \
+    --include-package=plugins.inspector \
     --include-package=common \
     --include-package=common.common \
     --include-package=common.state \
