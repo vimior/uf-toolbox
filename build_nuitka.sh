@@ -21,10 +21,8 @@ python -m nuitka \
     --include-package=plugins.plugin \
     --include-package=common \
     --include-package=common.common \
-    --include-package=common.eventbus \
     --include-package=common.state \
-    --include-package=common.store \
-    --include-package=common.services \
+    --include-package=common.infra \
     --include-package=ui \
     --include-package=ui.menu \
     --include-package=ui.log \
