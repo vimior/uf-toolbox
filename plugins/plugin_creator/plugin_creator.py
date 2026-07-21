@@ -746,6 +746,7 @@ class PluginCreator(GuiPlugin):
     def _show_dialog(self, kind, title, message):
         """Show a custom dialog centered on this plugin window."""
         dlg = tk.Toplevel(self)
+        dlg.withdraw()  # hide until positioned to avoid top-left flash
         dlg.title(title)
         dlg.resizable(False, False)
         dlg.transient(self)
@@ -776,12 +777,15 @@ class PluginCreator(GuiPlugin):
                   cursor='hand2', bd=0,
                   activebackground='#3a6fa8',
                   activeforeground='#ffffff').pack()
-        # Center on plugin window
+        # Center on plugin window (use reqwidth/reqheight — winfo_width/height
+        # return 1 while the window is withdrawn)
         dlg.update_idletasks()
-        pw, ph = self.winfo_width(), self.winfo_height()
-        px, py = self.winfo_x(), self.winfo_y()
-        dw, dh = dlg.winfo_width(), dlg.winfo_height()
-        dlg.geometry(f'+{px + (pw - dw) // 2}+{py + (ph - dh) // 2}')
+        dw = dlg.winfo_reqwidth()
+        dh = dlg.winfo_reqheight()
+        px = self.winfo_rootx() + (self.winfo_width() - dw) // 2
+        py = self.winfo_rooty() + (self.winfo_height() - dh) // 2
+        dlg.geometry(f'{dw}x{dh}+{px}+{py}')
+        dlg.deiconify()  # show at final position
         dlg.grab_set()
         dlg.focus_force()
         dlg.wait_window()
