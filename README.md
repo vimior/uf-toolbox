@@ -40,10 +40,21 @@ uf-toolbox
 - **插件路径** — 指定插件加载目录，默认为 `plugins`
 - 修改后保存按钮激活，关闭窗口时如有未保存修改会弹窗提醒
 
+## 文档
+
+- [工具配置指南](docs/tool-guide.md) — 如何添加/分组/替换自定义工具
+- [插件开发指南](docs/plugin-guide-zh.md) — 如何开发自定义插件
+
 ### 打包
 
 使用 PyInstaller 打包为独立可执行文件：
 
 ```bash
-pyinstaller uf_toolbox.spec --clean
+build_pyinstaller.bat
+```
+
+或使用 Nuitka：
+
+```bash
+build_nuitka.bat
 ```
