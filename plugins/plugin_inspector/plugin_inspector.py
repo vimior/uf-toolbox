@@ -2,8 +2,24 @@
 """Inspector plugin — event / store / services flow map."""
 import time
 import tkinter as tk
+from plugins.plugin import GuiPlugin
 
-from plugins.plugin import PluginBase
+_LANG = {
+    'zh': {
+        'events':   '事件',
+        'store':    '存储',
+        'services': '服务',
+        'all_events': ' 全部事件',
+        'refresh':  ' 刷新 ',
+    },
+    'en': {
+        'events':   'Events',
+        'store':    'Store',
+        'services': 'Services',
+        'all_events': ' All events',
+        'refresh':  ' Refresh ',
+    },
+}
 
 _STYLE = {
     'dark': {
@@ -29,37 +45,29 @@ _STYLE = {
 }
 
 
-class Inspector(PluginBase):
-    name = "Inspector"
-    name_zh = "审查器"
-    name_en = "Inspector"
-    namespace = "inspector"
-    priority = 99
+class PluginInspector(GuiPlugin):
+    name = "Plugin Inspector"
+    name_zh = "插件审查器"
+    name_en = "Plugin Inspector"
+    namespace = "plugin_inspector"
+    priority = 998
     reload = True
     fixed_size = False
 
     def __init__(self, parent, app):
         super().__init__(parent, app)
+        lang = getattr(app, 'current_lang_name', 'en')
+        if lang not in ('zh', 'en'):
+            lang = 'en'
+        self._lbl = _LANG[lang]
         theme_name = getattr(app, 'current_theme_name', 'dark')
         self._s = _STYLE.get(theme_name, _STYLE['dark'])
         s = self._s
 
-        self.title(self.name)
+        self.title(self.name_zh if lang == 'zh' else self.name_en)
         self.geometry("520x520")
         self.resizable(True, True)
         self.configure(bg=s['bg'])
-
-        # ---- header ----
-        header = tk.Frame(self, bg=s['bar'], height=32)
-        header.pack(fill=tk.X, side=tk.TOP)
-        header.pack_propagate(False)
-
-        tk.Label(header, text="  Inspector", bg=s['bar'], fg=s['fg'],
-                 font=("Microsoft YaHei", 10, "bold")).pack(side=tk.LEFT, pady=4)
-
-        self._status = tk.Label(header, text="", bg=s['bar'],
-                                fg=s['hint'], font=("Consolas", 8))
-        self._status.pack(side=tk.RIGHT, padx=8, pady=4)
 
         # ---- tab bar ----
         self._tabs = {}
@@ -68,7 +76,8 @@ class Inspector(PluginBase):
         tab_bar.pack(fill=tk.X, side=tk.TOP, padx=6, pady=(4, 0))
         tab_bar.pack_propagate(False)
 
-        for key, label in [("events", "Events"), ("store", "Store"), ("services", "Services")]:
+        for key in ("events", "store", "services"):
+            label = self._lbl[key]
             btn = tk.Label(tab_bar, text=f" {label} ", font=("Microsoft YaHei", 10),
                            bg=s['bg'], fg=s['fg'], padx=14, pady=3,
                            cursor="hand2", relief=tk.FLAT)
@@ -79,6 +88,10 @@ class Inspector(PluginBase):
                      lambda _, b=btn, k=key:
                      b.config(bg=s['accent'] if self._active_tab == k else s['bg']))
             self._tabs[key] = btn
+
+        self._status = tk.Label(tab_bar, text="", bg=s['bg'],
+                                fg=s['hint'], font=("Consolas", 8))
+        self._status.pack(side=tk.RIGHT, padx=8, pady=4)
 
         tk.Frame(self, bg=s['accent'], height=2).pack(fill=tk.X, side=tk.TOP, padx=6)
 
@@ -99,6 +112,11 @@ class Inspector(PluginBase):
                           relief=tk.FLAT, borderwidth=0,
                           padx=10, pady=6)
             txt.pack(fill=tk.BOTH, expand=True)
+
+            def _scroll(event, t=txt):
+                t.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            txt.bind("<MouseWheel>", _scroll)
+
             self._frames[key] = frm
             self._texts[key] = txt
 
@@ -107,15 +125,16 @@ class Inspector(PluginBase):
         bar.pack(fill=tk.X, side=tk.BOTTOM)
         bar.pack_propagate(False)
 
+        lbl = self._lbl
         self._filter_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(bar, text=" All events",
+        tk.Checkbutton(bar, text=lbl['all_events'],
                        variable=self._filter_var, command=self._refresh,
                        bg=s['bar'], fg=s['fg'], font=("Microsoft YaHei", 8),
                        selectcolor=s['bar'], relief=tk.FLAT,
                        activebackground=s['bar'], activeforeground=s['fg']
                        ).pack(side=tk.LEFT, padx=8, pady=4)
 
-        tk.Button(bar, text=" Refresh ", command=self._refresh,
+        tk.Button(bar, text=lbl['refresh'], command=self._refresh,
                   bg=s['accent'], fg=s['accent_fg'],
                   font=("Microsoft YaHei", 9, "bold"),
                   relief=tk.FLAT, padx=14, borderwidth=0,

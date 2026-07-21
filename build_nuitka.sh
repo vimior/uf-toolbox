@@ -19,7 +19,15 @@ python -m nuitka \
     --include-package=i18n.en \
     --include-package=plugins \
     --include-package=plugins.plugin \
-    --include-package=plugins.inspector \
+    --include-package=plugins.plugin_creator \
+    --include-data-files=plugins/plugin_creator/__init__.py=plugins/plugin_creator/__init__.py \
+    --include-data-files=plugins/plugin_creator/plugin_creator.py=plugins/plugin_creator/plugin_creator.py \
+    --include-package=plugins.plugin_guide \
+    --include-data-files=plugins/plugin_guide/__init__.py=plugins/plugin_guide/__init__.py \
+    --include-data-files=plugins/plugin_guide/plugin_guide.py=plugins/plugin_guide/plugin_guide.py \
+    --include-package=plugins.plugin_inspector \
+    --include-data-files=plugins/plugin_inspector/__init__.py=plugins/plugin_inspector/__init__.py \
+    --include-data-files=plugins/plugin_inspector/plugin_inspector.py=plugins/plugin_inspector/plugin_inspector.py \
     --include-package=common \
     --include-package=common.common \
     --include-package=common.state \
@@ -43,6 +51,8 @@ python -m nuitka \
     --include-package=xarm.x3 \
     --include-data-dir=icons=icons \
     --include-data-files=tools/tools.json=tools/tools.json \
+    --include-data-files=docs/plugin-guide.md=docs/plugin-guide.md \
+    --include-data-files=docs/plugin-guide-zh.md=docs/plugin-guide-zh.md \
     --plugin-enable=tk-inter \
     --include-package=json.encoder \
     --include-package=json.decoder \

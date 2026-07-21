@@ -6,7 +6,7 @@ import sys
 import pkgutil
 import importlib.util
 
-from plugins.plugin import PluginBase, ServicePlugin
+from plugins.plugin import GuiPlugin, ServicePlugin
 
 
 class PluginManager:
@@ -61,7 +61,7 @@ class PluginManager:
                 self.priority = cls.priority
                 self.auto_start = getattr(cls, 'auto_start', False)
                 self.start_hidden = getattr(cls, 'start_hidden', False)
-                if issubclass(cls, PluginBase):
+                if issubclass(cls, GuiPlugin):
                     self.reload = cls.reload
                     self.fixed_position = cls.fixed_position
                     self.fixed_size = cls.fixed_size
@@ -212,7 +212,7 @@ class PluginManager:
             self._name_zh = getattr(cls, 'name_zh', None)
             self._name_en = getattr(cls, 'name_en', None)
             self.priority = cls.priority
-            if issubclass(cls, PluginBase):
+            if issubclass(cls, GuiPlugin):
                 self.reload = cls.reload
                 self.fixed_position = cls.fixed_position
                 self.fixed_size = cls.fixed_size
@@ -383,7 +383,7 @@ class PluginManager:
     # -- Lazy import helper --
 
     def _import_class(self, pkg_dir, module_name, class_name):
-        """Import a plugin module and return its PluginBase subclass, or None."""
+        """Import a plugin module and return its GuiPlugin subclass, or None."""
         init_file = os.path.join(pkg_dir, '__init__.py')
         if not os.path.isfile(init_file):
             return None
@@ -409,7 +409,7 @@ class PluginManager:
             for attr in dir(mod):
                 obj = getattr(mod, attr)
                 if isinstance(obj, type) and (
-                    (issubclass(obj, PluginBase) and obj is not PluginBase)
+                    (issubclass(obj, GuiPlugin) and obj is not GuiPlugin)
                     or (issubclass(obj, ServicePlugin) and obj is not ServicePlugin)):
                     return obj
         except Exception as e:

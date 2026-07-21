@@ -3,10 +3,10 @@
 import tkinter as tk
 
 
-class PluginBase(tk.Toplevel):
-    """Base class all plugins must inherit from.
+class GuiPlugin(tk.Toplevel):
+    """GUI plugin base class — the plugin instance IS its window.
 
-    PluginBase is a tk.Toplevel — the plugin instance IS its window.
+    Inherit from this for plugins that open a window.
     Build your UI in __init__ using ``self`` as the parent.
 
     Subclasses MUST set:
@@ -48,6 +48,10 @@ class PluginBase(tk.Toplevel):
     def on_destroy(self):
         """Called before the instance is destroyed — final cleanup."""
         print(f'[plugin] on_destroy: {self.name}')
+
+
+# Backward-compatible alias
+PluginBase = GuiPlugin
 
 
 class ServicePlugin:
