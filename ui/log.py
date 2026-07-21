@@ -60,20 +60,26 @@ class LogUI(AppState, tk.Tk):
         win.resizable(True, True)
         self._log_win = win
 
+        outer = tk.Frame(win, bg=t['bg'])
+        outer.pack(fill=tk.BOTH, expand=True, padx=(8, 0), pady=(8, 4))
+
+        scrollbar = ttk.Scrollbar(outer, orient=tk.VERTICAL)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
         self._log_border_frame = border = tk.Frame(
-            win, bg=t['border'], padx=1, pady=1,
+            outer, bg=t['border'], padx=1, pady=1,
             bd=0, highlightthickness=0)
-        border.pack(fill=tk.BOTH, expand=True, padx=8, pady=(8, 4))
+        border.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
         self._log_text = tk.Text(
             border, wrap=tk.WORD,
             bg='#1e1e1e', fg='#d4d4d4', insertbackground='white',
             font=('Consolas', 9), relief=tk.FLAT,
             state=tk.DISABLED, padx=6, pady=4,
-            highlightbackground='#1e1e1e', highlightcolor='#1e1e1e')
-        scrollbar = ttk.Scrollbar(border, command=self._log_text.yview)
-        self._log_text.configure(yscrollcommand=scrollbar.set)
-        self._log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            highlightbackground='#1e1e1e', highlightcolor='#1e1e1e',
+            yscrollcommand=scrollbar.set)
+        scrollbar.config(command=self._log_text.yview)
+        self._log_text.pack(fill=tk.BOTH, expand=True)
 
         if self._log_buffer:
             self._log_text.configure(state=tk.NORMAL)
