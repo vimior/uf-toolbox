@@ -15,12 +15,15 @@ class SettingsUI(AppState, tk.Tk):
         self._settings_win = None
         self._settings_dirty = False
         self.on('show-settings', self._show_settings)
+        self.on('theme:changed', lambda name: SettingsUI.apply_theme(self, name))
+        self.on('lang:changed', lambda name: SettingsUI.apply_lang(self, name))
 
     # ---- theme / lang ----
 
-    def apply_theme(self, t):
+    def apply_theme(self, name):
         if self._settings_win is None or not self._settings_win.winfo_exists():
             return
+        t = self.theme
         win = self._settings_win
         win.configure(bg=t['bg'])
 
@@ -54,9 +57,10 @@ class SettingsUI(AppState, tk.Tk):
                                  activebackground=t['btn_active_bg'],
                                  activeforeground=t['btn_fg'])
 
-    def apply_lang(self, l, t=None):
+    def apply_lang(self, name):
         if self._settings_win is None or not self._settings_win.winfo_exists():
             return
+        l = self.lang
         self._settings_win.title(l['config_title'])
         w = self._config_widgets
         w['tool_lbl'].config(text=l['config_tool_path'])
@@ -64,7 +68,7 @@ class SettingsUI(AppState, tk.Tk):
         w['tool_btn'].config(text=l['config_select'])
         w['plugin_btn'].config(text=l['config_select'])
         w['save_btn'].config(text=l['config_save'])
-        self.emit('set-win-position', self._settings_win, h=200)
+        # self.emit('set-win-position', self._settings_win, h=200)
 
     # ---- window ----
 

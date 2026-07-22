@@ -45,6 +45,8 @@ class LogUI(AppState, tk.Tk):
     def init(self):
         super().init()
         self.on('show-log', self._show_log)
+        self.on('theme:changed', lambda name: LogUI.apply_theme(self, name))
+        self.on('lang:changed', lambda name: LogUI.apply_lang(self, name))
 
     def _show_log(self):
         if self._log_win is not None and self._log_win.winfo_exists():
@@ -134,9 +136,10 @@ class LogUI(AppState, tk.Tk):
             self._log_text.delete('1.0', tk.END)
             self._log_text.configure(state=tk.DISABLED)
 
-    def apply_theme(self, t):
+    def apply_theme(self, name):
         if self._log_win is None or not self._log_win.winfo_exists():
             return
+        t = self.theme
         self._log_win.config(bg=t['bg'])
         self._log_border_frame.config(bg=t['border'])
         self._log_bottom_frame.config(bg=t['bg'])
@@ -146,9 +149,10 @@ class LogUI(AppState, tk.Tk):
                 activebackground=t['btn_active_bg'],
                 activeforeground=t['btn_fg'])
 
-    def apply_lang(self, l, t=None):
+    def apply_lang(self, name):
         if self._log_win is None or not self._log_win.winfo_exists():
             return
+        l = self.lang
         self._log_win.title(l['log_title'])
         if hasattr(self, '_log_clear_btn'):
             self._log_clear_btn.config(text=l['log_clear'])

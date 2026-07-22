@@ -11,6 +11,8 @@ class AboutUI(AppState, tk.Tk):
         super().init()
         self._about_win = None
         self.on('show-about', self._show_about)
+        self.on('theme:changed', lambda name: AboutUI.apply_theme(self, name))
+        self.on('lang:changed', lambda name: AboutUI.apply_lang(self, name))
 
     def _show_about(self):
         """Show the About dialog."""
@@ -36,11 +38,11 @@ class AboutUI(AppState, tk.Tk):
         self._about_win = win
         win.bind('<Destroy>', lambda _: setattr(self, '_about_win', None))
 
-    def apply_theme(self, t):
+    def apply_theme(self, name):
         """Recreate the About dialog if it exists, to apply theme changes."""
         self._recreate_about()
 
-    def apply_lang(self, l, t=None):
+    def apply_lang(self, name):
         """Recreate the About dialog if it exists, to apply language changes."""
         self._recreate_about()
 

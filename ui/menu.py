@@ -49,6 +49,8 @@ class MenuUI(AppState, tk.Tk):
                     self._show_plugin_window(h)
             self.off('auto-start-plugins', _on_auto_start)
         self.on('auto-start-plugins', _on_auto_start)
+        self.on('theme:changed', lambda name: MenuUI.apply_theme(self, name))
+        self.on('lang:changed', lambda name: MenuUI.apply_lang(self, name))
 
     # ---- helpers ----
 
@@ -136,7 +138,8 @@ class MenuUI(AppState, tk.Tk):
         self.bind('<FocusOut>', self._on_focus_out)
         self._fit_window()
 
-    def apply_theme(self, t):
+    def apply_theme(self, name):
+        t = self.theme
         self.configure(bg=t['bg'])
         self._navbar.config(bg=t['navbar_bg'])
         self._nav_sep.config(bg=t['separator2'])
@@ -481,7 +484,8 @@ class MenuUI(AppState, tk.Tk):
 
     # ---- theme / lang ----
 
-    def _apply_lang(self, l, t=None):
+    def apply_lang(self, name):
+        l = self.lang
         self.title(l['window_title'])
         if isinstance(self._brand_lbl, tk.Label):
             self._brand_lbl.config(text=f'  {l["window_title"]}')
@@ -660,11 +664,9 @@ class MenuUI(AppState, tk.Tk):
     def set_theme(self, name=None):
         if name is not None:
             AppState.set_theme(self, name)
-        self._dispatch('apply_theme', self, self.theme)
+        self.emit('theme:changed', self.current_theme_name)
 
     def set_lang(self, name=None):
         if name is not None:
             AppState.set_lang(self, name)
-        self._apply_lang(self.lang, self.theme)
-        self.after(50, lambda: self._dispatch('apply_lang', self, self.lang, self.theme))
-        # self._dispatch('apply_lang', self, self.lang, self.theme)
+        self.emit('lang:changed', self.current_lang_name)  # 广播给所有 mixin + 插件
