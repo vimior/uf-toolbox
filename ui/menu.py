@@ -64,8 +64,8 @@ class MenuUI(AppState, tk.Tk):
 
     def _build_menu(self):
         t, l = self.theme, self.lang
-        self._theme_var = tk.StringVar(value=getattr(self, '_current_theme_name', 'dark'))
-        self._lang_var = tk.StringVar(value=getattr(self, '_current_lang_name', ''))
+        self._theme_var = tk.StringVar(value=self.current_theme_name)
+        self._lang_var = tk.StringVar(value=self.config_lang_name)
         self._topmost_var = tk.BooleanVar(value=self.always_on_top)
         self._auto_hide_var = tk.BooleanVar(value=self.auto_hide_enabled)
 
@@ -345,7 +345,7 @@ class MenuUI(AppState, tk.Tk):
         self._destroy_submenus(menu)
         menu.delete(0, tk.END)
         empty_key = 'menu_no_system' if filter_key == 'system' else 'menu_no_tools'
-        result = self._tm.scan(self.resolved_lang, tab=filter_key, path=self.tool_path)
+        result = self._tm.scan(self.current_lang_name, tab=filter_key, path=self.tool_path)
         if not result['tools'] and not result['groups']:
             menu.add_command(
                 label=self.lang.get(empty_key, '(No Tools)'),
@@ -499,8 +499,8 @@ class MenuUI(AppState, tk.Tk):
             self._destroy_submenus(m)
             m.delete(0, tk.END)
             self._build_settings_menu(m)
-        self._theme_var.set(getattr(self, '_current_theme_name', 'dark'))
-        self._lang_var.set(getattr(self, '_current_lang_name', 'en'))
+        self._theme_var.set(self.current_theme_name)
+        self._lang_var.set(self.config_lang_name)
         self._refresh_plugins_menu()
         if hasattr(self, '_system_menu'):
             self._refresh_tools_menu(self._system_menu, 'system')

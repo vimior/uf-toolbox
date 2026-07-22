@@ -78,19 +78,17 @@ class AppState:
         """Initialize all state. Called once from main.py.__init__."""
         self._infra = Infrastructure()
 
-        self._listeners = {}
         self._config = self._load_config()
         theme_name = self._config.get('theme', 'dark')
         lang_name = self._config.get('lang', 'auto')
         self._current_theme_name = theme_name
-        self._current_lang_name = lang_name
+        self._config_lang_name = lang_name   # raw config value: 'zh', 'en', 'auto', ...
+        self._locale_lang_name = self._resolve_locale()  # always 'zh' or 'en'
         self._theme = DARK_THEME if theme_name == 'dark' else LIGHT_THEME
-        self._lang = (ZH if lang_name == 'zh' else EN
-                      if lang_name == 'en' else self._resolve_lang())
+        self._lang = ZH if self.current_lang_name == 'zh' else EN
         self._main_width = 520
         self._main_height = 44
-        base = os.path.dirname(
-            os.path.dirname(os.path.abspath(__file__)))
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self._ico_path = os.path.join(base, 'icons', 'uf_toolbox.ico')
         self._png_path = os.path.join(base, 'icons', 'uf_toolbox.png')
         self._ttk_style = ttk.Style()
@@ -114,8 +112,18 @@ class AppState:
         return self._current_theme_name
 
     @property
+    def config_lang_name(self):
+        """Raw config value — 'zh', 'en', 'auto', etc. For UI that needs
+        to distinguish explicit selection from auto-detection."""
+        return self._config_lang_name
+
+    @property
     def current_lang_name(self):
-        return self._current_lang_name
+        """Effective language — always 'zh' or 'en'. Uses config value
+        when set explicitly, otherwise falls back to system locale."""
+        if self._config_lang_name in ('zh', 'en'):
+            return self._config_lang_name
+        return self._locale_lang_name
 
     @property
     def ico_path(self):
@@ -138,18 +146,6 @@ class AppState:
 
     def set_main_height(self, v):
         self._main_height = v
-
-    @property
-    def resolved_lang(self):
-        """Return 'zh' or 'en', resolving 'auto' to system locale."""
-        name = self._current_lang_name
-        if name == 'auto':
-            try:
-                loc = locale.getdefaultlocale()[0]
-                return 'zh' if (loc and loc.startswith('zh')) else 'en'
-            except Exception:
-                return 'en'
-        return name or 'en'
 
     @property
     def config(self):
@@ -194,19 +190,19 @@ class AppState:
 
     def set_lang(self, name=None):
         if name is not None:
-            self._lang = (self._resolve_lang() if name == 'auto'
-                          else ZH if name == 'zh' else EN)
-            self._current_lang_name = name
+            self._config_lang_name = name    # update raw first
+            self._lang = ZH if self.current_lang_name == 'zh' else EN
             self._config['lang'] = name
             self._save_config()
 
     @staticmethod
-    def _resolve_lang():
+    def _resolve_locale():
+        """Resolve system locale to 'zh' or 'en'."""
         try:
             loc = locale.getdefaultlocale()[0]
-            return ZH if loc and loc.startswith('zh') else EN
+            return 'zh' if (loc and loc.startswith('zh')) else 'en'
         except Exception:
-            return EN
+            return 'en'
 
     def _load_config(self):
         try:
