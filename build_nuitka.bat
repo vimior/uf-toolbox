@@ -51,8 +51,11 @@ python -m nuitka ^
     --include-package=xarm.x3 ^
     --include-data-dir=icons=icons ^
     --include-data-files=tools\tools.json=tools\tools.json ^
+    --include-data-files=tools\tools_linux.json=tools\tools_linux.json ^
     --include-data-files=docs\plugin-guide.md=docs\plugin-guide.md ^
     --include-data-files=docs\plugin-guide-zh.md=docs\plugin-guide-zh.md ^
+    --include-data-files=docs\tool-guide.md=docs\tool-guide.md ^
+    --include-data-files=docs\tool-guide-zh.md=docs\tool-guide-zh.md ^
     --plugin-enable=tk-inter ^
     --include-package=json.encoder ^
     --include-package=json.decoder ^

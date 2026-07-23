@@ -7,6 +7,7 @@ from common.state import AppState
 from common.common import FONT_FAMILY, logger
 from plugins.manager import PluginManager
 from tools.manager import ToolManager
+from plugins.plugin_guide.plugin_guide import PluginGuide
 
 MENU_ACTIVEBORDERWIDTH = 3
 
@@ -349,7 +350,13 @@ class MenuUI(AppState, tk.Tk):
         menu.delete(0, tk.END)
         empty_key = 'menu_no_system' if filter_key == 'system' else 'menu_no_tools'
         result = self._tm.scan(self.current_lang_name, tab=filter_key, path=self.tool_path)
-        if not result['tools'] and not result['groups']:
+        if filter_key == 'tools':
+            menu.add_command(label=f"  {self.lang['tool_guide']}  ",
+                             command=self._show_tool_guide)
+            if not result['tools'] and not result['groups']:
+                return
+            menu.add_separator()
+        elif not result['tools'] and not result['groups']:
             menu.add_command(
                 label=self.lang.get(empty_key, '(No Tools)'),
                 state=tk.DISABLED)
@@ -379,6 +386,25 @@ class MenuUI(AppState, tk.Tk):
         for t in result['tools']:
             menu.add_command(label=t['name'], command=_cmd(t))
         _build_group(menu, result['groups'])
+
+    def _show_tool_guide(self):
+        if hasattr(self, '_tool_guide_win') and self._tool_guide_win.winfo_exists():
+            self._tool_guide_win.lift()
+            self._tool_guide_win.focus_force()
+            return
+        self._tool_guide_win = PluginGuide(parent=self, app=self,
+                                           doc='tool-guide.md',
+                                           title_zh='工具指南',
+                                           title_en='Tool Guide')
+        self.emit('set-win-icon', self._tool_guide_win)
+        self.emit('set-win-position', self._tool_guide_win,
+            x=(self.winfo_x() + self.winfo_width() + 4
+                if self._tool_guide_win.fixed_position else None),
+            y=(self.winfo_y() if self._tool_guide_win.fixed_position else None),
+            w=(420 if self._tool_guide_win.fixed_size else None),
+            h=(self.main_height if self._tool_guide_win.fixed_size else None),
+            fixed_size=self._tool_guide_win.fixed_size,
+            fixed_position=self._tool_guide_win.fixed_position)
 
     def _build_plugins_menu(self, menu):
         self._plugins_menu = menu

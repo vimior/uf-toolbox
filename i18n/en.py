@@ -19,6 +19,7 @@ EN = {
     'menu_no_tools': '(No Tools)',
     'menu_system': 'System',
     'menu_no_system': '(No System Tools)',
+    'tool_guide': 'Tool Guide',
     # generic
     'window_title': 'UF ToolBox',
     'menu_about': 'About',

@@ -36,7 +36,12 @@ class PluginGuide(GuiPlugin):
     reload = True
     priority = 1000
 
-    def __init__(self, parent=None, app=None):
+    def __init__(self, parent=None, app=None, doc=None, title_zh=None, title_en=None):
+        if title_zh:
+            type(self).name_zh = title_zh
+        if title_en:
+            type(self).name_en = title_en
+        self._doc_name = doc or 'plugin-guide.md'
         super().__init__(parent, app)
         lang_name = self.app.current_lang_name
         theme_name = self.app.current_theme_name
@@ -51,7 +56,7 @@ class PluginGuide(GuiPlugin):
         hdr = tk.Frame(self, bg=s['bar'], height=28)
         hdr.pack(fill=tk.X)
         hdr.pack_propagate(False)
-        title = "  Plugin  Development  Guide" if lang_name == "en" else "  插件  开发指南"
+        title = f"  {self.name_en if lang_name == 'en' else self.name_zh}"
         tk.Label(hdr, text=title, bg=s['bar'], fg=s['bar_fg'],
                  font=("Microsoft YaHei", 9, "bold")).pack(
             side=tk.LEFT, padx=14, pady=4)
@@ -270,12 +275,13 @@ class PluginGuide(GuiPlugin):
 
     # ---- loader ----
 
-    @staticmethod
-    def _load_doc(lang):
+    def _load_doc(self, lang):
         base = os.path.dirname(os.path.dirname(os.path.dirname(
             os.path.abspath(__file__))))
         # Try language-specific doc first, fall back to generic
-        for name in (f'plugin-guide-{lang}.md', 'plugin-guide.md'):
+        doc_name = self._doc_name
+        stem, ext = os.path.splitext(doc_name)
+        for name in (f'{stem}-{lang}{ext}', doc_name):
             path = os.path.join(base, 'docs', name)
             if os.path.isfile(path):
                 with open(path, 'r', encoding='utf-8') as f:
