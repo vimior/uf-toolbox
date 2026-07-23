@@ -36,7 +36,7 @@ class Services:
         if owner:
             self._owners[name] = owner
         self._meta.setdefault(name, {})['since'] = time.time()
-        self._logger.debug('[services] register %s', name)
+        self._logger.info('[services] register %s', name)
         self._eventbus.emit('service:registered', name)
 
     def call(self, name, *args, **kwargs):
@@ -44,6 +44,7 @@ class Services:
 
         Raises ``KeyError`` if not registered.
         """
+        origin = kwargs.pop('_origin', None)
         fn = self._services.get(name)
         if fn is None:
             raise KeyError(f'Service not registered: {name}')
@@ -51,6 +52,8 @@ class Services:
         meta['call_count'] = meta.get('call_count', 0) + 1
         meta['last_call'] = time.time()
         meta.setdefault('since', time.time())
+        tag = name + (f' (from {origin})' if origin else '')
+        self._logger.debug('[services] call %s', tag)
         perf = self._perf
         if perf and perf.enabled:
             t0 = time.perf_counter()
@@ -67,7 +70,7 @@ class Services:
         self._owners.pop(name, None)
         self._meta.pop(name, None)
         if fn:
-            self._logger.debug('[services] unregister %s', name)
+            self._logger.info('[services] unregister %s', name)
         self._eventbus.emit('service:unregistered', name)
 
     def has(self, name):
@@ -144,7 +147,7 @@ class _ServiceModule:
 
     def call(self, name, *args, **kwargs):
         """Invoke a service by full name (no prefixing)."""
-        return self._services.call(name, *args, **kwargs)
+        return self._services.call(name, *args, _origin=self._name, **kwargs)
 
     def unregister(self, key):
         """Remove ``self._name.key`` from the registry."""

@@ -266,6 +266,8 @@ class PluginInspector(GuiPlugin):
             if show_all:
                 visible = callbacks
             else:
+                if not callbacks:
+                    continue
                 visible = [e for e in callbacks if e['namespace'] != 'app']
                 if not visible:
                     continue
@@ -277,9 +279,9 @@ class PluginInspector(GuiPlugin):
                     plugin_cb_count += 1
 
         if show_all:
-            header = f"  ACTIVE EVENTS: {len(active)}  Callbacks: {plugin_cb_count + app_cb_count} (Plugins: {plugin_cb_count}, App: {app_cb_count})"
+            header = f"  ACTIVE EVENTS: {len(active)}  CALLBACKS: {plugin_cb_count + app_cb_count} (PLUGINS: {plugin_cb_count}, APP: {app_cb_count})"
         else:
-            header = f"  ACTIVE EVENTS: {len(active)}  Callbacks: {plugin_cb_count}"
+            header = f"  ACTIVE EVENTS: {len(active)}  PLUGIN CALLBACKS: {plugin_cb_count}"
         lines = [header, ""]
 
         for event in sorted(active.keys()):
@@ -293,6 +295,9 @@ class PluginInspector(GuiPlugin):
             if stats:
                 line += f"    {_PREFIX}{'  '.join(stats)}"
             lines.append(line)
+            if not callbacks:
+                lines.append("")
+                continue
             for i, entry in enumerate(callbacks):
                 prefix = "    └─" if i == len(callbacks) - 1 else "    ├─"
                 name = entry['name']
@@ -413,7 +418,6 @@ class PluginInspector(GuiPlugin):
 
         # ---- totals ----
         t = s['totals']
-        lines.append("  ── TOTALS ──")
         lines.append(f"  {_PREFIX}Event emits:      {t['event_calls']}    {t['event_total_s']*1000:.2f} ms")
         lines.append(f"  {_PREFIX}Service calls:    {t['service_calls']}    {t['service_total_s']*1000:.2f} ms")
         lines.append(f"  {_PREFIX}Store commits:    {t['store_commits']}")

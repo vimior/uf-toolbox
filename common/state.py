@@ -8,6 +8,7 @@ from tkinter import ttk
 
 from themes import DARK_THEME, LIGHT_THEME
 from i18n import ZH, EN
+from common.common import logger
 from common.infra import Infrastructure
 
 _CONFIG_PATH = os.path.join(os.path.expanduser('~'), '.uf_toolbox.json')
@@ -76,7 +77,7 @@ class AppState:
 
     def init_state(self):
         """Initialize all state. Called once from main.py.__init__."""
-        self._infra = Infrastructure()
+        self._infra = Infrastructure(logger=logger)
 
         self._config = self._load_config()
         theme_name = self._config.get('theme', 'dark')

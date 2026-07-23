@@ -46,6 +46,8 @@ class Store:
         else:
             meta['commit_count'] += 1
             meta['last_commit'] = time.time()
+        tag = key + (f' (from {owner})' if owner else '')
+        self._logger.debug('[store] commit %s => %s', tag, str(value)[:80])
         self._eventbus.emit(f'store:changed:{key}', value, old)
 
     def get(self, key, default=None):

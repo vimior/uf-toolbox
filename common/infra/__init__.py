@@ -33,6 +33,9 @@ class _Module:
     def off(self, event, callback):
         self.eventbus.off(event, callback)
 
+    def emit(self, event, *args, **kwargs):
+        self._infra.eventbus.emit(event, *args, _origin=self._ns, **kwargs)
+
     def __getattr__(self, name):
         try:
             return getattr(self._infra, name)

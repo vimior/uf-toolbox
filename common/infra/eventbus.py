@@ -51,7 +51,7 @@ class EventBus:
         if self._perf and ns:
             self._perf.register_cb(ns, callback)
         self._cb_since[id(callback)] = time.time()
-        self._logger.debug('[eventbus] on %s => <%s>', event, self._name(callback))
+        self._logger.info('[eventbus] on %s => <%s>', event, self._name(callback))
 
     def off(self, event, callback):
         """Remove a previously registered *callback* for *event*."""
@@ -65,13 +65,13 @@ class EventBus:
         if self._perf:
             self._perf.unregister_cb(callback)
         self._cb_since.pop(id(callback), None)
-        self._logger.debug('[eventbus] off %s => <%s>', event, self._name(callback))
+        self._logger.info('[eventbus] off %s => <%s>', event, self._name(callback))
 
     def clear(self, event):
         """Remove all listeners for *event*."""
         listeners = self._listeners.pop(event, None)
         if listeners:
-            self._logger.debug('[eventbus] clear %s', event)
+            self._logger.info('[eventbus] clear %s', event)
             self._meta.pop(event, None)
             for pairs in self._namespaced.values():
                 pairs[:] = [(ev, cb) for ev, cb in pairs if ev != event]
@@ -80,9 +80,23 @@ class EventBus:
 
     def emit(self, event, *args, **kwargs):
         """Publish *event* to all registered callbacks."""
+        origin = kwargs.pop('_origin', None)
+        tags = [event]
+        if origin:
+            tags.append(f'(from {origin})')
+        tag = ' '.join(tags)
+        if event.startswith('store:changed:') or event in ('service:registered', 'service:unregistered'):
+            pass
+        else:
+            self._logger.info('[eventbus] emit %s', tag)
+        meta = self._meta.get(event)
+        if meta is None:
+            self._meta[event] = {'count': 1, 'last_emit': time.time()}
+        else:
+            meta['count'] += 1
+            meta['last_emit'] = time.time()
         listeners = self._listeners.get(event, [])
         if listeners:
-            self._logger.debug('[eventbus] emit %s', event)
             perf = self._perf
             for cb in listeners:
                 if perf and perf.enabled:
@@ -93,12 +107,6 @@ class EventBus:
                     perf.record_event(ns, event, elapsed)
                 else:
                     cb(*args, **kwargs)
-            meta = self._meta.get(event)
-            if meta is None:
-                self._meta[event] = {'count': 1, 'last_emit': time.time()}
-            else:
-                meta['count'] += 1
-                meta['last_emit'] = time.time()
 
     # ---- namespaced access ----
 
@@ -129,7 +137,9 @@ class EventBus:
                 cb_ns[id(cb)] = ns
 
         events = {}
+        seen = set()
         for event, cbs in self._listeners.items():
+            seen.add(event)
             meta = self._meta.get(event, {})
             callbacks = []
             for cb in cbs:
@@ -143,6 +153,14 @@ class EventBus:
                     'count': meta.get('count', 0),
                     'last_emit': meta.get('last_emit'),
                     'callbacks': callbacks,
+                }
+        # Include events with meta but no listeners
+        for event, meta in self._meta.items():
+            if event not in seen:
+                events[event] = {
+                    'count': meta.get('count', 0),
+                    'last_emit': meta.get('last_emit'),
+                    'callbacks': [],
                 }
         return {'events': events}
 
@@ -169,6 +187,9 @@ class _EventBusModule:
             items.remove((event, callback))
         except ValueError:
             pass
+
+    def emit(self, event, *args, **kwargs):
+        self._bus.emit(event, *args, _origin=self._ns, **kwargs)
 
     def __getattr__(self, name):
         return getattr(self._bus, name)
