@@ -99,14 +99,21 @@ class EventBus:
         if listeners:
             perf = self._perf
             for cb in listeners:
+                ns = perf.lookup_ns(cb) if perf else ''
                 if perf and perf.enabled:
                     t0 = time.perf_counter()
-                    cb(*args, **kwargs)
+                    if ns == 'app' and origin:
+                        cb(*args, _origin=origin, **kwargs)
+                    else:
+                        cb(*args, **kwargs)
                     elapsed = time.perf_counter() - t0
                     ns = perf.lookup_ns(cb)
                     perf.record_event(ns, event, elapsed)
                 else:
-                    cb(*args, **kwargs)
+                    if ns == 'app' and origin:
+                        cb(*args, _origin=origin, **kwargs)
+                    else:
+                        cb(*args, **kwargs)
 
     # ---- namespaced access ----
 
@@ -189,6 +196,7 @@ class _EventBusModule:
             pass
 
     def emit(self, event, *args, **kwargs):
+        kwargs.pop('_origin', None)
         self._bus.emit(event, *args, _origin=self._ns, **kwargs)
 
     def __getattr__(self, name):

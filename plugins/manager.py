@@ -8,6 +8,8 @@ import importlib.util
 
 from plugins.plugin import GuiPlugin, ServicePlugin
 
+ORIGIN = 'plugin_manager'
+
 
 class PluginManager:
     """Manages plugin discovery, loading, lifecycle, and hot-reload.
@@ -121,9 +123,9 @@ class PluginManager:
             if self._inst is not None:
                 is_service = isinstance(self._inst, ServicePlugin)
                 if is_service:
-                    self.app.emit('hook:plugin:will-stop', self)
+                    self.app.emit('hook:plugin:will-stop', self, _origin=ORIGIN)
                 elif self._inst.winfo_exists():
-                    self.app.emit('hook:plugin:will-destroy', self)
+                    self.app.emit('hook:plugin:will-destroy', self, _origin=ORIGIN)
                 if is_service or self._inst.winfo_exists():
                     try:
                         self._stop(self._inst)
@@ -132,9 +134,9 @@ class PluginManager:
                         self._mgr.logger.error(
                             f'Plugin {self.get_name()} {action} error: {e}')
                     if is_service:
-                        self.app.emit('hook:plugin:did-stop', self)
+                        self.app.emit('hook:plugin:did-stop', self, _origin=ORIGIN)
                     else:
-                        self.app.emit('hook:plugin:did-destroy', self)
+                        self.app.emit('hook:plugin:did-destroy', self, _origin=ORIGIN)
                     if not is_service:
                         try:
                             self._inst.destroy()
@@ -156,9 +158,9 @@ class PluginManager:
             if self._inst is not None:
                 is_service = isinstance(self._inst, ServicePlugin)
                 if is_service:
-                    self.app.emit('hook:plugin:will-stop', self)
+                    self.app.emit('hook:plugin:will-stop', self, _origin=ORIGIN)
                 elif self._inst.winfo_exists():
-                    self.app.emit('hook:plugin:will-destroy', self)
+                    self.app.emit('hook:plugin:will-destroy', self, _origin=ORIGIN)
                 if is_service or self._inst.winfo_exists():
                     try:
                         self._stop(self._inst)
@@ -167,9 +169,9 @@ class PluginManager:
                         self._mgr.logger.error(
                             f'[Plugin:{self.get_name()}] {action} error: {e}')
                     if is_service:
-                        self.app.emit('hook:plugin:did-stop', self)
+                        self.app.emit('hook:plugin:did-stop', self, _origin=ORIGIN)
                     else:
-                        self.app.emit('hook:plugin:did-destroy', self)
+                        self.app.emit('hook:plugin:did-destroy', self, _origin=ORIGIN)
                     if not is_service:
                         try:
                             self._inst.destroy()
@@ -239,13 +241,13 @@ class PluginManager:
                     self._inst.focus_force()
                     if was_hidden or not self._shown:
                         self._shown = True
-                        self.app.emit('hook:plugin:will-show', self._inst)
+                        self.app.emit('hook:plugin:will-show', self._inst, _origin=ORIGIN)
                         try:
                             self._start(self._inst)
                         except Exception as e:
                             self._mgr.logger.error(
                                 f'[Plugin:{name}] on_show error: {e}')
-                        self.app.emit('hook:plugin:did-show', self._inst)
+                        self.app.emit('hook:plugin:did-show', self._inst, _origin=ORIGIN)
                     return self._inst
 
             # ---- stale instance (GUI only — ServicePlugin always auto-restarts) ----
@@ -274,9 +276,9 @@ class PluginManager:
             else:
                 self._shown = True
                 if is_service:
-                    self.app.emit('hook:plugin:will-start', self._inst)
+                    self.app.emit('hook:plugin:will-start', self._inst, _origin=ORIGIN)
                 else:
-                    self.app.emit('hook:plugin:will-show', self._inst)
+                    self.app.emit('hook:plugin:will-show', self._inst, _origin=ORIGIN)
                 try:
                     self._start(self._inst)
                 except Exception as e:
@@ -286,9 +288,9 @@ class PluginManager:
                     if is_service:
                         return None  # did-start only emitted on success
                 if is_service:
-                    self.app.emit('hook:plugin:did-start', self._inst)
+                    self.app.emit('hook:plugin:did-start', self._inst, _origin=ORIGIN)
                 else:
-                    self.app.emit('hook:plugin:did-show', self._inst)
+                    self.app.emit('hook:plugin:did-show', self._inst, _origin=ORIGIN)
 
             # ---- window close protocol (GUI only) ----
             if not is_service:
@@ -300,13 +302,13 @@ class PluginManager:
                 else:
                     def _on_close():
                         if handle._inst is not None:
-                            handle.app.emit('hook:plugin:will-hide', handle._inst)
+                            handle.app.emit('hook:plugin:will-hide', handle._inst, _origin=ORIGIN)
                             try:
                                 handle._inst.on_hide()
                             except Exception as e:
                                 handle._mgr.logger.error(
                                     f'[Plugin:{handle.get_name()}] on_hide error: {e}')
-                            handle.app.emit('hook:plugin:did-hide', handle._inst)
+                            handle.app.emit('hook:plugin:did-hide', handle._inst, _origin=ORIGIN)
                             try:
                                 handle._inst.withdraw()
                             except Exception:

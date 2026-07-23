@@ -69,8 +69,11 @@ class AppState:
         except AttributeError:
             pass
 
-    def _on_plugin_destroyed(self, handle):
+    def _on_plugin_destroyed(self, handle, **kwargs):
         """Clean up store/services when a plugin is stopped/destroyed."""
+        origin = kwargs.get('_origin', None)
+        if not origin or origin != 'plugin_manager' or not handle:
+            return
         cls = handle._cls
         ns = (getattr(cls, 'namespace', None) if cls else None) or handle._class_name or 'Unknown'
         self._infra.cleanup(ns)

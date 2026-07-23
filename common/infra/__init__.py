@@ -34,6 +34,7 @@ class _Module:
         self.eventbus.off(event, callback)
 
     def emit(self, event, *args, **kwargs):
+        kwargs.pop('_origin', None)
         self._infra.eventbus.emit(event, *args, _origin=self._ns, **kwargs)
 
     def __getattr__(self, name):
@@ -62,6 +63,8 @@ class Infrastructure:
     def module(self, name, app=None):
         """Return a namespaced handle — store, services, eventbus all scoped.
         *app* (AppState) is used as a fallback for __getattr__."""
+        if name in ('app', 'plugin_manager'):
+            raise ValueError(f'reserved namespace: {name}')
         return _Module(self, name, app)
 
     # ---- eventbus delegates ----

@@ -147,6 +147,7 @@ class _ServiceModule:
 
     def call(self, name, *args, **kwargs):
         """Invoke a service by full name (no prefixing)."""
+        kwargs.pop('_origin', None)
         return self._services.call(name, *args, _origin=self._name, **kwargs)
 
     def unregister(self, key):
