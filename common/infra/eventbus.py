@@ -51,7 +51,7 @@ class EventBus:
         if self._perf and ns:
             self._perf.register_cb(ns, callback)
         self._cb_since[id(callback)] = time.time()
-        self._logger.info('[eventbus] on %s => <%s>', event, self._name(callback))
+        self._logger.info('[eventbus] on %s → %s', event, self._name(callback))
 
     def off(self, event, callback):
         """Remove a previously registered *callback* for *event*."""
@@ -65,7 +65,7 @@ class EventBus:
         if self._perf:
             self._perf.unregister_cb(callback)
         self._cb_since.pop(id(callback), None)
-        self._logger.info('[eventbus] off %s => <%s>', event, self._name(callback))
+        self._logger.info('[eventbus] off %s → %s', event, self._name(callback))
 
     def clear(self, event):
         """Remove all listeners for *event*."""
@@ -116,7 +116,7 @@ class EventBus:
                         else:
                             cb(*args, **kwargs)
                 except Exception:
-                    self._logger.exception('[eventbus] error in callback <%s> for %s', self._name(cb), tag)
+                    self._logger.exception('[eventbus] error in callback %s for %s', self._name(cb), tag)
 
     # ---- namespaced access ----
 
