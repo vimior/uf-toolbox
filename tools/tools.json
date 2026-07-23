@@ -1,72 +1,138 @@
 {
-  "groups": [
+  "tools": [
     {
       "id": "system/common", "name": "常用", "name_en": "Common",
       "tools": [
-        { "id": "notepad", "name": "记事本", "name_en": "Notepad", "path": "notepad.exe" },
-        { "id": "calc", "name": "计算器", "name_en": "Calculator", "path": "calc.exe" },
-        { "id": "paint", "name": "画图", "name_en": "Paint", "path": "mspaint.exe" },
-        { "id": "snipping", "name": "截图工具", "name_en": "Snipping Tool", "path": "snippingtool.exe" },
-        { "id": "charmap", "name": "字符映射表", "name_en": "Character Map", "path": "charmap.exe" },
-        { "id": "psr", "name": "步骤记录器", "name_en": "Steps Recorder", "path": "psr.exe" },
         { "id": "run", "name": "运行", "name_en": "Run", "path": "powershell.exe", "shell": true, "args": "-Command \"(New-Object -ComObject 'Shell.Application').FileRun()\"" },
         { "id": "explorer", "name": "文件资源管理器", "name_en": "File Explorer", "path": "explorer.exe" },
+        { "id": "calc", "name": "计算器", "name_en": "Calculator", "path": "calc.exe" },
+        { "id": "notepad", "name": "记事本", "name_en": "Notepad", "path": "notepad.exe" },
+        { "id": "snipping", "name": "截图工具", "name_en": "Snipping Tool", "path": "snippingtool.exe" },
+        { "id": "paint", "name": "画图", "name_en": "Paint", "path": "mspaint.exe" },
+        { "id": "psr", "name": "步骤记录器", "name_en": "Steps Recorder", "path": "psr.exe" },
+        { "id": "charmap", "name": "字符映射表", "name_en": "Character Map", "path": "charmap.exe" },
         { "id": "godmode", "name": "上帝模式", "name_en": "God Mode", "path": "explorer.exe", "args": "shell:::{ED7BA470-8E54-465E-825C-99712043E01C}" }
       ]
     },
     {
       "id": "system/terminal", "name": "终端", "name_en": "Terminals",
       "tools": [
-        { "id": "cmd", "name": "命令提示符", "name_en": "Command Prompt", "path": "cmd.exe", "shell": true, "console": true },
-        { "id": "powershell", "name": "PowerShell", "name_en": "PowerShell", "path": "powershell.exe", "shell": true, "console": true },
-        { "id": "wt", "name": "Windows 终端", "name_en": "Windows Terminal", "path": "wt.exe", "shell": true, "console": true }
+        {
+          "id": "cmd", "name": "命令提示符", "name_en": "Command Prompt",
+          "tools": [
+            { "id": "cmd", "name": "运行", "name_en": "Run", "path": "cmd.exe", "shell": true, "console": true },
+            { "id": "cmd_admin", "name": "管理员运行", "name_en": "Run as Admin", "path": "cmd.exe", "shell": true, "console": true, "run_as_admin": true }
+          ]
+        },
+        {
+          "id": "powershell", "name": "PowerShell", "name_en": "PowerShell",
+          "tools": [
+            { "id": "powershell", "name": "运行", "name_en": "Run", "path": "powershell.exe", "shell": true, "console": true },
+            { "id": "powershell_admin", "name": "管理员运行", "name_en": "Run as Admin", "path": "powershell.exe", "shell": true, "console": true, "run_as_admin": true }
+          ]
+        },
+        {
+          "id": "wt", "name": "Windows 终端", "name_en": "Windows Terminal",
+          "tools": [
+            { "id": "wt", "name": "运行", "name_en": "Run", "path": "wt.exe", "shell": true, "console": true },
+            { "id": "wt_admin", "name": "管理员运行", "name_en": "Run as Admin", "path": "wt.exe", "shell": true, "console": true, "run_as_admin": true }
+          ]
+        }
       ]
     },
     {
       "id": "system/network", "name": "网络", "name_en": "Network",
       "tools": [
         { "id": "ncpa", "name": "网络连接", "name_en": "Network Connections", "path": "control.exe", "args": "ncpa.cpl", "shell": true },
-        { "id": "firewall", "name": "防火墙", "name_en": "Firewall", "path": "wf.msc", "shell": true },
         { "id": "resmon", "name": "资源监视器", "name_en": "Resource Monitor", "path": "resmon.exe" },
         { "id": "mstsc", "name": "远程桌面", "name_en": "Remote Desktop", "path": "mstsc.exe" },
+        { "id": "firewall", "name": "防火墙", "name_en": "Firewall", "path": "wf.msc", "shell": true },
         { "id": "security", "name": "Windows 安全中心", "name_en": "Windows Security", "path": "cmd.exe", "args": "/c start ms-settings:windowsdefender", "shell": false, "console": false }
       ]
     },
     {
       "id": "system/hardware", "name": "硬件", "name_en": "Hardware",
       "tools": [
+        { "id": "printer", "name": "打印机", "name_en": "Printers", "path": "control.exe", "args": "printers", "shell": true },
         { "id": "sound", "name": "声音设置", "name_en": "Sound", "path": "control.exe", "args": "mmsys.cpl", "shell": true },
         { "id": "mouse", "name": "鼠标设置", "name_en": "Mouse", "path": "control.exe", "args": "main.cpl", "shell": true },
-        { "id": "keyboard", "name": "键盘设置", "name_en": "Keyboard", "path": "control.exe", "args": "keyboard", "shell": true },
-        { "id": "printer", "name": "打印机", "name_en": "Printers", "path": "control.exe", "args": "printers", "shell": true }
+        { "id": "keyboard", "name": "键盘设置", "name_en": "Keyboard", "path": "control.exe", "args": "keyboard", "shell": true }
       ]
     },
     {
       "id": "system/admin", "name": "系统管理", "name_en": "Administration",
-      "groups": [
+      "tools": [
         {
           "id": "info", "name": "系统信息", "name_en": "System Info",
           "tools": [
-            { "id": "taskmgr", "name": "任务管理器", "name_en": "Task Manager", "path": "taskmgr.exe" },
             { "id": "msinfo32", "name": "系统信息", "name_en": "System Info", "path": "msinfo32.exe" },
-            { "id": "perfmon", "name": "性能监视器", "name_en": "Performance Monitor", "path": "perfmon.exe" },
-            { "id": "regedit", "name": "注册表编辑器", "name_en": "Registry Editor", "path": "regedit.exe" },
             { "id": "control", "name": "控制面板", "name_en": "Control Panel", "path": "control.exe" },
+            { "id": "taskmgr", "name": "任务管理器", "name_en": "Task Manager", "path": "taskmgr.exe" },
+            { "id": "perfmon", "name": "性能监视器", "name_en": "Performance Monitor", "path": "perfmon.exe" },
             { "id": "msconfig", "name": "系统配置", "name_en": "System Configuration", "path": "msconfig.exe" },
-            { "id": "appwiz", "name": "程序和功能", "name_en": "Programs & Features", "path": "control.exe", "args": "appwiz.cpl", "shell": true },
-            { "id": "envvar", "name": "环境变量", "name_en": "Environment Variables", "path": "systempropertiesadvanced.exe" }
+            { "id": "envvar", "name": "环境变量", "name_en": "Environment Variables", "path": "systempropertiesadvanced.exe" },            
+            { "id": "appwiz", "name": "程序和功能", "name_en": "Programs & Features", "path": "control.exe", "args": "appwiz.cpl", "shell": true }
           ]
         },
         {
-          "id": "disk", "name": "磁盘与设备", "name_en": "Disk & Devices",
+          "id": "management", "name": "管理工具", "name_en": "Management",
           "tools": [
-            { "id": "devmgmt", "name": "设备管理器", "name_en": "Device Manager", "path": "devmgmt.msc", "shell": true },
-            { "id": "diskmgmt", "name": "磁盘管理", "name_en": "Disk Management", "path": "diskmgmt.msc", "shell": true },
-            { "id": "services", "name": "服务", "name_en": "Services", "path": "services.msc", "shell": true },
-            { "id": "compmgmt", "name": "计算机管理", "name_en": "Computer Management", "path": "compmgmt.msc", "shell": true },
-            { "id": "eventvwr", "name": "事件查看器", "name_en": "Event Viewer", "path": "eventvwr.msc", "shell": true },
-            { "id": "lusrmgr", "name": "本地用户和组", "name_en": "Local Users", "path": "lusrmgr.msc", "shell": true },
-            { "id": "taskschd", "name": "任务计划器", "name_en": "Task Scheduler", "path": "taskschd.msc", "shell": true }
+            {
+              "id": "devmgmt", "name": "设备管理器", "name_en": "Device Manager",
+              "tools": [
+                { "id": "devmgmt", "name": "运行", "name_en": "Run", "path": "devmgmt.msc", "shell": true },
+                { "id": "devmgmt_admin", "name": "管理员运行", "name_en": "Run as Admin", "path": "devmgmt.msc", "shell": true, "run_as_admin": true }
+              ]
+            },
+            {
+              "id": "eventvwr", "name": "事件查看器", "name_en": "Event Viewer",
+              "tools": [
+                { "id": "eventvwr", "name": "运行", "name_en": "Run", "path": "eventvwr.msc", "shell": true },
+                { "id": "eventvwr_admin", "name": "管理员运行", "name_en": "Run as Admin", "path": "eventvwr.msc", "shell": true, "run_as_admin": true }
+              ]
+            },
+            {
+              "id": "taskschd", "name": "任务计划器", "name_en": "Task Scheduler",
+              "tools": [
+                { "id": "taskschd", "name": "运行", "name_en": "Run", "path": "taskschd.msc", "shell": true },
+                { "id": "taskschd_admin", "name": "管理员运行", "name_en": "Run as Admin", "path": "taskschd.msc", "shell": true, "run_as_admin": true }
+              ]
+            },
+            {
+              "id": "diskmgmt", "name": "磁盘管理", "name_en": "Disk Management",
+              "tools": [
+                { "id": "diskmgmt", "name": "运行", "name_en": "Run", "path": "diskmgmt.msc", "shell": true },
+                { "id": "diskmgmt_admin", "name": "管理员运行", "name_en": "Run as Admin", "path": "diskmgmt.msc", "shell": true, "run_as_admin": true }
+              ]
+            },
+            {
+              "id": "compmgmt", "name": "计算机管理", "name_en": "Computer Management",
+              "tools": [
+                { "id": "compmgmt", "name": "运行", "name_en": "Run", "path": "compmgmt.msc", "shell": true },
+                { "id": "compmgmt_admin", "name": "管理员运行", "name_en": "Run as Admin", "path": "compmgmt.msc", "shell": true, "run_as_admin": true }
+              ]
+            },
+            {
+              "id": "lusrmgr", "name": "本地用户和组", "name_en": "Local Users",
+              "tools": [
+                { "id": "lusrmgr", "name": "运行", "name_en": "Run", "path": "lusrmgr.msc", "shell": true },
+                { "id": "lusrmgr_admin", "name": "管理员运行", "name_en": "Run as Admin", "path": "lusrmgr.msc", "shell": true, "run_as_admin": true }
+              ]
+            },
+            {
+              "id": "services", "name": "服务", "name_en": "Services",
+              "tools": [
+                { "id": "services", "name": "运行", "name_en": "Run", "path": "services.msc", "shell": true },
+                { "id": "services_admin", "name": "管理员运行", "name_en": "Run as Admin", "path": "services.msc", "shell": true, "run_as_admin": true }
+              ]
+            },
+            {
+              "id": "regedit", "name": "注册表编辑器", "name_en": "Registry Editor",
+              "tools": [
+                { "id": "regedit", "name": "运行", "name_en": "Run", "path": "regedit.exe" },
+                { "id": "regedit_admin", "name": "管理员运行", "name_en": "Run as Admin", "path": "regedit.exe", "run_as_admin": true }
+              ]
+            }
           ]
         }
       ]

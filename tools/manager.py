@@ -187,13 +187,40 @@ class ToolManager:
         return name
 
     @staticmethod
-    def _parse_tool(tools_dir, entry, lang, prefix=''):
-        """Parse a single tool entry into the internal dict.
+    def _parse_entry(tools_dir, entry, lang, prefix=''):
+        """Parse an entry — returns a group dict (has 'tools'), a tool dict (has
+        '_exe_path'), or None (ignored / invalid).
 
-        *prefix* is the ID path from parent groups (e.g. 'system/common').
-        The tool's full ID becomes 'prefix/tool_id'."""
+        *prefix* is the ID path from parents (e.g. 'system/common')."""
         if entry.get('ignore', False):
             return None
+
+        sub_tools = entry.get('tools')
+        if sub_tools is not None:
+            # Nested tools → this entry is a group
+            gid = entry.get('id', '')
+            full_prefix = f'{prefix}/{gid}' if (prefix and gid) else (gid or prefix)
+            tab = full_prefix.split('/')[0] if full_prefix and '/' in full_prefix else 'tools'
+            flat = []
+            nested = []
+            for e in sub_tools:
+                p = ToolManager._parse_entry(
+                    tools_dir, e, lang, prefix=full_prefix)
+                if p is None:
+                    continue
+                if '_exe_path' in p:
+                    flat.append(p)
+                else:
+                    nested.append(p)
+            return {
+                'id': full_prefix or None,
+                'name': ToolManager._resolve_name(entry, lang),
+                'tools': flat,
+                'groups': nested,
+                'tab': tab,
+            }
+
+        # Leaf: flat tool
         name = ToolManager._resolve_name(entry, lang)
         exe = entry.get('path', '')
         if not name or not exe:
@@ -205,7 +232,7 @@ class ToolManager:
                 exe_path = resolved
         tool_id = entry.get('id', '')
         full_id = f'{prefix}/{tool_id}' if (prefix and tool_id) else (tool_id or None)
-        tab = full_id.split('/')[0] if full_id else 'tools'
+        tab = full_id.split('/')[0] if full_id and '/' in full_id else 'tools'
         return {
             'id': full_id,
             'name': name,
@@ -229,38 +256,17 @@ class ToolManager:
                 cfg = json.load(f)
         except Exception:
             return {'tools': [], 'groups': []}
-        entries = [ToolManager._parse_tool(tools_dir, e, lang)
-                   for e in cfg.get('tools', [])
-                   if ToolManager._parse_tool(tools_dir, e, lang)]
-        groups = ToolManager._parse_groups(
-            tools_dir, cfg.get('groups', []), lang)
-        return {'tools': entries, 'groups': groups}
-
-    @staticmethod
-    def _parse_groups(tools_dir, raw_groups, lang, prefix=''):
-        """Recursively parse nested groups. *prefix* is the ID path from ancestors."""
-        result = []
-        for g in raw_groups:
-            if g.get('ignore', False):
+        parsed_tools = []
+        parsed_groups = []
+        for e in cfg.get('tools', []):
+            parsed = ToolManager._parse_entry(tools_dir, e, lang)
+            if parsed is None:
                 continue
-            gid = g.get('id', '')
-            full_prefix = f'{prefix}/{gid}' if (prefix and gid) else (gid or prefix)
-            tab = full_prefix.split('/')[0] if full_prefix else 'tools'
-            grp = {'id': full_prefix or None,
-                   'name': ToolManager._resolve_name(g, lang),
-                   'tools': [], 'groups': [],
-                   'tab': tab}
-            for entry in g.get('tools', []):
-                t = ToolManager._parse_tool(
-                    tools_dir, entry, lang, prefix=full_prefix)
-                if t:
-                    grp['tools'].append(t)
-            if g.get('groups'):
-                grp['groups'] = ToolManager._parse_groups(
-                    tools_dir, g['groups'], lang, prefix=full_prefix)
-            if grp['tools'] or grp['groups']:
-                result.append(grp)
-        return result
+            if 'tools' in parsed and '_exe_path' not in parsed:
+                parsed_groups.append(parsed)
+            else:
+                parsed_tools.append(parsed)
+        return {'tools': parsed_tools, 'groups': parsed_groups}
 
     @staticmethod
     def _from_scan(tools_dir):

@@ -1,5 +1,5 @@
 {
-  "groups": [
+  "tools": [
     {
       "id": "system/common", "name": "常用", "name_en": "Common",
       "tools": [
@@ -32,7 +32,6 @@
       "id": "system/hardware", "name": "硬件", "name_en": "Hardware",
       "tools": [
         { "id": "sound", "name": "声音设置", "name_en": "Sound Settings", "path": "pavucontrol" },
-        { "id": "disks", "name": "磁盘管理", "name_en": "Disk Management", "path": "gnome-disks" },
         { "id": "lspci", "name": "设备列表", "name_en": "Device List", "path": "lspci", "args": "-k", "shell": true, "console": true },
         { "id": "lsusb", "name": "USB 设备", "name_en": "USB Devices", "path": "lsusb", "shell": true, "console": true },
         { "id": "printer", "name": "打印机", "name_en": "Printers", "path": "system-config-printer" }
@@ -40,7 +39,7 @@
     },
     {
       "id": "system/admin", "name": "系统管理", "name_en": "Administration",
-      "groups": [
+      "tools": [
         {
           "id": "info", "name": "系统信息", "name_en": "System Info",
           "tools": [
@@ -51,10 +50,11 @@
           ]
         },
         {
-          "id": "disk", "name": "磁盘与设备", "name_en": "Disk & Devices",
+          "id": "management", "name": "管理工具", "name_en": "Management",
           "tools": [
-            { "id": "logs", "name": "系统日志", "name_en": "System Logs", "path": "gnome-logs" },
+            { "id": "disks", "name": "磁盘管理", "name_en": "Disk Management", "path": "gnome-disks" },
             { "id": "gparted", "name": "分区编辑器", "name_en": "Partition Editor", "path": "gparted" },
+            { "id": "logs", "name": "系统日志", "name_en": "System Logs", "path": "gnome-logs" },
             { "id": "baobab", "name": "磁盘使用分析", "name_en": "Disk Usage Analyzer", "path": "baobab" }
           ]
         }
