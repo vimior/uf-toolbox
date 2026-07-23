@@ -100,20 +100,23 @@ class EventBus:
             perf = self._perf
             for cb in listeners:
                 ns = perf.lookup_ns(cb) if perf else ''
-                if perf and perf.enabled:
-                    t0 = time.perf_counter()
-                    if ns == 'app' and origin:
-                        cb(*args, _origin=origin, **kwargs)
+                try:
+                    if perf and perf.enabled:
+                        t0 = time.perf_counter()
+                        if ns == 'app' and origin is not None and origin == 'plugin_manager':
+                            cb(*args, _origin=origin, **kwargs)
+                        else:
+                            cb(*args, **kwargs)
+                        elapsed = time.perf_counter() - t0
+                        ns = perf.lookup_ns(cb)
+                        perf.record_event(ns, event, elapsed)
                     else:
-                        cb(*args, **kwargs)
-                    elapsed = time.perf_counter() - t0
-                    ns = perf.lookup_ns(cb)
-                    perf.record_event(ns, event, elapsed)
-                else:
-                    if ns == 'app' and origin:
-                        cb(*args, _origin=origin, **kwargs)
-                    else:
-                        cb(*args, **kwargs)
+                        if ns == 'app' and origin is not None and origin == 'plugin_manager':
+                            cb(*args, _origin=origin, **kwargs)
+                        else:
+                            cb(*args, **kwargs)
+                except Exception:
+                    self._logger.exception('[eventbus] error in callback <%s> for %s', self._name(cb), tag)
 
     # ---- namespaced access ----
 
