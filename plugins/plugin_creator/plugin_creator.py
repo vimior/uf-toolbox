@@ -185,10 +185,8 @@ class PluginCreator(GuiPlugin):
         super().__init__(parent, app)
 
         # Resolve theme & language via app proxy
-        theme_name = getattr(self.app, 'current_theme_name', 'dark')
-        lang_name = getattr(self.app, 'current_lang_name', 'en')
-        if lang_name not in ('zh', 'en'):
-            lang_name = 'en'
+        lang_name = self.app.current_lang_name
+        theme_name = self.app.current_theme_name
         self._s = _STYLE.get(theme_name, _STYLE['dark'])
         self._l = _LANG[lang_name]
         s = self._s

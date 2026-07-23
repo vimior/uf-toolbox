@@ -45,7 +45,7 @@ a = Analysis(
         'themes', 'themes.light', 'themes.dark',
         'i18n', 'i18n.zh', 'i18n.en',
         'plugins', 'plugins.plugin',
-        'common', 'common.common', 'common.state',
+        'common', 'common.common', 'common.state', 'common.infra',
         'ui', 'ui.menu', 'ui.log', 'ui.settings',
         'tools', 'tools.manager'
     ] + _extra_hidden,

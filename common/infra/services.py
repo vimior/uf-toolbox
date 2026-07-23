@@ -4,6 +4,9 @@
 Plugins register named functions; other plugins look them up and invoke
 them synchronously (blocking until the call returns).
 """
+import time
+import logging
+
 
 _SELF = object()  # sentinel: "show my own"
 
@@ -16,11 +19,14 @@ class Services:
     other plugins call them with ``app.services.call(name, ...)``.
     """
 
-    def __init__(self, eventbus):
+    def __init__(self, eventbus, perf=None, logger=None):
         self._eventbus = eventbus
+        self._perf = perf  # PerfMonitor instance (optional)
+        self._logger = logger or logging.getLogger(__name__)
         self._services = {}       # name → fn
         self._owners = {}         # name → owner (who registered)
         self._subscriptions = {}  # owner → [(event, callback), ...]
+        self._meta = {}      # name → {call_count, last_call}
 
     # ---- public API ----
 
@@ -29,7 +35,8 @@ class Services:
         self._services[name] = fn
         if owner:
             self._owners[name] = owner
-        print(f'[services] register {name}')
+        self._meta.setdefault(name, {})['since'] = time.time()
+        self._logger.debug('[services] register %s', name)
         self._eventbus.emit('service:registered', name)
 
     def call(self, name, *args, **kwargs):
@@ -40,14 +47,27 @@ class Services:
         fn = self._services.get(name)
         if fn is None:
             raise KeyError(f'Service not registered: {name}')
+        meta = self._meta.setdefault(name, {})
+        meta['call_count'] = meta.get('call_count', 0) + 1
+        meta['last_call'] = time.time()
+        meta.setdefault('since', time.time())
+        perf = self._perf
+        if perf and perf.enabled:
+            t0 = time.perf_counter()
+            result = fn(*args, **kwargs)
+            elapsed = time.perf_counter() - t0
+            owner = self._owners.get(name, 'unknown')
+            perf.record_service(owner, name, elapsed)
+            return result
         return fn(*args, **kwargs)
 
     def unregister(self, name):
         """Remove *name* from the registry.  Emits ``service:unregistered``."""
         fn = self._services.pop(name, None)
         self._owners.pop(name, None)
+        self._meta.pop(name, None)
         if fn:
-            print(f'[services] unregister {name}')
+            self._logger.debug('[services] unregister %s', name)
         self._eventbus.emit('service:unregistered', name)
 
     def has(self, name):
@@ -88,6 +108,28 @@ class Services:
         for name in self.keys(owner=owner):
             self.unregister(name)
 
+    # ---- snapshot ----
+
+    def snapshot(self):
+        """Return a point-in-time snapshot of all registered services.
+
+        Returns a dict::
+
+            {'services': [{'name': str, 'owner': str,
+                           'call_count': int, 'last_call': float|None}, ...]}
+        """
+        services = []
+        for name in self._services:
+            meta = self._meta.get(name, {})
+            services.append({
+                'name': name,
+                'owner': self._owners.get(name, '-'),
+                'call_count': meta.get('call_count', 0),
+                'last_call': meta.get('last_call'),
+                'since': meta.get('since'),
+            })
+        return {'services': services}
+
 
 class _ServiceModule:
     """Namespaced handle for a specific plugin — auto-prefixes on register."""
@@ -118,5 +160,8 @@ class _ServiceModule:
             owner = self._name
         return self._services.keys(owner=owner)
 
-    on_registered = Services.on_registered
-    on_unregistered = Services.on_unregistered
+    def on_registered(self, callback, owner=''):
+        self._services.on_registered(callback, owner)
+
+    def on_unregistered(self, callback, owner=''):
+        self._services.on_unregistered(callback, owner)

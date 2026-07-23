@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 """Infrastructure layer — eventbus, store, services wired together."""
+import logging
 
 from .eventbus import EventBus
 from .store import Store
 from .services import Services
+from .perf import PerfMonitor
 
 
 class _Module:
@@ -35,7 +37,9 @@ class _Module:
         try:
             return getattr(self._infra, name)
         except AttributeError:
-            return getattr(self._app, name)
+            if self._app is not None:
+                return getattr(self._app, name)
+            raise
 
 
 class Infrastructure:
@@ -45,10 +49,12 @@ class Infrastructure:
     for namespaced plugin handles, and ``cleanup(ns)`` for teardown.
     """
 
-    def __init__(self):
-        self.eventbus = EventBus()
-        self.store = Store(self.eventbus)
-        self.services = Services(self.eventbus)
+    def __init__(self, logger=None):
+        self._logger = logger or logging.getLogger(__name__)
+        self.perf = PerfMonitor(logger=self._logger)
+        self.eventbus = EventBus(perf=self.perf, logger=self._logger)
+        self.store = Store(self.eventbus, perf=self.perf, logger=self._logger)
+        self.services = Services(self.eventbus, perf=self.perf, logger=self._logger)
 
     def module(self, name, app=None):
         """Return a namespaced handle — store, services, eventbus all scoped.

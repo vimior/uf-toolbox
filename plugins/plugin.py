@@ -39,15 +39,15 @@ class GuiPlugin(tk.Toplevel):
 
     def on_show(self):
         """Called when the window becomes visible — first open or reopened after hide."""
-        print(f'[plugin] on_show: {self.name}')
+        pass
 
     def on_hide(self):
         """Called when the window is hidden (reload=False only) — user closed → withdrawn."""
-        print(f'[plugin] on_hide: {self.name}')
+        pass
 
     def on_destroy(self):
         """Called before the instance is destroyed — final cleanup."""
-        print(f'[plugin] on_destroy: {self.name}')
+        pass
 
 
 # Backward-compatible alias
@@ -83,8 +83,8 @@ class ServicePlugin:
 
     def on_start(self):
         """Called when the service starts — first start or restart."""
-        print(f'[plugin] on_start: {self.name}')
+        pass
 
     def on_stop(self):
         """Called before shutdown — final cleanup."""
-        print(f'[plugin] on_stop: {self.name}')
+        pass

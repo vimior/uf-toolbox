@@ -38,13 +38,11 @@ class PluginGuide(GuiPlugin):
 
     def __init__(self, parent=None, app=None):
         super().__init__(parent, app)
-        lang = getattr(self.app, 'current_lang_name', 'en')
-        if lang not in ('zh', 'en'):
-            lang = 'en'
-        theme = getattr(self.app, 'current_theme_name', 'dark')
-        s = STYLE.get(theme, STYLE['dark'])
+        lang_name = self.app.current_lang_name
+        theme_name = self.app.current_theme_name
+        s = STYLE.get(theme_name, STYLE['dark'])
 
-        self.title(self.name_zh if lang == 'zh' else self.name_en)
+        self.title(self.name_zh if lang_name == 'zh' else self.name_en)
         self.geometry("820x600")
         self.resizable(True, True)
         self.configure(bg=s['bg'])
@@ -53,7 +51,7 @@ class PluginGuide(GuiPlugin):
         hdr = tk.Frame(self, bg=s['bar'], height=28)
         hdr.pack(fill=tk.X)
         hdr.pack_propagate(False)
-        title = "  Plugin  Development  Guide" if lang == "en" else "  插件  开发指南"
+        title = "  Plugin  Development  Guide" if lang_name == "en" else "  插件  开发指南"
         tk.Label(hdr, text=title, bg=s['bar'], fg=s['bar_fg'],
                  font=("Microsoft YaHei", 9, "bold")).pack(
             side=tk.LEFT, padx=14, pady=4)
@@ -96,7 +94,7 @@ class PluginGuide(GuiPlugin):
         self._txt.tag_configure("link", foreground=s['link'], underline=True)
 
         # ---- load & render ----
-        self._render_markdown(self._load_doc(lang))
+        self._render_markdown(self._load_doc(lang_name))
         self._txt.configure(state=tk.DISABLED)
 
         # ---- mousewheel ----

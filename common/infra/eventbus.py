@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """Lightweight pub-sub event bus."""
+import time
+import logging
 
 
 class EventBus:
@@ -9,9 +11,13 @@ class EventBus:
     delegate here for convenience.
     """
 
-    def __init__(self):
+    def __init__(self, perf=None, logger=None):
         self._listeners = {}
         self._namespaced = {}  # ns → [(event, callback), ...]
+        self._meta = {}  # event → {count, last_emit}
+        self._cb_since = {}  # id(callback) → timestamp
+        self._perf = perf  # PerfMonitor instance (optional)
+        self._logger = logger or logging.getLogger(__name__)
 
     # ---- helpers ----
 
@@ -20,23 +26,32 @@ class EventBus:
         """Human-readable name for *cb*."""
         # bound method: ClassName.method
         if hasattr(cb, '__self__') and hasattr(cb, '__func__'):
-            return f'{type(cb.__self__).__name__}.{cb.__func__.__name__}'
+            s = cb.__self__
+            owner = s.__name__ if hasattr(s, '__name__') else type(s).__name__
+            return f'{owner}.{cb.__func__.__name__}'
         # regular function: use qualname unless it's a lambda
         try:
             qn = cb.__qualname__
-            if qn != '<lambda>':
+            if qn == '<lambda>':
+                pass  # bare lambda, fall through to repr
+            elif '<lambda>' in qn:
+                return qn.replace('.<locals>.<lambda>', '.<lambda>')
+            else:
                 return qn
         except AttributeError:
             pass
-        # fallback: repr (shows address, useful for lambdas)
+        # fallback: repr (shows address, useful for bare lambdas)
         return repr(cb)
 
     # ---- public API ----
 
-    def on(self, event, callback):
+    def on(self, event, callback, ns=None):
         """Register *callback* for *event*."""
         self._listeners.setdefault(event, []).append(callback)
-        print(f'[eventbus] on {event} => <{self._name(callback)}>')
+        if self._perf and ns:
+            self._perf.register_cb(ns, callback)
+        self._cb_since[id(callback)] = time.time()
+        self._logger.debug('[eventbus] on %s => <%s>', event, self._name(callback))
 
     def off(self, event, callback):
         """Remove a previously registered *callback* for *event*."""
@@ -47,21 +62,43 @@ class EventBus:
             listeners.remove(callback)
         except ValueError:
             pass
-        print(f'[eventbus] off {event} => <{self._name(callback)}>')
+        if self._perf:
+            self._perf.unregister_cb(callback)
+        self._cb_since.pop(id(callback), None)
+        self._logger.debug('[eventbus] off %s => <%s>', event, self._name(callback))
 
     def clear(self, event):
         """Remove all listeners for *event*."""
         listeners = self._listeners.pop(event, None)
         if listeners:
-            print(f'[eventbus] clear {event}')
+            self._logger.debug('[eventbus] clear %s', event)
+            self._meta.pop(event, None)
+            for pairs in self._namespaced.values():
+                pairs[:] = [(ev, cb) for ev, cb in pairs if ev != event]
+            for cb in listeners:
+                self._cb_since.pop(id(cb), None)
 
     def emit(self, event, *args, **kwargs):
         """Publish *event* to all registered callbacks."""
         listeners = self._listeners.get(event, [])
         if listeners:
-            print(f'[eventbus] emit {event}')
+            self._logger.debug('[eventbus] emit %s', event)
+            perf = self._perf
             for cb in listeners:
-                cb(*args, **kwargs)
+                if perf and perf.enabled:
+                    t0 = time.perf_counter()
+                    cb(*args, **kwargs)
+                    elapsed = time.perf_counter() - t0
+                    ns = perf.lookup_ns(cb)
+                    perf.record_event(ns, event, elapsed)
+                else:
+                    cb(*args, **kwargs)
+            meta = self._meta.get(event)
+            if meta is None:
+                self._meta[event] = {'count': 1, 'last_emit': time.time()}
+            else:
+                meta['count'] += 1
+                meta['last_emit'] = time.time()
 
     # ---- namespaced access ----
 
@@ -73,6 +110,41 @@ class EventBus:
         """Remove all listeners registered under namespace *ns*."""
         for event, callback in self._namespaced.pop(ns, []):
             self.off(event, callback)
+
+    # ---- snapshot ----
+
+    def snapshot(self):
+        """Return a point-in-time snapshot of all active listeners.
+
+        Returns a dict::
+
+            {'events': {event_name: {
+                'count': int, 'last_emit': float|None,
+                'callbacks': [{'name': str, 'namespace': str}, ...]
+            }, ...}}
+        """
+        cb_ns = {}
+        for ns, pairs in self._namespaced.items():
+            for _ev, cb in pairs:
+                cb_ns[id(cb)] = ns
+
+        events = {}
+        for event, cbs in self._listeners.items():
+            meta = self._meta.get(event, {})
+            callbacks = []
+            for cb in cbs:
+                callbacks.append({
+                    'name': self._name(cb),
+                    'namespace': cb_ns.get(id(cb), 'app'),
+                    'since': self._cb_since.get(id(cb)),
+                })
+            if callbacks:
+                events[event] = {
+                    'count': meta.get('count', 0),
+                    'last_emit': meta.get('last_emit'),
+                    'callbacks': callbacks,
+                }
+        return {'events': events}
 
 
 class _EventBusModule:
@@ -87,7 +159,7 @@ class _EventBusModule:
         self._ns = ns
 
     def on(self, event, callback):
-        self._bus.on(event, callback)
+        self._bus.on(event, callback, ns=self._ns)
         self._bus._namespaced.setdefault(self._ns, []).append((event, callback))
 
     def off(self, event, callback):

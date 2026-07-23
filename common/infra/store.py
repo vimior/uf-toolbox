@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """Shared state store — namespaced, observable key-value storage."""
+import logging
+import time
 
 _SELF = object()  # sentinel: "show my own"
 
@@ -11,11 +13,14 @@ class Store:
     namespaced handle via ``module(name)`` so writes are scoped.
     """
 
-    def __init__(self, eventbus):
+    def __init__(self, eventbus, perf=None, logger=None):
         self._eventbus = eventbus
+        self._perf = perf  # PerfMonitor instance (optional)
+        self._logger = logger or logging.getLogger(__name__)
         self._state = {}          # key → value
         self._owners = {}         # key → owner (last writer)
         self._subscriptions = {}  # owner → [(event_key, callback), ...]
+        self._meta = {}           # key → {commit_count, last_commit}
 
     # ---- public API ----
 
@@ -33,6 +38,14 @@ class Store:
         self._state[key] = value
         if owner:
             self._owners[key] = owner
+        if self._perf and self._perf.enabled and owner:
+            self._perf.record_store_commit(owner)
+        meta = self._meta.get(key)
+        if meta is None:
+            self._meta[key] = {'commit_count': 1, 'last_commit': time.time()}
+        else:
+            meta['commit_count'] += 1
+            meta['last_commit'] = time.time()
         self._eventbus.emit(f'store:changed:{key}', value, old)
 
     def get(self, key, default=None):
@@ -50,6 +63,8 @@ class Store:
         self._eventbus.on(event, callback)
         if owner:
             self._subscriptions.setdefault(owner, []).append((event, callback))
+            if self._perf and self._perf.enabled:
+                self._perf.record_store_subscribe(owner)
 
     def unsubscribe(self, key, callback=None):
         """Remove subscriptions for *key*."""
@@ -73,8 +88,40 @@ class Store:
         for k in [k for k, v in self._owners.items() if v == owner]:
             self._state.pop(k, None)
             self._owners.pop(k, None)
+            self._meta.pop(k, None)
             # Don't clear listeners — other plugins may still listen to this
             # key and expect callbacks when the key is re-committed later.
+
+    # ---- snapshot ----
+
+    def snapshot(self):
+        """Return a point-in-time snapshot of all stored keys.
+
+        Returns a dict::
+
+            {'keys': [{'key': str, 'value': str, 'owner': str,
+                       'commit_count': int, 'last_commit': float|None,
+                       'subscribers': [str, ...]}, ...]}
+        """
+        keys = []
+        for key, value in self._state.items():
+            owner = self._owners.get(key, '-')
+            meta = self._meta.get(key, {})
+            subs = []
+            event = f'store:changed:{key}'
+            for sub_owner, pairs in self._subscriptions.items():
+                for ev, cb in pairs:
+                    if ev == event:
+                        subs.append(sub_owner)
+            keys.append({
+                'key': key,
+                'value': str(value)[:80],
+                'owner': owner,
+                'commit_count': meta.get('commit_count', 0),
+                'last_commit': meta.get('last_commit'),
+                'subscribers': subs,
+            })
+        return {'keys': keys}
 
 
 class _StoreModule:
@@ -108,6 +155,6 @@ class _StoreModule:
             owner = self._name
         return self._store.keys(owner=owner)
 
-    def snapshot(self):
+    def dump(self):
         """Return a dict of all key-value pairs owned by this module."""
         return {k: self.get(k, raw=True) for k in self._store.keys(owner=self._name)}
