@@ -351,7 +351,7 @@ class MenuUI(AppState, tk.Tk):
         empty_key = 'menu_no_system' if filter_key == 'system' else 'menu_no_tools'
         result = self._tm.scan(self.current_lang_name, tab=filter_key, path=self.tool_path)
         if filter_key == 'tools':
-            menu.add_command(label=f"  {self.lang['tool_guide']}  ",
+            menu.add_command(label=f"{self.lang['tool_guide']}",
                              command=self._show_tool_guide)
             if not result['tools'] and not result['groups']:
                 return
