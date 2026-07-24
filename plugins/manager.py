@@ -467,39 +467,49 @@ class PluginManager:
                 return key, h
         return None
 
-    def _resolve_targets(self, targets):
+    def _resolve_targets(self, targets, exclude=None):
         """Resolve *targets* to a flat list of (key, Handle) pairs.
 
         *targets* may be a single plugin_id string, a list of strings,
-        or ``'*'`` for all registered plugins.
+        or ``'*'`` for all registered plugins.  *exclude* (pid) is
+        removed from the result — used to skip the caller on wildcard
+        stop/hide.
         """
         if targets == '*':
-            return list(self.plugins.items())
-        if isinstance(targets, str):
-            targets = [targets]
-        result = []
-        for t in targets:
-            found = self._resolve_one(t)
-            if found:
-                result.append(found)
+            pairs = list(self.plugins.items())
+        elif isinstance(targets, str):
+            found = self._resolve_one(targets)
+            pairs = [found] if found else []
+        else:
+            pairs = []
+            for t in targets:
+                found = self._resolve_one(t)
+                if found:
+                    pairs.append(found)
+                else:
+                    self.logger.warning('[PluginManager] unknown target: %s', t)
+        if exclude:
+            if isinstance(exclude, str):
+                exclude = {exclude}
             else:
-                self.logger.warning('[PluginManager] unknown target: %s', t)
-        return result
+                exclude = set(exclude)
+            pairs = [(k, h) for k, h in pairs if h.pid not in exclude]
+        return pairs
 
-    def _on_plugin_start(self, targets, hidden=False):
-        for _, h in self._resolve_targets(targets):
+    def _on_plugin_start(self, targets, hidden=False, exclude=None):
+        for _, h in self._resolve_targets(targets, exclude=exclude):
             self.start_plugin(h, self._ctrl_app, hidden=hidden)
 
-    def _on_plugin_stop(self, targets):
-        for _, h in self._resolve_targets(targets):
+    def _on_plugin_stop(self, targets, exclude=None):
+        for _, h in self._resolve_targets(targets, exclude=exclude):
             self.stop_plugin(h)
 
-    def _on_plugin_show(self, targets):
-        for _, h in self._resolve_targets(targets):
+    def _on_plugin_show(self, targets, exclude=None):
+        for _, h in self._resolve_targets(targets, exclude=exclude):
             self.show_plugin(h)
 
-    def _on_plugin_hide(self, targets):
-        for _, h in self._resolve_targets(targets):
+    def _on_plugin_hide(self, targets, exclude=None):
+        for _, h in self._resolve_targets(targets, exclude=exclude):
             self.hide_plugin(h)
 
     # -- AST-based metadata extraction (no import needed) --
