@@ -22,6 +22,7 @@ class GuiPlugin(tk.Toplevel):
     """
 
     name = "Unnamed Plugin"
+    plugin_id = None
     use_app_icon = True
     fixed_position = True
     fixed_size = True
@@ -72,6 +73,7 @@ class ServicePlugin:
     """
 
     name = "Unnamed Service"
+    plugin_id = None
     priority = 0
     auto_start = False
 

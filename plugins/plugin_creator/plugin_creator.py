@@ -178,7 +178,7 @@ class PluginCreator(GuiPlugin):
     namespace = "plugin_creator"
     priority = 999
     reload = True
-    fixed_position = False
+    fixed_position = True
     fixed_size = False
 
     def __init__(self, parent, app):

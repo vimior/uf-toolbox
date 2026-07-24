@@ -22,9 +22,9 @@ class PluginManager:
         # pm.plugins is the {name: Handle} registry
     """
 
-    META_KEYS = ('name', 'name_zh', 'name_en', 'priority', 'fixed_position',
-                 'fixed_size', 'use_app_icon', 'reload', 'auto_start',
-                 'start_hidden')
+    META_KEYS = ('name', 'name_zh', 'name_en', 'plugin_id', 'namespace',
+                 'priority', 'fixed_position', 'fixed_size', 'use_app_icon',
+                 'reload', 'auto_start', 'start_hidden')
 
     # ---- inner handle class ------------------------------------------------
 
@@ -38,10 +38,11 @@ class PluginManager:
                      'reload', 'priority', 'auto_start', 'start_hidden',
                      '_cls', 'app', '_inst', '_pkg_dir', '_module_name',
                      '_class_name', '_mgr', '_shown',
-                     '_name_raw', '_name_zh', '_name_en', '_src_mtime')
+                     '_name_raw', '_name_zh', '_name_en', '_src_mtime', '_key',
+                     '_pid')
 
         def __init__(self, cls, app, mgr, pkg_dir=None, module_name=None,
-                     class_name=None, metadata=None):
+                     class_name=None, metadata=None, key=None):
             self.app = app
             self._mgr = mgr
             self._cls = cls
@@ -54,12 +55,15 @@ class PluginManager:
             self._name_zh = None
             self._name_en = None
             self._src_mtime = 0
+            self._key = key
+            self._pid = None
 
             if cls is not None:
                 # Eager — class attributes are available directly
                 self._name_raw = cls.name
                 self._name_zh = getattr(cls, 'name_zh', None)
                 self._name_en = getattr(cls, 'name_en', None)
+                self._pid = getattr(cls, 'plugin_id', None)
                 self.priority = cls.priority
                 self.auto_start = getattr(cls, 'auto_start', False)
                 self.start_hidden = getattr(cls, 'start_hidden', False)
@@ -79,6 +83,7 @@ class PluginManager:
                 self._name_raw = meta.get('name') or module_name or 'Unnamed'
                 self._name_zh = meta.get('name_zh')
                 self._name_en = meta.get('name_en')
+                self._pid = meta.get('plugin_id')
                 self.fixed_position = meta.get('fixed_position', True)
                 self.fixed_size = meta.get('fixed_size', True)
                 self.use_app_icon = meta.get('use_app_icon', True)
@@ -103,6 +108,61 @@ class PluginManager:
         def loaded(self):
             """True after the plugin module has been imported."""
             return self._cls is not None
+
+        @property
+        def pid(self):
+            """Effective plugin ID — class attr → AST metadata → registry key."""
+            if self._cls and getattr(self._cls, 'plugin_id', None):
+                return self._cls.plugin_id
+            if self._pid:
+                return self._pid
+            return self._key or self._module_name or 'unknown'
+
+        def hide(self):
+            """Hide a visible GUI plugin window (no-op for ServicePlugin)."""
+            if self._inst is None or self.is_service:
+                return
+            if not self._inst.winfo_exists():
+                return
+            name = self.get_name()
+            self.app.emit('hook:plugin:will-hide', self._inst, _origin=ORIGIN)
+            try:
+                self._inst.on_hide()
+            except Exception as e:
+                self._mgr.logger.error(
+                    f'[Plugin:{name}] on_hide error: {e}')
+            try:
+                self._inst.withdraw()
+            except Exception:
+                pass
+            self._shown = False
+            self.app.emit('hook:plugin:did-hide', self._inst, _origin=ORIGIN)
+
+        def show(self):
+            """Show a hidden GUI plugin window (no-op for ServicePlugin)."""
+            if self._inst is None or self.is_service:
+                return
+            if not self._inst.winfo_exists():
+                return
+            name = self.get_name()
+            self._inst.deiconify()
+            self._inst.lift()
+            self._inst.focus_force()
+            self.app.emit('hook:plugin:will-show', self._inst, _origin=ORIGIN)
+            try:
+                self._inst.on_show()
+            except Exception as e:
+                self._mgr.logger.error(
+                    f'[Plugin:{name}] on_show error: {e}')
+            self._shown = True
+            self.app.emit('hook:plugin:did-show', self._inst, _origin=ORIGIN)
+
+        @property
+        def visible(self):
+            """True if this GUI plugin window is currently viewable."""
+            if self._inst is None or self.is_service:
+                return False
+            return self._inst.winfo_exists() and self._inst.winfo_viewable()
 
         @staticmethod
         def _start(inst):
@@ -213,6 +273,7 @@ class PluginManager:
             self._name_raw = cls.name
             self._name_zh = getattr(cls, 'name_zh', None)
             self._name_en = getattr(cls, 'name_en', None)
+            self._pid = getattr(cls, 'plugin_id', None) or self._pid
             self.priority = cls.priority
             if issubclass(cls, GuiPlugin):
                 self.reload = cls.reload
@@ -223,7 +284,7 @@ class PluginManager:
                 self.reload = True
             return True
 
-        def start(self, parent):
+        def start(self, parent, hidden=False):
             if not self._ensure_loaded():
                 return None
 
@@ -268,11 +329,12 @@ class PluginManager:
                 self._mgr.logger.error(
                     f'[Plugin:{name}] init error: {e}')
                 return None
-            hidden = not is_service and self.auto_start and self.start_hidden
-            if hidden:
+            is_hidden = not is_service and (hidden or (self.auto_start and self.start_hidden))
+            if is_hidden:
                 self._inst.withdraw()
                 self._shown = False
-                self.start_hidden = False  # only on first auto-start
+                if self.auto_start and self.start_hidden:
+                    self.start_hidden = False  # only on first auto-start
             else:
                 self._shown = True
                 if is_service:
@@ -322,6 +384,123 @@ class PluginManager:
     def __init__(self, logger):
         self.logger = logger
         self.plugins = {}
+
+    # -- public lifecycle API ----------------------------------------------
+    #
+    #   These are the single source of truth for plugin start/stop/show/hide.
+    #   Both the menu and the control-event handlers route through here.
+
+    def start_plugin(self, handle, parent, hidden=False):
+        """Start *handle* and apply position + icon. Returns the window
+        instance (GUI) or ``None`` (Service / already running).
+
+        :rtype: object | None
+        """
+        was_loaded = handle.loaded
+
+        if not handle.alive:
+            win = handle.start(parent, hidden=hidden)
+            if not handle.is_service:
+                self._apply_window_setup(handle)
+        elif not handle.is_service and not hidden:
+            handle.show()
+            win = handle._inst
+        else:
+            win = None
+
+        menu_changed = handle.loaded and not was_loaded
+        return win, menu_changed
+
+    def stop_plugin(self, handle):
+        """Stop (destroy) *handle*."""
+        if handle.alive:
+            handle.stop()
+
+    def show_plugin(self, handle):
+        """Show a hidden GUI plugin window (no-op for services)."""
+        if handle.alive and not handle.is_service:
+            handle.show()
+
+    def hide_plugin(self, handle):
+        """Hide a visible GUI plugin window (no-op for services)."""
+        if handle.alive and not handle.is_service:
+            handle.hide()
+
+    def _apply_window_setup(self, handle):
+        """Apply position and icon to a newly started GUI plugin window."""
+        if handle.is_service:
+            return
+        win = handle._inst
+        if win is None or not win.winfo_exists():
+            return
+        app = self._ctrl_app
+
+        # position & size
+        if handle.fixed_position or handle.fixed_size:
+            app.emit('set-win-position', win,
+                     x=(app.winfo_x() + app.winfo_width() + 4
+                        if handle.fixed_position else None),
+                     y=(app.winfo_y() if handle.fixed_position else None),
+                     w=(420 if handle.fixed_size else None),
+                     h=(app.main_height if handle.fixed_size else None),
+                     fixed_size=handle.fixed_size,
+                     fixed_position=handle.fixed_position)
+
+        # icon
+        if handle.use_app_icon:
+            app.emit('set-win-icon', win)
+
+    # -- control events ---------------------------------------------------
+
+    def _setup_control_events(self, app):
+        """Register listeners for cross-plugin lifecycle control events."""
+        self._ctrl_app = app
+        app.on('plugin:start', self._on_plugin_start)
+        app.on('plugin:stop',  self._on_plugin_stop)
+        app.on('plugin:show',  self._on_plugin_show)
+        app.on('plugin:hide',  self._on_plugin_hide)
+
+    def _resolve_one(self, target):
+        """Look up a single target by pid or registry key. Returns (key, Handle) or None."""
+        for key, h in self.plugins.items():
+            if h.pid == target or key == target:
+                return key, h
+        return None
+
+    def _resolve_targets(self, targets):
+        """Resolve *targets* to a flat list of (key, Handle) pairs.
+
+        *targets* may be a single plugin_id string, a list of strings,
+        or ``'*'`` for all registered plugins.
+        """
+        if targets == '*':
+            return list(self.plugins.items())
+        if isinstance(targets, str):
+            targets = [targets]
+        result = []
+        for t in targets:
+            found = self._resolve_one(t)
+            if found:
+                result.append(found)
+            else:
+                self.logger.warning('[PluginManager] unknown target: %s', t)
+        return result
+
+    def _on_plugin_start(self, targets, hidden=False):
+        for _, h in self._resolve_targets(targets):
+            self.start_plugin(h, self._ctrl_app, hidden=hidden)
+
+    def _on_plugin_stop(self, targets):
+        for _, h in self._resolve_targets(targets):
+            self.stop_plugin(h)
+
+    def _on_plugin_show(self, targets):
+        for _, h in self._resolve_targets(targets):
+            self.show_plugin(h)
+
+    def _on_plugin_hide(self, targets):
+        for _, h in self._resolve_targets(targets):
+            self.hide_plugin(h)
 
     # -- AST-based metadata extraction (no import needed) --
 
@@ -493,7 +672,7 @@ class PluginManager:
                     old_h.unload()
                     self.plugins[name] = self.Handle(
                         cls, app, self, pkg_dir=pkg_dir, module_name=mod_name,
-                        class_name=cls_name)
+                        class_name=cls_name, key=name)
                     self.plugins[name].start_hidden, self.plugins[name]._shown = saved
                     continue
 
@@ -522,7 +701,7 @@ class PluginManager:
 
                 h = self.Handle(
                     None, app, self, pkg_dir=pkg_dir, module_name=mod_name,
-                    class_name=cls_name, metadata=meta)
+                    class_name=cls_name, metadata=meta, key=name)
                 # Record source mtime for change detection on subsequent scans
                 module_file = os.path.join(pkg_dir, f'{mod_name}.py')
                 try:
@@ -538,3 +717,20 @@ class PluginManager:
                 continue
             h.unload()
             del self.plugins[stale]
+
+        # ---- validate plugin_id uniqueness on first load ---------------
+        pid_seen = {}
+        for key, h in self.plugins.items():
+            pid = h.pid
+            if pid in pid_seen:
+                self.logger.error(
+                    '[PluginManager] duplicate plugin_id "%s": '
+                    'used by both "%s" and "%s"',
+                    pid, pid_seen[pid], key)
+            else:
+                pid_seen[pid] = key
+
+        # ---- register control-event listeners (once) -------------------
+        if not getattr(self, '_ctrl_events_setup', False):
+            self._setup_control_events(app)
+            self._ctrl_events_setup = True
