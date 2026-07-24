@@ -426,6 +426,41 @@ class PluginManager:
         if handle.alive and not handle.is_service:
             handle.hide()
 
+    def get_plugin_info(self, target=None, refresh=False):
+        """Return plugin status info as a dict.
+
+        *target*: pid / registry key → single dict; ``None`` → dict of dicts keyed by pid.
+        *refresh*: if True, re-scan plugin directories before querying.
+        """
+        if refresh and getattr(self, '_ctrl_app', None) is not None:
+            self.load(self._ctrl_app)
+        if target is not None:
+            h = self._resolve_one(target)
+            if h is None:
+                return None
+            return self._info_for(h[1])
+
+        return {h.pid: self._info_for(h) for h in self.plugins.values()}
+
+    def _info_for(self, h):
+        """Build an info dict for *handle*."""
+        if h._cls:
+            ns = getattr(h._cls, 'namespace', None) or h._cls.__name__
+            class_name = h._cls.__name__
+        else:
+            ns = h._class_name or h._module_name
+            class_name = h._class_name or 'Unknown'
+        return {
+            'plugin_id':  h.pid,
+            'name':       h.get_name(),
+            'type':       'ServicePlugin' if h.is_service else 'GuiPlugin',
+            'alive':      h.alive,
+            'visible':    h.visible,
+            'namespace':  ns,
+            'class_name': class_name,
+            'reload':     h.reload if not h.is_service else None,
+        }
+
     def _apply_window_setup(self, handle):
         """Apply position and icon to a newly started GUI plugin window."""
         if handle.is_service:
@@ -453,12 +488,17 @@ class PluginManager:
     # -- control events ---------------------------------------------------
 
     def _setup_control_events(self, app):
-        """Register listeners for cross-plugin lifecycle control events."""
+        """Register lifecycle control events and services."""
         self._ctrl_app = app
-        app.on('plugin:start', self._on_plugin_start)
-        app.on('plugin:stop',  self._on_plugin_stop)
-        app.on('plugin:show',  self._on_plugin_show)
-        app.on('plugin:hide',  self._on_plugin_hide)
+        bus = app._infra.eventbus  # raw bus — pass ns for perf attribution
+        bus.on('plugin:start', self._on_plugin_start, ns='plugin_manager')
+        bus.on('plugin:stop',  self._on_plugin_stop,  ns='plugin_manager')
+        bus.on('plugin:show',  self._on_plugin_show,  ns='plugin_manager')
+        bus.on('plugin:hide',  self._on_plugin_hide,  ns='plugin_manager')
+
+        # register info service on the raw (non-namespaced) registry
+        svc = app._infra.services
+        svc.register('plugin_manager.get_plugin_info', self.get_plugin_info, owner='plugin_manager')
 
     def _resolve_one(self, target):
         """Look up a single target by pid or registry key. Returns (key, Handle) or None."""

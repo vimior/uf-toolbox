@@ -18,6 +18,8 @@ class PerfMonitor:
         self._start_time = time.perf_counter()
         # ns -> {event_name -> {'count': N, 'total_s': T, 'max_s': M}}
         self._event_stats = {}
+        # ns -> {event_name -> count}  (emitter-side, with timing)
+        self._emit_stats = {}
         # ns -> {service_name -> {'count': N, 'total_s': T, 'max_s': M}}
         self._service_stats = {}
         # ns -> {'commits': N, 'subscribes': N}
@@ -53,10 +55,10 @@ class PerfMonitor:
         """Return the namespace for *callback*, or 'app' if unknown."""
         return self._cb_ns.get(id(callback), 'app')
 
-    # ---- event timing ----
+    # ---- event timing (listener side) ----
 
     def record_event(self, ns, event_name, elapsed_s):
-        """Record an event callback execution."""
+        """Record an event callback execution (listener-side timing)."""
         if not self.enabled:
             return
         self._ensure_ns(self._event_stats, ns)
@@ -64,6 +66,22 @@ class PerfMonitor:
         if entry is None:
             entry = {'count': 0, 'total_s': 0.0, 'max_s': 0.0}
             self._event_stats[ns][event_name] = entry
+        entry['count'] += 1
+        entry['total_s'] += elapsed_s
+        if elapsed_s > entry['max_s']:
+            entry['max_s'] = elapsed_s
+
+    # ---- event emit counters (emitter side) ----
+
+    def record_emit(self, ns, event_name, elapsed_s):
+        """Record an event emission (emitter-side: count + timing)."""
+        if not self.enabled or not ns:
+            return
+        self._ensure_ns(self._emit_stats, ns)
+        stats = self._emit_stats[ns]
+        if event_name not in stats:
+            stats[event_name] = {'count': 0, 'total_s': 0.0, 'max_s': 0.0}
+        entry = stats[event_name]
         entry['count'] += 1
         entry['total_s'] += elapsed_s
         if elapsed_s > entry['max_s']:
@@ -131,26 +149,32 @@ class PerfMonitor:
             'process': self._process_info(),
             'namespaces': {},
             'totals': {
-                'event_calls': 0, 'event_total_s': 0.0,
+                'emit_calls': 0, 'emit_total_s': 0.0,
+                'callback_calls': 0, 'callback_total_s': 0.0,
                 'service_calls': 0, 'service_total_s': 0.0,
                 'store_commits': 0, 'store_subscribes': 0,
             },
         }
 
         # Collect all namespaces
-        all_ns = set(self._event_stats.keys()) | set(self._service_stats.keys()) | set(self._store_stats.keys())
+        all_ns = (set(self._event_stats.keys()) | set(self._service_stats.keys())
+                  | set(self._store_stats.keys()) | set(self._emit_stats.keys()))
 
         for ns in sorted(all_ns):
             ns_data = {
-                'events': dict(self._event_stats.get(ns, {})),
+                'callbacks': dict(self._event_stats.get(ns, {})),
+                'emits': dict(self._emit_stats.get(ns, {})),
                 'services': dict(self._service_stats.get(ns, {})),
                 'store': dict(self._store_stats.get(ns, {})),
             }
             result['namespaces'][ns] = ns_data
 
-            for evt in ns_data['events'].values():
-                result['totals']['event_calls'] += evt['count']
-                result['totals']['event_total_s'] += evt['total_s']
+            for evt in ns_data['emits'].values():
+                result['totals']['emit_calls'] += evt['count']
+                result['totals']['emit_total_s'] += evt['total_s']
+            for evt in ns_data['callbacks'].values():
+                result['totals']['callback_calls'] += evt['count']
+                result['totals']['callback_total_s'] += evt['total_s']
             for svc in ns_data['services'].values():
                 result['totals']['service_calls'] += svc['count']
                 result['totals']['service_total_s'] += svc['total_s']
@@ -162,6 +186,7 @@ class PerfMonitor:
     def reset(self):
         """Clear all collected stats (but keep callback-to-ns mappings and uptime clock)."""
         self._event_stats.clear()
+        self._emit_stats.clear()
         self._service_stats.clear()
         self._store_stats.clear()
 

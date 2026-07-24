@@ -27,6 +27,7 @@ class Services:
         self._owners = {}         # name → owner (who registered)
         self._subscriptions = {}  # owner → [(event, callback), ...]
         self._meta = {}      # name → {call_count, last_call}
+        self._callers = {}   # name → {caller_ns → {count, last_call}}
 
     # ---- public API ----
 
@@ -52,6 +53,10 @@ class Services:
         meta['call_count'] = meta.get('call_count', 0) + 1
         meta['last_call'] = time.time()
         meta.setdefault('since', time.time())
+        if origin:
+            self._callers.setdefault(name, {}).setdefault(origin, {'count': 0})
+            self._callers[name][origin]['count'] += 1
+            self._callers[name][origin]['last_call'] = time.time()
         tag = name + (f' (from {origin})' if origin else '')
         self._logger.debug('[services] call %s', tag)
         perf = self._perf
@@ -69,6 +74,7 @@ class Services:
         fn = self._services.pop(name, None)
         self._owners.pop(name, None)
         self._meta.pop(name, None)
+        self._callers.pop(name, None)
         if fn:
             self._logger.info('[services] unregister %s', name)
         self._eventbus.emit('service:unregistered', name)
@@ -124,12 +130,18 @@ class Services:
         services = []
         for name in self._services:
             meta = self._meta.get(name, {})
+            callers = []
+            for ns, cd in self._callers.get(name, {}).items():
+                callers.append({'namespace': ns, 'count': cd['count'],
+                                'last_call': cd.get('last_call')})
+            callers.sort(key=lambda c: c['count'], reverse=True)
             services.append({
                 'name': name,
                 'owner': self._owners.get(name, '-'),
                 'call_count': meta.get('call_count', 0),
                 'last_call': meta.get('last_call'),
                 'since': meta.get('since'),
+                'callers': callers,
             })
         return {'services': services}
 

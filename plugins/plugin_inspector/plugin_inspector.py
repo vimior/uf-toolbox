@@ -72,7 +72,7 @@ class PluginInspector(GuiPlugin):
         s = self._s
 
         self.title(self.name_zh if lang_name == 'zh' else self.name_en)
-        self.geometry("666x520")
+        self.geometry("688x520")
         self.resizable(True, True)
         self.configure(bg=s['bg'])
 
@@ -257,58 +257,48 @@ class PluginInspector(GuiPlugin):
         all_events = data['events']
         show_all = self._filter_var.get()
 
-        active = {}
-        plugin_cb_count = 0
-        app_cb_count = 0
-
+        filtered = {}
         for event, info in all_events.items():
-            callbacks = info['callbacks']
-            if show_all:
-                visible = callbacks
-            else:
-                if not callbacks:
+            cbs = info['callbacks']
+            if not show_all:
+                if info['count'] == 0:
                     continue
-                visible = [e for e in callbacks if e['namespace'] != 'app']
-                if not visible:
+                cbs = [e for e in cbs if e['namespace'] != 'app']
+                if not cbs:
                     continue
-            active[event] = (info, visible)
-            for e in visible:
-                if e['namespace'] == 'app':
-                    app_cb_count += 1
-                else:
-                    plugin_cb_count += 1
+            filtered[event] = (info, cbs)
 
-        if show_all:
-            header = f"  ACTIVE EVENTS: {len(active)}  CALLBACKS: {plugin_cb_count + app_cb_count} (PLUGINS: {plugin_cb_count}, APP: {app_cb_count})"
-        else:
-            header = f"  ACTIVE EVENTS: {len(active)}  PLUGIN CALLBACKS: {plugin_cb_count}"
-        lines = [header, ""]
+        total_emits = sum(v[0]['count'] for v in filtered.values())
+        total_cbs = sum(len(v[1]) for v in filtered.values())
+        lines = [f"  EVENTS: {len(filtered)}  EMITS: {total_emits}  CALLBACKS: {total_cbs}", ""]
 
-        for event in sorted(active.keys()):
-            info, callbacks = active[event]
-            stats = []
-            if info['count']:
-                stats.append(f"{info['count']} emits")
-            if info['last_emit']:
-                stats.append(f"last {self._time_str(info['last_emit'])}")
-            line = f"  ● {event}"
-            if stats:
-                line += f"    {_PREFIX}{'  '.join(stats)}"
-            lines.append(line)
-            if not callbacks:
-                lines.append("")
-                continue
-            for i, entry in enumerate(callbacks):
-                prefix = "    └─" if i == len(callbacks) - 1 else "    ├─"
-                name = entry['name']
-                if entry['namespace'] != 'app':
-                    dot = name.find('.')
-                    if dot != -1:
-                        name = name[dot + 1:]
-                line = f"{prefix} [{entry['namespace']}] {name}"
-                if entry['since']:
-                    line += f"  [{self._time_str(entry['since'])}]"
-                lines.append(line)
+        for event in sorted(filtered.keys()):
+            info, cbs = filtered[event]
+            lines.append(f"  ● {event}")
+            ec = info['count']
+            cc = len(cbs)
+            # emits
+            origins = info.get('origins', [])
+            if origins:
+                last = self._time_str(info['last_emit']) if info.get('last_emit') else '-'
+                lines.append(f"    emits: {ec}  last {last}")
+                for i, o in enumerate(origins):
+                    prefix = "    ├─" if i < len(origins) - 1 else "    └─"
+                    o_last = self._time_str(o['last_emit']) if o.get('last_emit') else '-'
+                    lines.append(f"  {prefix} [{o['namespace']}]  ×{o['count']}  last {o_last}")
+            # callbacks
+            if cbs:
+                lines.append(f"    callbacks: {cc}")
+                for i, entry in enumerate(cbs):
+                    prefix = "    ├─" if i < len(cbs) - 1 else "    └─"
+                    name = entry['name']
+                    if entry['namespace'] != 'app':
+                        dot = name.find('.')
+                        if dot != -1:
+                            name = name[dot + 1:]
+                    count = entry.get('count', 0)
+                    since = self._time_str(entry['since']) if entry.get('since') else '-'
+                    lines.append(f"  {prefix} [{entry['namespace']}] {name}  ×{count}  [{since}]")
             lines.append("")
 
         self._set_text(self._texts["events"], lines)
@@ -324,13 +314,13 @@ class PluginInspector(GuiPlugin):
             owner = entry['owner']
             by_owner.setdefault(owner, []).append(entry)
 
-        lines = ["  TOTAL KEYS: " + str(len(keys)), ""]
+        lines = [f"  KEYS: {len(keys)}  OWNERS: {len(by_owner)}", ""]
 
         for owner in sorted(by_owner.keys()):
             lines.append(f"  ● [{owner}]")
             items = by_owner[owner]
             for i, entry in enumerate(items):
-                prefix = "    └─" if i == len(items) - 1 else "    ├─"
+                prefix = "  └─" if i == len(items) - 1 else "  ├─"
                 bar = " " if i == len(items) - 1 else "│"
                 short = entry['key']
                 pfx = owner + '.'
@@ -343,10 +333,10 @@ class PluginInspector(GuiPlugin):
                 if entry['last_commit']:
                     stats.append(f"last {self._time_str(entry['last_commit'])}")
                 if stats:
-                    lines.append(f"    {bar}    {'  '.join(stats)}")
+                    lines.append(f"  {bar}  {'  '.join(stats)}")
                 for sub in entry['subscribers']:
                     if sub != owner:
-                        lines.append(f"    {bar}    ← {sub}")
+                        lines.append(f"  {bar}  ← {sub}")
             lines.append("")
 
         self._set_text(self._texts["store"], lines)
@@ -362,27 +352,31 @@ class PluginInspector(GuiPlugin):
             owner = entry['owner']
             by_owner.setdefault(owner, []).append(entry)
 
-        lines = ["  TOTAL SERVICES: " + str(len(services)), ""]
+        lines = [f"  SERVICES: {len(services)}  OWNERS: {len(by_owner)}", ""]
 
         for owner in sorted(by_owner.keys()):
             lines.append(f"  ● [{owner}]")
             items = sorted(by_owner[owner], key=lambda e: e['name'])
             for i, entry in enumerate(items):
-                prefix = "    └─" if i == len(items) - 1 else "    ├─"
-                bar = " " if i == len(items) - 1 else "│"
+                prefix = "  ├─" if i < len(items) - 1 else "  └─"
                 short = entry['name']
                 pfx = owner + '.'
                 if short.startswith(pfx):
                     short = short[len(pfx):]
-                line = f"{prefix} {short}  [{self._time_str(entry['since'])}]" if entry['since'] else f"{prefix} {short}"
-                lines.append(line)
-                stats = []
-                if entry['call_count']:
-                    stats.append(f"{entry['call_count']} calls")
-                if entry['last_call']:
-                    stats.append(f"last {self._time_str(entry['last_call'])}")
-                if stats:
-                    lines.append(f"    {bar}    {'  '.join(stats)}")
+                is_last = (i == len(items) - 1)
+                bar = "   " if is_last else "  │"
+                since = self._time_str(entry['since']) if entry.get('since') else '-'
+                lines.append(f"  {prefix} {short}  [{since}]")
+                callers = entry.get('callers', [])
+                c_total = entry.get('call_count', 0)
+                if c_total:
+                    c_last = self._time_str(entry['last_call']) if entry.get('last_call') else '-'
+                    lines.append(f"  {bar}  {c_total} calls  last {c_last}")
+                for j, caller in enumerate(callers):
+                    c_prefix = "├─" if j < len(callers) - 1 else "└─"
+                    c_last_s = self._time_str(caller['last_call']) if caller.get('last_call') else '-'
+                    lines.append(f"  {bar}  {c_prefix} [{caller['namespace']}]  ×{caller['count']}  last {c_last_s}")
+            lines.append("")
             lines.append("")
 
         self._set_text(self._texts["services"], lines)
@@ -415,13 +409,16 @@ class PluginInspector(GuiPlugin):
         else:
             lines.append(f"  MEMORY: (psutil not installed)")
         lines.append("")
+        lines.append(f"  {_PREFIX}[T: total]  [A: avg]  [M: max]")
+        lines.append("")
 
         # ---- totals ----
         t = s['totals']
-        lines.append(f"  {_PREFIX}Event emits:      {t['event_calls']}    {t['event_total_s']*1000:.2f} ms")
-        lines.append(f"  {_PREFIX}Service calls:    {t['service_calls']}    {t['service_total_s']*1000:.2f} ms")
-        lines.append(f"  {_PREFIX}Store commits:    {t['store_commits']}")
-        lines.append(f"  {_PREFIX}Store subscribes: {t['store_subscribes']}")
+        lines.append(f"  {_PREFIX}Store:   {t['store_commits']} commits, {t['store_subscribes']} subscribes")
+        lines.append(f"  {_PREFIX}Event:")
+        lines.append(f"      emits:     {t['emit_calls']}  [T: {t['emit_total_s']*1000:.2f}ms]")
+        lines.append(f"      callbacks: {t['callback_calls']}  [T: {t['callback_total_s']*1000:.2f}ms]")
+        lines.append(f"  {_PREFIX}Service: {t['service_calls']}  [T: {t['service_total_s']*1000:.2f}ms]")
         lines.append("")
 
         # ---- per-namespace ----
@@ -430,41 +427,47 @@ class PluginInspector(GuiPlugin):
             lines.append("  (no activity recorded yet)")
         else:
             for ns, data in ns_data.items():
-                events = data['events']
+                callbacks = data['callbacks']
+                emits = data['emits']
                 services = data['services']
                 store = data['store']
 
-                ev_total_s = sum(v['total_s'] for v in events.values())
-                ev_count = sum(v['count'] for v in events.values())
-                sv_total_s = sum(v['total_s'] for v in services.values())
+                em_count = sum(v['count'] for v in emits.values())
+                em_total_s = sum(v['total_s'] for v in emits.values())
+                cb_count = sum(v['count'] for v in callbacks.values())
+                cb_total_s = sum(v['total_s'] for v in callbacks.values())
                 sv_count = sum(v['count'] for v in services.values())
+                sv_total_s = sum(v['total_s'] for v in services.values())
 
                 lines.append(f"  ● [{ns}]")
-                if ev_count:
-                    lines.append(f"    {_PREFIX}Events:   {ev_count} emits, {ev_total_s*1000:.2f} ms")
-                if sv_count:
-                    lines.append(f"    {_PREFIX}Services: {sv_count} calls, {sv_total_s*1000:.2f} ms")
                 if store.get('commits') or store.get('subscribes'):
-                    lines.append(f"    {_PREFIX}Store:    {store.get('commits',0)} commits, {store.get('subscribes',0)} subscribes")
-
-                # Top slowest events for this namespace
-                if events:
-                    ranked = sorted(events.items(), key=lambda x: x[1]['total_s'], reverse=True)
-                    shown = 0
-                    for ev_name, ev_data in ranked:
-                        if ev_data['count'] == 0:
-                            continue
-                        max_ms = ev_data['max_s'] * 1000
-                        if max_ms < 0.1 and ev_data['total_s'] * 1000 < 0.5:
-                            continue
-                        avg_ms = (ev_data['total_s'] / ev_data['count']) * 1000
-                        lines.append(f"      {_PREFIX}{ev_name}    {ev_data['count']} emits  avg {avg_ms:.2f}ms  max {max_ms:.2f}ms")
-                        shown += 1
-                        if shown >= 5:
-                            remaining = len(ranked) - shown
-                            if remaining > 0:
-                                lines.append(f"      {_PREFIX}... and {remaining} more")
-                            break
+                    lines.append(f"    {_PREFIX}Store:   {store.get('commits',0)} commits, {store.get('subscribes',0)} subscribes")
+                if em_count or cb_count:
+                    lines.append(f"    {_PREFIX}Event:")
+                    if em_count:
+                        lines.append(f"      emits:     {em_count}  [T: {em_total_s*1000:.2f}ms]")
+                        for ev_name, ev_data in sorted(emits.items()):
+                            t_ms = ev_data['total_s'] * 1000
+                            avg_ms = (ev_data['total_s'] / ev_data['count']) * 1000
+                            max_ms = ev_data['max_s'] * 1000
+                            lines.append(f"        {_PREFIX}{ev_name}    ×{ev_data['count']}  [T: {t_ms:.2f}ms]  [A: {avg_ms:.2f}ms]  [M: {max_ms:.2f}ms]")
+                    if cb_count:
+                        lines.append(f"      callbacks: {cb_count}  [T: {cb_total_s*1000:.2f}ms]")
+                        ranked = sorted(callbacks.items(), key=lambda x: x[1]['total_s'], reverse=True)
+                        for ev_name, ev_data in ranked:
+                            if ev_data['count'] == 0:
+                                continue
+                            t_ms = ev_data['total_s'] * 1000
+                            avg_ms = (ev_data['total_s'] / ev_data['count']) * 1000
+                            max_ms = ev_data['max_s'] * 1000
+                            lines.append(f"        {_PREFIX}{ev_name}    ×{ev_data['count']}  [T: {t_ms:.2f}ms]  [A: {avg_ms:.2f}ms]  [M: {max_ms:.2f}ms]")
+                if sv_count:
+                    lines.append(f"    {_PREFIX}Service: {sv_count}  [T: {sv_total_s*1000:.2f}ms]")
+                    for sv_name, sv_data in sorted(services.items()):
+                        t_ms = sv_data['total_s'] * 1000
+                        avg_ms = (sv_data['total_s'] / sv_data['count']) * 1000
+                        max_ms = sv_data['max_s'] * 1000
+                        lines.append(f"      {_PREFIX}{sv_name}    ×{sv_data['count']}  [T: {t_ms:.2f}ms]  [A: {avg_ms:.2f}ms]  [M: {max_ms:.2f}ms]")
                 lines.append("")
 
         self._set_text(self._texts["perf"], lines)
