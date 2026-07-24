@@ -377,7 +377,6 @@ class PluginInspector(GuiPlugin):
                     c_last_s = self._time_str(caller['last_call']) if caller.get('last_call') else '-'
                     lines.append(f"  {bar}  {c_prefix} [{caller['namespace']}]  ×{caller['count']}  last {c_last_s}")
             lines.append("")
-            lines.append("")
 
         self._set_text(self._texts["services"], lines)
 
