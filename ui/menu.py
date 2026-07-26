@@ -38,18 +38,9 @@ class MenuUI(AppState, tk.Tk):
     """Navbar with tab-style buttons."""
 
     def init(self):
-        self._pm = PluginManager(logger)
+        self._pm = PluginManager(logger, self)
         self._tm = ToolManager(logger)
         super().init()
-        # Listen for one-shot auto-start signal (emitted once by UFToolBox
-        # after the main window is fully ready).
-        def _on_auto_start():
-            self._load_plugins()
-            for h in self._pm.plugins.values():
-                if h.auto_start and not h.alive:
-                    self._show_plugin_window(h)
-            self.off('auto-start-plugins', _on_auto_start)
-        self.on('auto-start-plugins', _on_auto_start)
         self.on('theme:changed', lambda name: MenuUI.apply_theme(self, name))
         self.on('lang:changed', lambda name: MenuUI.apply_lang(self, name))
 
@@ -289,12 +280,12 @@ class MenuUI(AppState, tk.Tk):
                              variable=self._auto_hide_var,
                              command=self._toggle_auto_hide)
         menu.add_command(label=l['menu_config'],
-                         command=lambda: self.emit('show-settings'))
+                         command=lambda: self.emit('window:open-settings'))
         menu.add_separator()
         menu.add_command(label=l['menu_log'],
-                         command=lambda: self.emit('show-log'))
+                         command=lambda: self.emit('window:open-log'))
         menu.add_command(label=l['menu_about'],
-                         command=lambda: self.emit('show-about'))
+                         command=lambda: self.emit('window:open-about'))
 
     def _build_appearance_submenu(self, parent):
         l = self.lang
@@ -396,8 +387,8 @@ class MenuUI(AppState, tk.Tk):
                                            doc='tool-guide.md',
                                            title_zh='工具指南',
                                            title_en='Tool Guide')
-        self.emit('set-win-icon', self._tool_guide_win)
-        self.emit('set-win-position', self._tool_guide_win,
+        self.emit('window:set-icon', self._tool_guide_win)
+        self.emit('window:set-geometry', self._tool_guide_win,
             x=(self.winfo_x() + self.winfo_width() + 4
                 if self._tool_guide_win.fixed_position else None),
             y=(self.winfo_y() if self._tool_guide_win.fixed_position else None),
@@ -468,7 +459,7 @@ class MenuUI(AppState, tk.Tk):
 
     def _load_plugins(self):
         """Resolve plugin directories and delegate to PluginManager."""
-        self._pm.load(self, path=self.plugin_path)
+        self._pm.load(path=self.plugin_path)
 
     # ---- plugin window ----
 

@@ -8,13 +8,13 @@ from common.state import AppState
 
 
 class SettingsUI(AppState, tk.Tk):
-    """Mixin that provides a settings window — opened via 'show-settings' event."""
+    """Mixin that provides a settings window — opened via 'window:open-settings' event."""
 
     def init(self):
         super().init()
         self._settings_win = None
         self._settings_dirty = False
-        self.on('show-settings', self._show_settings)
+        self.on('window:open-settings', self._show_settings)
         self.on('theme:changed', lambda name: SettingsUI.apply_theme(self, name))
         self.on('lang:changed', lambda name: SettingsUI.apply_lang(self, name))
 
@@ -68,7 +68,7 @@ class SettingsUI(AppState, tk.Tk):
         w['tool_btn'].config(text=l['config_select'])
         w['plugin_btn'].config(text=l['config_select'])
         w['save_btn'].config(text=l['config_save'])
-        # self.emit('set-win-position', self._settings_win, h=200)
+        # self.emit('window:set-geometry', self._settings_win, h=200)
 
     # ---- window ----
 
@@ -83,7 +83,7 @@ class SettingsUI(AppState, tk.Tk):
 
         win = tk.Toplevel(self)
         win.geometry('+{}+{}'.format(-9999, -9999))
-        self.emit('set-win-icon', win)
+        self.emit('window:set-icon', win)
         win.title(l['config_title'])
         win.resizable(False, False)
         win.configure(bg=t['bg'])
@@ -208,7 +208,7 @@ class SettingsUI(AppState, tk.Tk):
         win.protocol('WM_DELETE_WINDOW', _on_close)
         win.bind('<Destroy>', lambda _: self._on_config_win_closed())
 
-        self.emit('set-win-position', win, h=200)
+        self.emit('window:set-geometry', win, h=200)
         # win.lift()
         # win.focus_force()
 

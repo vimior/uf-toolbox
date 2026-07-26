@@ -125,7 +125,7 @@ class PluginManager:
             if not self._inst.winfo_exists():
                 return
             name = self.get_name()
-            self.app.emit('hook:plugin:will-hide', self._inst, _origin=ORIGIN)
+            self.app.emit('plugin_manager@hook:plugin:will-hide', self._inst, _origin=ORIGIN)
             try:
                 self._inst.on_hide()
             except Exception as e:
@@ -136,7 +136,7 @@ class PluginManager:
             except Exception:
                 pass
             self._shown = False
-            self.app.emit('hook:plugin:did-hide', self._inst, _origin=ORIGIN)
+            self.app.emit('plugin_manager@hook:plugin:did-hide', self._inst, _origin=ORIGIN)
 
         def show(self):
             """Show a hidden GUI plugin window (no-op for ServicePlugin)."""
@@ -148,14 +148,14 @@ class PluginManager:
             self._inst.deiconify()
             self._inst.lift()
             self._inst.focus_force()
-            self.app.emit('hook:plugin:will-show', self._inst, _origin=ORIGIN)
+            self.app.emit('plugin_manager@hook:plugin:will-show', self._inst, _origin=ORIGIN)
             try:
                 self._inst.on_show()
             except Exception as e:
                 self._mgr.logger.error(
                     f'[Plugin:{name}] on_show error: {e}')
             self._shown = True
-            self.app.emit('hook:plugin:did-show', self._inst, _origin=ORIGIN)
+            self.app.emit('plugin_manager@hook:plugin:did-show', self._inst, _origin=ORIGIN)
 
         @property
         def visible(self):
@@ -183,9 +183,9 @@ class PluginManager:
             if self._inst is not None:
                 is_service = isinstance(self._inst, ServicePlugin)
                 if is_service:
-                    self.app.emit('hook:plugin:will-stop', self, _origin=ORIGIN)
+                    self.app.emit('plugin_manager@hook:plugin:will-stop', self, _origin=ORIGIN)
                 elif self._inst.winfo_exists():
-                    self.app.emit('hook:plugin:will-destroy', self, _origin=ORIGIN)
+                    self.app.emit('plugin_manager@hook:plugin:will-destroy', self, _origin=ORIGIN)
                 if is_service or self._inst.winfo_exists():
                     try:
                         self._stop(self._inst)
@@ -194,9 +194,9 @@ class PluginManager:
                         self._mgr.logger.error(
                             f'Plugin {self.get_name()} {action} error: {e}')
                     if is_service:
-                        self.app.emit('hook:plugin:did-stop', self, _origin=ORIGIN)
+                        self.app.emit('plugin_manager@hook:plugin:did-stop', self, _origin=ORIGIN)
                     else:
-                        self.app.emit('hook:plugin:did-destroy', self, _origin=ORIGIN)
+                        self.app.emit('plugin_manager@hook:plugin:did-destroy', self, _origin=ORIGIN)
                     if not is_service:
                         try:
                             self._inst.destroy()
@@ -218,9 +218,9 @@ class PluginManager:
             if self._inst is not None:
                 is_service = isinstance(self._inst, ServicePlugin)
                 if is_service:
-                    self.app.emit('hook:plugin:will-stop', self, _origin=ORIGIN)
+                    self.app.emit('plugin_manager@hook:plugin:will-stop', self, _origin=ORIGIN)
                 elif self._inst.winfo_exists():
-                    self.app.emit('hook:plugin:will-destroy', self, _origin=ORIGIN)
+                    self.app.emit('plugin_manager@hook:plugin:will-destroy', self, _origin=ORIGIN)
                 if is_service or self._inst.winfo_exists():
                     try:
                         self._stop(self._inst)
@@ -229,9 +229,9 @@ class PluginManager:
                         self._mgr.logger.error(
                             f'[Plugin:{self.get_name()}] {action} error: {e}')
                     if is_service:
-                        self.app.emit('hook:plugin:did-stop', self, _origin=ORIGIN)
+                        self.app.emit('plugin_manager@hook:plugin:did-stop', self, _origin=ORIGIN)
                     else:
-                        self.app.emit('hook:plugin:did-destroy', self, _origin=ORIGIN)
+                        self.app.emit('plugin_manager@hook:plugin:did-destroy', self, _origin=ORIGIN)
                     if not is_service:
                         try:
                             self._inst.destroy()
@@ -302,13 +302,13 @@ class PluginManager:
                     self._inst.focus_force()
                     if was_hidden or not self._shown:
                         self._shown = True
-                        self.app.emit('hook:plugin:will-show', self._inst, _origin=ORIGIN)
+                        self.app.emit('plugin_manager@hook:plugin:will-show', self._inst, _origin=ORIGIN)
                         try:
                             self._start(self._inst)
                         except Exception as e:
                             self._mgr.logger.error(
                                 f'[Plugin:{name}] on_show error: {e}')
-                        self.app.emit('hook:plugin:did-show', self._inst, _origin=ORIGIN)
+                        self.app.emit('plugin_manager@hook:plugin:did-show', self._inst, _origin=ORIGIN)
                     return self._inst
 
             # ---- stale instance (GUI only — ServicePlugin always auto-restarts) ----
@@ -338,9 +338,9 @@ class PluginManager:
             else:
                 self._shown = True
                 if is_service:
-                    self.app.emit('hook:plugin:will-start', self._inst, _origin=ORIGIN)
+                    self.app.emit('plugin_manager@hook:plugin:will-start', self._inst, _origin=ORIGIN)
                 else:
-                    self.app.emit('hook:plugin:will-show', self._inst, _origin=ORIGIN)
+                    self.app.emit('plugin_manager@hook:plugin:will-show', self._inst, _origin=ORIGIN)
                 try:
                     self._start(self._inst)
                 except Exception as e:
@@ -350,9 +350,9 @@ class PluginManager:
                     if is_service:
                         return None  # did-start only emitted on success
                 if is_service:
-                    self.app.emit('hook:plugin:did-start', self._inst, _origin=ORIGIN)
+                    self.app.emit('plugin_manager@hook:plugin:did-start', self._inst, _origin=ORIGIN)
                 else:
-                    self.app.emit('hook:plugin:did-show', self._inst, _origin=ORIGIN)
+                    self.app.emit('plugin_manager@hook:plugin:did-show', self._inst, _origin=ORIGIN)
 
             # ---- window close protocol (GUI only) ----
             if not is_service:
@@ -364,13 +364,13 @@ class PluginManager:
                 else:
                     def _on_close():
                         if handle._inst is not None:
-                            handle.app.emit('hook:plugin:will-hide', handle._inst, _origin=ORIGIN)
+                            handle.app.emit('plugin_manager@hook:plugin:will-hide', handle._inst, _origin=ORIGIN)
                             try:
                                 handle._inst.on_hide()
                             except Exception as e:
                                 handle._mgr.logger.error(
                                     f'[Plugin:{handle.get_name()}] on_hide error: {e}')
-                            handle.app.emit('hook:plugin:did-hide', handle._inst, _origin=ORIGIN)
+                            handle.app.emit('plugin_manager@hook:plugin:did-hide', handle._inst, _origin=ORIGIN)
                             try:
                                 handle._inst.withdraw()
                             except Exception:
@@ -381,9 +381,12 @@ class PluginManager:
 
     # ---- manager methods ---------------------------------------------------
 
-    def __init__(self, logger):
+    def __init__(self, logger, app):
         self.logger = logger
         self.plugins = {}
+        self._ctrl_app = app
+        self._plugin_path = getattr(app, 'plugin_path', None)
+        self._setup_control_events()
 
     # -- public lifecycle API ----------------------------------------------
     #
@@ -432,8 +435,8 @@ class PluginManager:
         *target*: pid / registry key → single dict; ``None`` → dict of dicts keyed by pid.
         *refresh*: if True, re-scan plugin directories before querying.
         """
-        if refresh and getattr(self, '_ctrl_app', None) is not None:
-            self.load(self._ctrl_app)
+        if refresh:
+            self.load()
         if target is not None:
             h = self._resolve_one(target)
             if h is None:
@@ -472,7 +475,7 @@ class PluginManager:
 
         # position & size
         if handle.fixed_position or handle.fixed_size:
-            app.emit('set-win-position', win,
+            app.emit('window:set-geometry', win,
                      x=(app.winfo_x() + app.winfo_width() + 4
                         if handle.fixed_position else None),
                      y=(app.winfo_y() if handle.fixed_position else None),
@@ -483,22 +486,20 @@ class PluginManager:
 
         # icon
         if handle.use_app_icon:
-            app.emit('set-win-icon', win)
+            app.emit('window:set-icon', win)
 
     # -- control events ---------------------------------------------------
 
-    def _setup_control_events(self, app):
-        """Register lifecycle control events and services."""
-        self._ctrl_app = app
-        bus = app._infra.eventbus  # raw bus — pass ns for perf attribution
-        bus.on('plugin:start', self._on_plugin_start, ns='plugin_manager')
-        bus.on('plugin:stop',  self._on_plugin_stop,  ns='plugin_manager')
-        bus.on('plugin:show',  self._on_plugin_show,  ns='plugin_manager')
-        bus.on('plugin:hide',  self._on_plugin_hide,  ns='plugin_manager')
+    def _setup_control_events(self):
+        """Register lifecycle control events and services on the raw eventbus."""
+        bus = self._ctrl_app.eventbus
+        bus.on('plugin_manager@plugin:start', self._on_plugin_start, ns='plugin_manager')
+        bus.on('plugin_manager@plugin:stop',  self._on_plugin_stop,  ns='plugin_manager')
+        bus.on('plugin_manager@plugin:show',  self._on_plugin_show,  ns='plugin_manager')
+        bus.on('plugin_manager@plugin:hide',  self._on_plugin_hide,  ns='plugin_manager')
+        bus.on('plugin_manager@plugins:auto-start', self._on_auto_start, ns='plugin_manager')
 
-        # register info service on the raw (non-namespaced) registry
-        svc = app._infra.services
-        svc.register('plugin_manager.get_plugin_info', self.get_plugin_info, owner='plugin_manager')
+        self._ctrl_app.services.register('plugin_manager.get_plugin_info', self.get_plugin_info, owner='plugin_manager')
 
     def _resolve_one(self, target):
         """Look up a single target by pid or registry key. Returns (key, Handle) or None."""
@@ -551,6 +552,13 @@ class PluginManager:
     def _on_plugin_hide(self, targets, exclude=None):
         for _, h in self._resolve_targets(targets, exclude=exclude):
             self.hide_plugin(h)
+
+    def _on_auto_start(self):
+        """Load plugins then auto-start those whose ``auto_start`` flag is set."""
+        self.load(self._plugin_path)
+        for h in self.plugins.values():
+            if h.auto_start and not h.alive:
+                self.start_plugin(h, self._ctrl_app)
 
     # -- AST-based metadata extraction (no import needed) --
 
@@ -683,13 +691,8 @@ class PluginManager:
                     dirs.append(p)
         return dirs
 
-    def load(self, app, path=None):
-        """Resolve plugin directories, scan for packages, populate self.plugins.
-
-        First call discovers plugins using AST parsing (no import).
-        Actual module import is deferred until the user opens a plugin window.
-        Subsequent calls refresh already-loaded and newly-appearing plugins.
-        """
+    def load(self, path=None):
+        """Discover and register plugins from plugin directories."""
         plugin_dirs = self._resolve_plugin_dirs(path)
         on_disk = set()
         for plugin_dir in plugin_dirs:
@@ -721,7 +724,7 @@ class PluginManager:
                     saved = old_h.start_hidden, old_h._shown
                     old_h.unload()
                     self.plugins[name] = self.Handle(
-                        cls, app, self, pkg_dir=pkg_dir, module_name=mod_name,
+                        cls, self._ctrl_app, self, pkg_dir=pkg_dir, module_name=mod_name,
                         class_name=cls_name, key=name)
                     self.plugins[name].start_hidden, self.plugins[name]._shown = saved
                     continue
@@ -750,7 +753,7 @@ class PluginManager:
                     continue
 
                 h = self.Handle(
-                    None, app, self, pkg_dir=pkg_dir, module_name=mod_name,
+                    None, self._ctrl_app, self, pkg_dir=pkg_dir, module_name=mod_name,
                     class_name=cls_name, metadata=meta, key=name)
                 # Record source mtime for change detection on subsequent scans
                 module_file = os.path.join(pkg_dir, f'{mod_name}.py')
@@ -780,7 +783,3 @@ class PluginManager:
             else:
                 pid_seen[pid] = key
 
-        # ---- register control-event listeners (once) -------------------
-        if not getattr(self, '_ctrl_events_setup', False):
-            self._setup_control_events(app)
-            self._ctrl_events_setup = True

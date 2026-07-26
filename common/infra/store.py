@@ -32,12 +32,26 @@ class Store:
         """
         return _StoreModule(self, name)
 
+    @staticmethod
+    def _key_owner(key):
+        """Extract namespace from a ``ns@...`` key, or '' if unscoped."""
+        return key.split('@')[0] if '@' in key else ''
+
     def commit(self, key, value, owner=''):
-        """Set *key* to *value* and notify subscribers."""
+        """Set *key* to *value* and notify subscribers.
+
+        Cross-namespace writes are rejected: a plugin whose *owner* differs
+        from the ``@`` prefix in *key* may not commit to that key.
+        """
+        key_owner = self._key_owner(key)
+        if owner and key_owner and owner != key_owner:
+            self._logger.warning(
+                '[store] %s → %s namespace rejected: %s', owner, key_owner, key)
+            return
         old = self._state.get(key)
         self._state[key] = value
-        if owner:
-            self._owners[key] = owner
+        # Ownership is determined by the key's @ prefix, not by who wrote last
+        self._owners[key] = key_owner or owner
         if self._perf and self._perf.enabled and owner:
             self._perf.record_store_commit(owner)
         meta = self._meta.get(key)
@@ -114,7 +128,11 @@ class Store:
             for sub_owner, pairs in self._subscriptions.items():
                 for ev, cb in pairs:
                     if ev == event:
-                        subs.append(sub_owner)
+                        subs.append({
+                            'namespace': sub_owner,
+                            'callback': self._eventbus._name(cb),
+                            'count': self._eventbus._cb_count.get(id(cb), 0),
+                        })
             keys.append({
                 'key': key,
                 'value': str(value)[:80],
@@ -127,29 +145,36 @@ class Store:
 
 
 class _StoreModule:
-    """Namespaced store handle bound to a specific owner."""
+    """Namespaced store handle bound to a specific owner.
+
+    Key resolution:
+    - ``@`` present → fully qualified, use as-is
+    - otherwise     → auto-prefixed with ``self._name@``
+    """
 
     def __init__(self, store, name):
         self._store = store
         self._name = name
 
-    def _key(self, key, *, raw=False):
-        """Prefix *key* with the module name unless *raw* is True."""
-        return key if raw else f'{self._name}.{key}'
+    def _key(self, key):
+        """Resolve *key* to a fully-qualified store key."""
+        if '@' in key:
+            return key
+        return f'{self._name}@{key}'
 
-    def commit(self, key, value, *, raw=False):
-        """Set *key*.  Auto-prefixed unless ``raw=True``."""
-        self._store.commit(self._key(key, raw=raw), value, owner=self._name)
+    def commit(self, key, value):
+        """Set *key*.  Auto-prefixed with ``name@``."""
+        self._store.commit(self._key(key), value, owner=self._name)
 
-    def get(self, key, default=None, *, raw=False):
-        return self._store.get(self._key(key, raw=raw), default)
+    def get(self, key, default=None):
+        return self._store.get(self._key(key), default)
 
-    def subscribe(self, key, callback, *, raw=False):
-        """Subscribe to changes on *key*.  Auto-prefixed unless ``raw=True``."""
-        self._store.subscribe(self._key(key, raw=raw), callback, owner=self._name)
+    def subscribe(self, key, callback):
+        """Subscribe to changes on *key*.  Auto-prefixed with ``name@``."""
+        self._store.subscribe(self._key(key), callback, owner=self._name)
 
-    def unsubscribe(self, key, callback=None, *, raw=False):
-        self._store.unsubscribe(self._key(key, raw=raw), callback)
+    def unsubscribe(self, key, callback=None):
+        self._store.unsubscribe(self._key(key), callback)
 
     def keys(self, owner=_SELF):
         """Return keys, filtered by *owner*.  Defaults to this module's own."""
@@ -159,4 +184,4 @@ class _StoreModule:
 
     def dump(self):
         """Return a dict of all key-value pairs owned by this module."""
-        return {k: self.get(k, raw=True) for k in self._store.keys(owner=self._name)}
+        return {k: self._store.get(k) for k in self._store.keys(owner=self._name)}

@@ -44,7 +44,7 @@ class LogUI(AppState, tk.Tk):
 
     def init(self):
         super().init()
-        self.on('show-log', self._show_log)
+        self.on('window:open-log', self._show_log)
         self.on('theme:changed', lambda name: LogUI.apply_theme(self, name))
         self.on('lang:changed', lambda name: LogUI.apply_lang(self, name))
 
@@ -56,7 +56,7 @@ class LogUI(AppState, tk.Tk):
         t, l = self.theme, self.lang
         win = tk.Toplevel(self)
         win.geometry('+{}+{}'.format(-9999, -9999))
-        self.emit('set-win-icon', win)
+        self.emit('window:set-icon', win)
         win.title(l['log_title'])
         win.configure(bg=t['bg'])
         win.resizable(True, True)
@@ -105,7 +105,7 @@ class LogUI(AppState, tk.Tk):
         )
         self._log_clear_btn.pack(side=tk.RIGHT, fill=tk.X, expand=True)
 
-        self.emit('set-win-position', win, h=600)
+        self.emit('window:set-geometry', win, h=600)
         win.bind('<Destroy>', lambda _: self._on_log_win_closed())
 
     def _on_log_win_closed(self):
@@ -156,4 +156,4 @@ class LogUI(AppState, tk.Tk):
         self._log_win.title(l['log_title'])
         if hasattr(self, '_log_clear_btn'):
             self._log_clear_btn.config(text=l['log_clear'])
-        self.emit('set-win-position', self._log_win, h=600)
+        self.emit('window:set-geometry', self._log_win, h=600)

@@ -38,17 +38,24 @@ class AppState:
 
     # ---- event bus delegates ----------------------------------------
 
+    @staticmethod
+    def _resolve_event(event):
+        """@ present → fully qualified, otherwise → app@event."""
+        if '@' in event:
+            return event
+        return f'app@{event}'
+
     def on(self, event, callback):
-        self._infra.on(event, callback)
+        self._infra.on(self._resolve_event(event), callback)
 
     def off(self, event, callback):
-        self._infra.off(event, callback)
+        self._infra.off(self._resolve_event(event), callback)
 
     def clear(self, event):
-        self._infra.clear(event)
+        self._infra.clear(self._resolve_event(event))
 
     def emit(self, event, *args, **kwargs):
-        self._infra.emit(event, *args, **kwargs)
+        self._infra.emit(self._resolve_event(event), *args, **kwargs)
 
     # ---- lifecycle hooks -------------------------------------------
     #
@@ -62,8 +69,8 @@ class AppState:
 
     def init(self):
         """Override in subclasses to register event listeners."""
-        self._infra.on('hook:plugin:did-destroy', self._on_plugin_destroyed)
-        self._infra.on('hook:plugin:did-stop', self._on_plugin_destroyed)
+        self._infra.on('plugin_manager@hook:plugin:did-destroy', self._on_plugin_destroyed)
+        self._infra.on('plugin_manager@hook:plugin:did-stop', self._on_plugin_destroyed)
         try:
             super().init()
         except AttributeError:

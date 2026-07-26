@@ -38,14 +38,14 @@ class Services:
             self._owners[name] = owner
         self._meta.setdefault(name, {})['since'] = time.time()
         self._logger.info('[services] register %s', name)
-        self._eventbus.emit('service:registered', name)
+        self._eventbus.emit('services@registered', name)
 
     def call(self, name, *args, **kwargs):
         """Invoke the service *name* and return its result.
 
         Raises ``KeyError`` if not registered.
         """
-        origin = kwargs.pop('_origin', None)
+        origin = kwargs.pop('_origin', 'app')
         fn = self._services.get(name)
         if fn is None:
             raise KeyError(f'Service not registered: {name}')
@@ -53,10 +53,9 @@ class Services:
         meta['call_count'] = meta.get('call_count', 0) + 1
         meta['last_call'] = time.time()
         meta.setdefault('since', time.time())
-        if origin:
-            self._callers.setdefault(name, {}).setdefault(origin, {'count': 0})
-            self._callers[name][origin]['count'] += 1
-            self._callers[name][origin]['last_call'] = time.time()
+        self._callers.setdefault(name, {}).setdefault(origin, {'count': 0})
+        self._callers[name][origin]['count'] += 1
+        self._callers[name][origin]['last_call'] = time.time()
         tag = name + (f' (from {origin})' if origin else '')
         self._logger.debug('[services] call %s', tag)
         perf = self._perf
@@ -77,7 +76,7 @@ class Services:
         self._callers.pop(name, None)
         if fn:
             self._logger.info('[services] unregister %s', name)
-        self._eventbus.emit('service:unregistered', name)
+        self._eventbus.emit('services@unregistered', name)
 
     def has(self, name):
         return name in self._services
@@ -96,14 +95,14 @@ class Services:
 
     def on_registered(self, callback, owner=''):
         """Listen for ``service:registered`` events."""
-        event = 'service:registered'
+        event = 'services@registered'
         self._eventbus.on(event, callback)
         if owner:
             self._subscriptions.setdefault(owner, []).append((event, callback))
 
     def on_unregistered(self, callback, owner=''):
         """Listen for ``service:unregistered`` events."""
-        event = 'service:unregistered'
+        event = 'services@unregistered'
         self._eventbus.on(event, callback)
         if owner:
             self._subscriptions.setdefault(owner, []).append((event, callback))

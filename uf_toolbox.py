@@ -49,7 +49,7 @@ class UFToolBox(MenuUI, LogUI, SettingsUI, AboutUI, tk.Tk):
         self.set_main_height(self.winfo_height())
 
         # Auto-start plugins after the main window is fully ready
-        self.emit('auto-start-plugins')
+        self.emit('plugin_manager@plugins:auto-start')
 
         # Trigger initial auto-hide check 5s after startup
         self.after(5000, self._check_auto_hide)
@@ -60,10 +60,10 @@ class UFToolBox(MenuUI, LogUI, SettingsUI, AboutUI, tk.Tk):
 
     def init(self):
         super().init()
-        self.on('set-win-position', self._set_window_position)
-        self.on('set-win-icon', self._set_window_icon)
+        self.on('window:set-geometry', self._set_window_geometry)
+        self.on('window:set-icon', self._set_window_icon)
 
-    def _set_window_position(self, win, x=None, y=None, w=None, h=400, fixed_size=True, fixed_position=True):
+    def _set_window_geometry(self, win, x=None, y=None, w=None, h=400, fixed_size=True, fixed_position=True):
         """Position/size a child window. None = use default or skip.
 
         No args: full defaults — right of main window, main_width x main_height.

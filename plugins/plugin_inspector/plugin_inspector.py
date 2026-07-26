@@ -257,48 +257,59 @@ class PluginInspector(GuiPlugin):
         all_events = data['events']
         show_all = self._filter_var.get()
 
-        filtered = {}
+        # group events by namespace (first @ prefix)
+        grouped = {}  # ns → [(event_name, info, cbs), ...]
         for event, info in all_events.items():
             cbs = info['callbacks']
             if not show_all:
-                if info['count'] == 0:
-                    continue
                 cbs = [e for e in cbs if e['namespace'] != 'app']
-                if not cbs:
-                    continue
-            filtered[event] = (info, cbs)
+                ns = event.partition('@')[0]
+                if ns in ('app', 'plugin_manager') and not cbs:
+                    continue  # skip infra-internal events with no plugin callbacks
+                if info['count'] == 0 and not cbs:
+                    continue  # skip idle events
+            ns, _, local = event.partition('@')
+            grouped.setdefault(ns if _ else '-', []).append((local or event, info, cbs))
 
-        total_emits = sum(v[0]['count'] for v in filtered.values())
-        total_cbs = sum(len(v[1]) for v in filtered.values())
-        lines = [f"  EVENTS: {len(filtered)}  EMITS: {total_emits}  CALLBACKS: {total_cbs}", ""]
+        total_emits = sum(v[1]['count'] for g in grouped.values() for v in g)
+        total_cbs = sum(len(v[2]) for g in grouped.values() for v in g)
+        total_events = sum(len(g) for g in grouped.values())
+        lines = [f"  EVENTS: {total_events}  EMITS: {total_emits}  CALLBACKS: {total_cbs}", ""]
 
-        for event in sorted(filtered.keys()):
-            info, cbs = filtered[event]
-            lines.append(f"  ● {event}")
-            ec = info['count']
-            cc = len(cbs)
-            # emits
-            origins = info.get('origins', [])
-            if origins:
-                last = self._time_str(info['last_emit']) if info.get('last_emit') else '-'
-                lines.append(f"    emits: {ec}  last {last}")
-                for i, o in enumerate(origins):
-                    prefix = "    ├─" if i < len(origins) - 1 else "    └─"
-                    o_last = self._time_str(o['last_emit']) if o.get('last_emit') else '-'
-                    lines.append(f"  {prefix} [{o['namespace']}]  ×{o['count']}  last {o_last}")
-            # callbacks
-            if cbs:
-                lines.append(f"    callbacks: {cc}")
-                for i, entry in enumerate(cbs):
-                    prefix = "    ├─" if i < len(cbs) - 1 else "    └─"
-                    name = entry['name']
-                    if entry['namespace'] != 'app':
-                        dot = name.find('.')
-                        if dot != -1:
-                            name = name[dot + 1:]
-                    count = entry.get('count', 0)
-                    since = self._time_str(entry['since']) if entry.get('since') else '-'
-                    lines.append(f"  {prefix} [{entry['namespace']}] {name}  ×{count}  [{since}]")
+        for ns in sorted(grouped.keys()):
+            items = grouped[ns]
+            lines.append(f"  ● [{ns}]")
+            for ei, (event, info, cbs) in enumerate(sorted(items, key=lambda x: x[0])):
+                is_last_ns_event = (ei == len(items) - 1)
+                ns_bar = "   " if is_last_ns_event else "  │"
+                e_prefix = "  └─" if is_last_ns_event else "  ├─"
+                lines.append(f"  {e_prefix} {event}")
+                ec = info['count']
+                cc = len(cbs)
+                # emits
+                origins = info.get('origins', [])
+                if ec or origins:
+                    last = self._time_str(info['last_emit']) if info.get('last_emit') else '-'
+                    lines.append(f"  {ns_bar}    emits: {ec}  last {last}")
+                    for i, o in enumerate(origins):
+                        o_prefix = "├─" if i < len(origins) - 1 else "└─"
+                        o_last = self._time_str(o['last_emit']) if o.get('last_emit') else '-'
+                        lines.append(f"  {ns_bar}      {o_prefix} [{o['namespace']}]  ×{o['count']}  last {o_last}")
+                # callbacks
+                if cbs:
+                    lines.append(f"  {ns_bar}    callbacks: {cc}")
+                    for i, entry in enumerate(cbs):
+                        c_prefix = "├─" if i < len(cbs) - 1 else "└─"
+                        name = entry['name']
+                        if entry['namespace'] != 'app':
+                            dot = name.find('.')
+                            if dot != -1:
+                                name = name[dot + 1:]
+                        count = entry.get('count', 0)
+                        since = self._time_str(entry['since']) if entry.get('since') else '-'
+                        lines.append(f"  {ns_bar}      {c_prefix} [{entry['namespace']}] {name}  ×{count}  [{since}]")
+                if not is_last_ns_event:
+                    lines.append(f"  {ns_bar}")
             lines.append("")
 
         self._set_text(self._texts["events"], lines)
@@ -320,10 +331,11 @@ class PluginInspector(GuiPlugin):
             lines.append(f"  ● [{owner}]")
             items = by_owner[owner]
             for i, entry in enumerate(items):
-                prefix = "  └─" if i == len(items) - 1 else "  ├─"
-                bar = " " if i == len(items) - 1 else "│"
+                prefix = "  ├─" if i < len(items) - 1 else "  └─"
+                is_last = (i == len(items) - 1)
+                bar = "   " if is_last else "  │"
                 short = entry['key']
-                pfx = owner + '.'
+                pfx = owner + '@'
                 if short.startswith(pfx):
                     short = short[len(pfx):]
                 lines.append(f"{prefix} {short} = {entry['value']}")
@@ -334,9 +346,18 @@ class PluginInspector(GuiPlugin):
                     stats.append(f"last {self._time_str(entry['last_commit'])}")
                 if stats:
                     lines.append(f"  {bar}  {'  '.join(stats)}")
-                for sub in entry['subscribers']:
-                    if sub != owner:
-                        lines.append(f"  {bar}  ← {sub}")
+                # cross-ns subscribers
+                ext_subs = [s for s in entry['subscribers']
+                            if (s['namespace'] if isinstance(s, dict) else s) != owner]
+                if ext_subs:
+                    lines.append(f"  {bar}  subscribers: {len(ext_subs)}")
+                    for j, sub in enumerate(ext_subs):
+                        s_prefix = "├─" if j < len(ext_subs) - 1 else "└─"
+                        ns = sub['namespace'] if isinstance(sub, dict) else sub
+                        cb = sub.get('callback', '') if isinstance(sub, dict) else ''
+                        count = sub.get('count', 0) if isinstance(sub, dict) else 0
+                        cb_name = cb.split('.')[-1] if '.' in cb else cb
+                        lines.append(f"  {bar}    {s_prefix} [{ns}] {cb_name}  ×{count}")
             lines.append("")
 
         self._set_text(self._texts["store"], lines)

@@ -497,7 +497,7 @@ class PluginCreator(GuiPlugin):
         self._on_fixed_pos_change()
         self._on_auto_start_change()
 
-        self.app.emit('set-win-position', self, w=440, h=640)
+        self.app.emit('app@window:set-geometry', self, w=440, h=640)
 
     def _add_field(self, label, var, required=False):
         s = self._s
@@ -752,7 +752,7 @@ class PluginCreator(GuiPlugin):
         dbg = s['dlg_bg']
         dlg.configure(bg=dbg)
         # Set icon via app event
-        self.app.emit('set-win-icon', dlg)
+        self.app.emit('app@window:set-icon', dlg)
         # icons
         icons = {'info': '✓', 'warn': '⚠', 'error': '✕'}
         icon = icons.get(kind, '•')

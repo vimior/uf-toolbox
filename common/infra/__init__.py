@@ -34,8 +34,7 @@ class _Module:
         self.eventbus.off(event, callback)
 
     def emit(self, event, *args, **kwargs):
-        kwargs.pop('_origin', None)
-        self._infra.eventbus.emit(event, *args, _origin=self._ns, **kwargs)
+        self.eventbus.emit(event, *args, **kwargs)
 
     def __getattr__(self, name):
         try:
@@ -79,6 +78,7 @@ class Infrastructure:
         self.eventbus.clear(event)
 
     def emit(self, event, *args, **kwargs):
+        kwargs.setdefault('_origin', 'app')
         self.eventbus.emit(event, *args, **kwargs)
 
     # ---- plugin lifecycle ----

@@ -90,7 +90,7 @@ class EventBus:
         if origin:
             tags.append(f'(from {origin})')
         tag = ' '.join(tags)
-        if event.startswith('store:changed:') or event in ('service:registered', 'service:unregistered'):
+        if event.startswith('store:changed:') or event in ('services@registered', 'services@unregistered'):
             pass
         else:
             self._logger.info('[eventbus] emit %s', tag)
@@ -211,8 +211,11 @@ class EventBus:
 
 
 class _EventBusModule:
-    """Namespaced eventbus handle — on/off calls are tracked in the parent.
-    emit / clear / cleanup pass through to the real eventbus.
+    """Namespaced eventbus handle — on/off/emit are tracked in the parent.
+
+    Event names are resolved via :meth:`_resolve`:
+    - ``@`` present → fully qualified, use as-is
+    - otherwise     → auto-prefixed with ``self._ns@``
     """
 
     __slots__ = ('_bus', '_ns')
@@ -221,21 +224,30 @@ class _EventBusModule:
         self._bus = bus
         self._ns = ns
 
+    def _resolve(self, event):
+        """Resolve *event* to a fully-qualified name."""
+        if '@' in event:
+            return event
+        return f'{self._ns}@{event}'
+
     def on(self, event, callback):
-        self._bus.on(event, callback, ns=self._ns)
-        self._bus._namespaced.setdefault(self._ns, []).append((event, callback))
+        resolved = self._resolve(event)
+        self._bus.on(resolved, callback, ns=self._ns)
+        self._bus._namespaced.setdefault(self._ns, []).append((resolved, callback))
 
     def off(self, event, callback):
-        self._bus.off(event, callback)
+        resolved = self._resolve(event)
+        self._bus.off(resolved, callback)
         items = self._bus._namespaced.get(self._ns, [])
         try:
-            items.remove((event, callback))
+            items.remove((resolved, callback))
         except ValueError:
             pass
 
     def emit(self, event, *args, **kwargs):
+        resolved = self._resolve(event)
         kwargs.pop('_origin', None)
-        self._bus.emit(event, *args, _origin=self._ns, **kwargs)
+        self._bus.emit(resolved, *args, _origin=self._ns, **kwargs)
 
     def __getattr__(self, name):
         return getattr(self._bus, name)
