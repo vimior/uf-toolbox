@@ -264,10 +264,13 @@ class PluginInspector(GuiPlugin):
             if not show_all:
                 cbs = [e for e in cbs if e['namespace'] != 'app']
                 ns = event.partition('@')[0]
-                if ns in ('app', 'plugins') and not cbs:
-                    continue  # skip infra-internal events with no plugin callbacks
-                if info['count'] == 0 and not cbs:
-                    continue  # skip idle events
+                if ns in ('app', 'plugins'):
+                    if not cbs:
+                        continue
+                    if info['count'] == 0 and all(cb['count'] == 0 for cb in cbs):
+                        continue
+                elif info['count'] == 0 and not cbs:
+                    continue
             ns, _, local = event.partition('@')
             grouped.setdefault(ns if _ else '-', []).append((local or event, info, cbs))
 
