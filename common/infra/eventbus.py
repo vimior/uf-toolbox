@@ -15,7 +15,7 @@ class EventBus:
         self._listeners = {}
         self._namespaced = {}  # ns → [(event, callback), ...]
         self._meta = {}  # event → {count, last_emit}
-        self._emit_origins = {}  # event → {origin → {count, last_emit}}
+        self._emit_ns = {}  # event → {ns → {count, last_emit}}
         self._cb_since = {}  # id(callback) → timestamp
         self._cb_count = {}  # id(callback) → invocation count
         self._perf = perf  # PerfMonitor instance (optional)
@@ -48,10 +48,15 @@ class EventBus:
     # ---- public API ----
 
     def on(self, event, callback, ns=None):
-        """Register *callback* for *event*."""
-        self._listeners.setdefault(event, []).append(callback)
-        if self._perf and ns:
-            self._perf.register_cb(ns, callback)
+        """Register *callback* for *event* (no-op if already registered)."""
+        listeners = self._listeners.setdefault(event, [])
+        if callback in listeners:
+            return
+        listeners.append(callback)
+        if ns:
+            self._namespaced.setdefault(ns, []).append((event, callback))
+            if self._perf:
+                self._perf.register_cb(ns, callback)
         self._cb_since[id(callback)] = time.time()
         self._logger.info('[eventbus] on %s → %s', event, self._name(callback))
 
@@ -76,7 +81,7 @@ class EventBus:
         if listeners:
             self._logger.info('[eventbus] clear %s', event)
             self._meta.pop(event, None)
-            self._emit_origins.pop(event, None)
+            self._emit_ns.pop(event, None)
             for pairs in self._namespaced.values():
                 pairs[:] = [(ev, cb) for ev, cb in pairs if ev != event]
             for cb in listeners:
@@ -85,10 +90,10 @@ class EventBus:
 
     def emit(self, event, *args, **kwargs):
         """Publish *event* to all registered callbacks."""
-        origin = kwargs.pop('_origin', None)
+        ns_emit = kwargs.pop('ns', None)
         tags = [event]
-        if origin:
-            tags.append(f'(from {origin})')
+        if ns_emit:
+            tags.append(f'(from {ns_emit})')
         tag = ' '.join(tags)
         if event.startswith('store:changed:') or event in ('services@registered', 'services@unregistered'):
             pass
@@ -101,38 +106,38 @@ class EventBus:
             meta['count'] += 1
             meta['last_emit'] = time.time()
         # per-emitter stats
-        if origin:
-            self._emit_origins.setdefault(event, {}).setdefault(origin, {'count': 0, 'last_emit': 0})
-            self._emit_origins[event][origin]['count'] += 1
-            self._emit_origins[event][origin]['last_emit'] = time.time()
+        if ns_emit:
+            self._emit_ns.setdefault(event, {}).setdefault(ns_emit, {'count': 0, 'last_emit': 0})
+            self._emit_ns[event][ns_emit]['count'] += 1
+            self._emit_ns[event][ns_emit]['last_emit'] = time.time()
 
         listeners = self._listeners.get(event, [])
-        t_emit = time.perf_counter() if (self._perf and origin) else 0
+        t_emit = time.perf_counter() if (self._perf and ns_emit) else 0
         if listeners:
             perf = self._perf
             for cb in listeners:
                 cid = id(cb)
                 self._cb_count[cid] = self._cb_count.get(cid, 0) + 1
-                ns = perf.lookup_ns(cb) if perf else ''
+                cb_ns = perf.lookup_ns(cb) if perf else ''
                 try:
                     if perf and perf.enabled:
                         t0 = time.perf_counter()
-                        if ns == 'app' and origin is not None and origin == 'plugin_manager':
-                            cb(*args, _origin=origin, **kwargs)
+                        if ns_emit == 'plugins' and cb_ns in ('app', 'plugins'):
+                            cb(*args, ns=ns_emit, **kwargs)
                         else:
                             cb(*args, **kwargs)
                         elapsed = time.perf_counter() - t0
-                        ns = perf.lookup_ns(cb)
-                        perf.record_event(ns, event, elapsed)
+                        cb_ns = perf.lookup_ns(cb)
+                        perf.record_event(cb_ns, event, elapsed)
                     else:
-                        if ns == 'app' and origin is not None and origin == 'plugin_manager':
-                            cb(*args, _origin=origin, **kwargs)
+                        if ns_emit == 'plugins' and cb_ns in ('app', 'plugins'):
+                            cb(*args, ns=ns_emit, **kwargs)
                         else:
                             cb(*args, **kwargs)
                 except Exception:
                     self._logger.exception('[eventbus] error in callback %s for %s', self._name(cb), tag)
         if t_emit:
-            self._perf.record_emit(origin, event, time.perf_counter() - t_emit)
+            self._perf.record_emit(ns_emit, event, time.perf_counter() - t_emit)
 
     # ---- namespaced access ----
 
@@ -175,37 +180,37 @@ class EventBus:
                     'since': self._cb_since.get(id(cb)),
                     'count': self._cb_count.get(id(cb), 0),
                 })
-            origins = []
-            for ns, od in self._emit_origins.get(event, {}).items():
-                origins.append({
+            emit_ns = []
+            for ns, od in self._emit_ns.get(event, {}).items():
+                emit_ns.append({
                     'namespace': ns,
                     'count': od['count'],
                     'last_emit': od.get('last_emit'),
                 })
-            origins.sort(key=lambda o: o['count'], reverse=True)
+            emit_ns.sort(key=lambda o: o['count'], reverse=True)
             if callbacks:
                 events[event] = {
                     'count': meta.get('count', 0),
                     'last_emit': meta.get('last_emit'),
                     'callbacks': callbacks,
-                    'origins': origins,
+                    'emit_ns': emit_ns,
                 }
         # Include events with meta but no listeners
         for event, meta in self._meta.items():
             if event not in seen:
-                origins = []
-                for ns, od in self._emit_origins.get(event, {}).items():
-                    origins.append({
+                emit_ns = []
+                for ns, od in self._emit_ns.get(event, {}).items():
+                    emit_ns.append({
                         'namespace': ns,
                         'count': od['count'],
                         'last_emit': od.get('last_emit'),
                     })
-                origins.sort(key=lambda o: o['count'], reverse=True)
+                emit_ns.sort(key=lambda o: o['count'], reverse=True)
                 events[event] = {
                     'count': meta.get('count', 0),
                     'last_emit': meta.get('last_emit'),
                     'callbacks': [],
-                    'origins': origins,
+                    'emit_ns': emit_ns,
                 }
         return {'events': events}
 
@@ -232,8 +237,10 @@ class _EventBusModule:
 
     def on(self, event, callback):
         resolved = self._resolve(event)
+        if resolved.startswith('store:changed:'):
+            self._bus._logger.warning(
+                '[eventbus] direct store:changed: listener — prefer store.subscribe()')
         self._bus.on(resolved, callback, ns=self._ns)
-        self._bus._namespaced.setdefault(self._ns, []).append((resolved, callback))
 
     def off(self, event, callback):
         resolved = self._resolve(event)
@@ -246,8 +253,8 @@ class _EventBusModule:
 
     def emit(self, event, *args, **kwargs):
         resolved = self._resolve(event)
-        kwargs.pop('_origin', None)
-        self._bus.emit(resolved, *args, _origin=self._ns, **kwargs)
+        kwargs.pop('ns', None)
+        self._bus.emit(resolved, *args, ns=self._ns, **kwargs)
 
     def __getattr__(self, name):
         return getattr(self._bus, name)

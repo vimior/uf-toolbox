@@ -49,7 +49,7 @@ class UFToolBox(MenuUI, LogUI, SettingsUI, AboutUI, tk.Tk):
         self.set_main_height(self.winfo_height())
 
         # Auto-start plugins after the main window is fully ready
-        self.emit('plugin_manager@plugins:auto-start')
+        self.emit('plugins@auto-start')
 
         # Trigger initial auto-hide check 5s after startup
         self.after(5000, self._check_auto_hide)

@@ -76,9 +76,11 @@ class Store:
     def subscribe(self, key, callback, owner=''):
         """Register *callback* to be called when *key* changes."""
         event = f'store:changed:{key}'
-        self._eventbus.on(event, callback)
+        self._eventbus.on(event, callback, ns=owner)
         if owner:
-            self._subscriptions.setdefault(owner, []).append((event, callback))
+            pairs = self._subscriptions.setdefault(owner, [])
+            if (event, callback) not in pairs:
+                pairs.append((event, callback))
             if self._perf and self._perf.enabled:
                 self._perf.record_store_subscribe(owner)
 
@@ -128,10 +130,17 @@ class Store:
             for sub_owner, pairs in self._subscriptions.items():
                 for ev, cb in pairs:
                     if ev == event:
+                        count = self._eventbus._cb_count.get(id(cb), 0)
+                        if not count:
+                            # Find the matching callback actually in _listeners
+                            for ecb in self._eventbus._listeners.get(event, []):
+                                if ecb == cb:
+                                    count = self._eventbus._cb_count.get(id(ecb), 0)
+                                    break
                         subs.append({
                             'namespace': sub_owner,
                             'callback': self._eventbus._name(cb),
-                            'count': self._eventbus._cb_count.get(id(cb), 0),
+                            'count': count,
                         })
             keys.append({
                 'key': key,

@@ -31,11 +31,16 @@ class Services:
 
     # ---- public API ----
 
-    def register(self, name, fn, owner=''):
-        """Register *fn* under *name*.  Emits ``service:registered``."""
+    def register(self, name, fn, ns=None):
+        """Register *fn* under *name*.  Emits ``services@registered``.
+
+        If *ns* is given, the name is auto-prefixed as ``ns.name`` and
+        *ns* becomes the owner for cleanup / filtering.
+        """
+        if ns:
+            name = f'{ns}.{name}'
+            self._owners[name] = ns
         self._services[name] = fn
-        if owner:
-            self._owners[name] = owner
         self._meta.setdefault(name, {})['since'] = time.time()
         self._logger.info('[services] register %s', name)
         self._eventbus.emit('services@registered', name)
@@ -45,7 +50,7 @@ class Services:
 
         Raises ``KeyError`` if not registered.
         """
-        origin = kwargs.pop('_origin', 'app')
+        ns = kwargs.pop('ns', 'app')
         fn = self._services.get(name)
         if fn is None:
             raise KeyError(f'Service not registered: {name}')
@@ -53,10 +58,10 @@ class Services:
         meta['call_count'] = meta.get('call_count', 0) + 1
         meta['last_call'] = time.time()
         meta.setdefault('since', time.time())
-        self._callers.setdefault(name, {}).setdefault(origin, {'count': 0})
-        self._callers[name][origin]['count'] += 1
-        self._callers[name][origin]['last_call'] = time.time()
-        tag = name + (f' (from {origin})' if origin else '')
+        self._callers.setdefault(name, {}).setdefault(ns, {'count': 0})
+        self._callers[name][ns]['count'] += 1
+        self._callers[name][ns]['last_call'] = time.time()
+        tag = name + (f' (from {ns})' if ns else '')
         self._logger.debug('[services] call %s', tag)
         perf = self._perf
         if perf and perf.enabled:
@@ -154,12 +159,12 @@ class _ServiceModule:
 
     def register(self, key, fn):
         """Register *fn* as ``self._name.key``."""
-        self._services.register(f'{self._name}.{key}', fn, owner=self._name)
+        self._services.register(key, fn, ns=self._name)
 
     def call(self, name, *args, **kwargs):
         """Invoke a service by full name (no prefixing)."""
-        kwargs.pop('_origin', None)
-        return self._services.call(name, *args, _origin=self._name, **kwargs)
+        kwargs.pop('ns', None)
+        return self._services.call(name, *args, ns=self._name, **kwargs)
 
     def unregister(self, key):
         """Remove ``self._name.key`` from the registry."""

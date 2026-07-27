@@ -264,7 +264,7 @@ class PluginInspector(GuiPlugin):
             if not show_all:
                 cbs = [e for e in cbs if e['namespace'] != 'app']
                 ns = event.partition('@')[0]
-                if ns in ('app', 'plugin_manager') and not cbs:
+                if ns in ('app', 'plugins') and not cbs:
                     continue  # skip infra-internal events with no plugin callbacks
                 if info['count'] == 0 and not cbs:
                     continue  # skip idle events
@@ -287,12 +287,12 @@ class PluginInspector(GuiPlugin):
                 ec = info['count']
                 cc = len(cbs)
                 # emits
-                origins = info.get('origins', [])
-                if ec or origins:
+                emit_ns = info.get('emit_ns', [])
+                if ec or emit_ns:
                     last = self._time_str(info['last_emit']) if info.get('last_emit') else '-'
                     lines.append(f"  {ns_bar}    emits: {ec}  last {last}")
-                    for i, o in enumerate(origins):
-                        o_prefix = "├─" if i < len(origins) - 1 else "└─"
+                    for i, o in enumerate(emit_ns):
+                        o_prefix = "├─" if i < len(emit_ns) - 1 else "└─"
                         o_last = self._time_str(o['last_emit']) if o.get('last_emit') else '-'
                         lines.append(f"  {ns_bar}      {o_prefix} [{o['namespace']}]  ×{o['count']}  last {o_last}")
                 # callbacks

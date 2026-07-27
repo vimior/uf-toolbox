@@ -39,38 +39,40 @@ class AppState:
     # ---- event bus delegates ----------------------------------------
 
     @staticmethod
-    def _resolve_event(event):
-        """@ present → fully qualified, otherwise → app@event."""
+    def _resolve_event(event, ns=None):
+        """@ present → fully qualified, otherwise → ns@event (default ns=app)."""
         if '@' in event:
             return event
-        return f'app@{event}'
+        return f'{ns or "app"}@{event}'
 
-    def on(self, event, callback):
-        self._infra.on(self._resolve_event(event), callback)
+    def on(self, event, callback, ns=None):
+        resolved = self._resolve_event(event, ns)
+        self._infra.on(resolved, callback, ns=ns or 'app')
 
-    def off(self, event, callback):
-        self._infra.off(self._resolve_event(event), callback)
+    def off(self, event, callback, ns=None):
+        self._infra.off(self._resolve_event(event, ns), callback)
 
-    def clear(self, event):
-        self._infra.clear(self._resolve_event(event))
+    def clear(self, event, ns=None):
+        self._infra.clear(self._resolve_event(event, ns))
 
-    def emit(self, event, *args, **kwargs):
-        self._infra.emit(self._resolve_event(event), *args, **kwargs)
+    def emit(self, event, *args, ns=None, **kwargs):
+        kwargs.setdefault('ns', ns or 'app')
+        self._infra.emit(self._resolve_event(event, ns), *args, **kwargs)
 
     # ---- lifecycle hooks -------------------------------------------
     #
-    #   hook:plugin:will-start  hook:plugin:did-start   (ServicePlugin)
-    #   hook:plugin:will-stop   hook:plugin:did-stop    (ServicePlugin)
-    #   hook:plugin:will-show   hook:plugin:did-show    (GUI plugin)
-    #   hook:plugin:will-hide   hook:plugin:did-hide    (GUI plugin)
-    #   hook:plugin:will-destroy  hook:plugin:did-destroy  (GUI plugin)
+    #   plugins@hook:will-start  plugins@hook:did-start   (ServicePlugin)
+    #   plugins@hook:will-stop   plugins@hook:did-stop    (ServicePlugin)
+    #   plugins@hook:will-show   plugins@hook:did-show    (GUI plugin)
+    #   plugins@hook:will-hide   plugins@hook:did-hide    (GUI plugin)
+    #   plugins@hook:will-destroy  plugins@hook:did-destroy  (GUI plugin)
     #
     # AppState listens for did-stop / did-destroy to release store/services.
 
     def init(self):
         """Override in subclasses to register event listeners."""
-        self._infra.on('plugin_manager@hook:plugin:did-destroy', self._on_plugin_destroyed)
-        self._infra.on('plugin_manager@hook:plugin:did-stop', self._on_plugin_destroyed)
+        self.on('plugins@hook:did-destroy', self._on_plugin_destroyed)
+        self.on('plugins@hook:did-stop', self._on_plugin_destroyed)
         try:
             super().init()
         except AttributeError:
@@ -78,12 +80,10 @@ class AppState:
 
     def _on_plugin_destroyed(self, handle, **kwargs):
         """Clean up store/services when a plugin is stopped/destroyed."""
-        origin = kwargs.get('_origin', None)
-        if not origin or origin != 'plugin_manager' or not handle:
+        emit_ns = kwargs.get('ns', None)
+        if not emit_ns or emit_ns != 'plugins' or not handle:
             return
-        cls = handle._cls
-        ns = (getattr(cls, 'namespace', None) if cls else None) or handle._class_name or 'Unknown'
-        self._infra.cleanup(ns)
+        self._infra.cleanup(handle.namespace)
 
     def init_state(self):
         """Initialize all state. Called once from main.py.__init__."""

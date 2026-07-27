@@ -8,7 +8,7 @@ import importlib.util
 
 from plugins.plugin import GuiPlugin, ServicePlugin
 
-ORIGIN = 'plugin_manager'
+NS = 'plugins'
 
 
 class PluginManager:
@@ -22,7 +22,7 @@ class PluginManager:
         # pm.plugins is the {name: Handle} registry
     """
 
-    META_KEYS = ('name', 'name_zh', 'name_en', 'plugin_id', 'namespace',
+    META_KEYS = ('name', 'name_zh', 'name_en', 'namespace',
                  'priority', 'fixed_position', 'fixed_size', 'use_app_icon',
                  'reload', 'auto_start', 'start_hidden')
 
@@ -39,7 +39,7 @@ class PluginManager:
                      '_cls', 'app', '_inst', '_pkg_dir', '_module_name',
                      '_class_name', '_mgr', '_shown',
                      '_name_raw', '_name_zh', '_name_en', '_src_mtime', '_key',
-                     '_pid')
+                     '_namespace')
 
         def __init__(self, cls, app, mgr, pkg_dir=None, module_name=None,
                      class_name=None, metadata=None, key=None):
@@ -56,14 +56,14 @@ class PluginManager:
             self._name_en = None
             self._src_mtime = 0
             self._key = key
-            self._pid = None
+            self._namespace = None
 
             if cls is not None:
                 # Eager — class attributes are available directly
                 self._name_raw = cls.name
                 self._name_zh = getattr(cls, 'name_zh', None)
                 self._name_en = getattr(cls, 'name_en', None)
-                self._pid = getattr(cls, 'plugin_id', None)
+                self._namespace = getattr(cls, 'namespace', None)
                 self.priority = cls.priority
                 self.auto_start = getattr(cls, 'auto_start', False)
                 self.start_hidden = getattr(cls, 'start_hidden', False)
@@ -83,7 +83,7 @@ class PluginManager:
                 self._name_raw = meta.get('name') or module_name or 'Unnamed'
                 self._name_zh = meta.get('name_zh')
                 self._name_en = meta.get('name_en')
-                self._pid = meta.get('plugin_id')
+                self._namespace = meta.get('namespace')
                 self.fixed_position = meta.get('fixed_position', True)
                 self.fixed_size = meta.get('fixed_size', True)
                 self.use_app_icon = meta.get('use_app_icon', True)
@@ -110,12 +110,10 @@ class PluginManager:
             return self._cls is not None
 
         @property
-        def pid(self):
-            """Effective plugin ID — class attr → AST metadata → registry key."""
-            if self._cls and getattr(self._cls, 'plugin_id', None):
-                return self._cls.plugin_id
-            if self._pid:
-                return self._pid
+        def namespace(self):
+            """Effective namespace — class attr / AST metadata → registry key."""
+            if self._namespace:
+                return self._namespace
             return self._key or self._module_name or 'unknown'
 
         def hide(self):
@@ -125,7 +123,7 @@ class PluginManager:
             if not self._inst.winfo_exists():
                 return
             name = self.get_name()
-            self.app.emit('plugin_manager@hook:plugin:will-hide', self._inst, _origin=ORIGIN)
+            self.app.emit('hook:will-hide', self._inst, ns=NS)
             try:
                 self._inst.on_hide()
             except Exception as e:
@@ -136,7 +134,7 @@ class PluginManager:
             except Exception:
                 pass
             self._shown = False
-            self.app.emit('plugin_manager@hook:plugin:did-hide', self._inst, _origin=ORIGIN)
+            self.app.emit('hook:did-hide', self._inst, ns=NS)
 
         def show(self):
             """Show a hidden GUI plugin window (no-op for ServicePlugin)."""
@@ -148,14 +146,14 @@ class PluginManager:
             self._inst.deiconify()
             self._inst.lift()
             self._inst.focus_force()
-            self.app.emit('plugin_manager@hook:plugin:will-show', self._inst, _origin=ORIGIN)
+            self.app.emit('hook:will-show', self._inst, ns=NS)
             try:
                 self._inst.on_show()
             except Exception as e:
                 self._mgr.logger.error(
                     f'[Plugin:{name}] on_show error: {e}')
             self._shown = True
-            self.app.emit('plugin_manager@hook:plugin:did-show', self._inst, _origin=ORIGIN)
+            self.app.emit('hook:did-show', self._inst, ns=NS)
 
         @property
         def visible(self):
@@ -183,9 +181,9 @@ class PluginManager:
             if self._inst is not None:
                 is_service = isinstance(self._inst, ServicePlugin)
                 if is_service:
-                    self.app.emit('plugin_manager@hook:plugin:will-stop', self, _origin=ORIGIN)
+                    self.app.emit('hook:will-stop', self, ns=NS)
                 elif self._inst.winfo_exists():
-                    self.app.emit('plugin_manager@hook:plugin:will-destroy', self, _origin=ORIGIN)
+                    self.app.emit('hook:will-destroy', self, ns=NS)
                 if is_service or self._inst.winfo_exists():
                     try:
                         self._stop(self._inst)
@@ -194,9 +192,9 @@ class PluginManager:
                         self._mgr.logger.error(
                             f'Plugin {self.get_name()} {action} error: {e}')
                     if is_service:
-                        self.app.emit('plugin_manager@hook:plugin:did-stop', self, _origin=ORIGIN)
+                        self.app.emit('hook:did-stop', self, ns=NS)
                     else:
-                        self.app.emit('plugin_manager@hook:plugin:did-destroy', self, _origin=ORIGIN)
+                        self.app.emit('hook:did-destroy', self, ns=NS)
                     if not is_service:
                         try:
                             self._inst.destroy()
@@ -218,9 +216,9 @@ class PluginManager:
             if self._inst is not None:
                 is_service = isinstance(self._inst, ServicePlugin)
                 if is_service:
-                    self.app.emit('plugin_manager@hook:plugin:will-stop', self, _origin=ORIGIN)
+                    self.app.emit('hook:will-stop', self, ns=NS)
                 elif self._inst.winfo_exists():
-                    self.app.emit('plugin_manager@hook:plugin:will-destroy', self, _origin=ORIGIN)
+                    self.app.emit('hook:will-destroy', self, ns=NS)
                 if is_service or self._inst.winfo_exists():
                     try:
                         self._stop(self._inst)
@@ -229,9 +227,9 @@ class PluginManager:
                         self._mgr.logger.error(
                             f'[Plugin:{self.get_name()}] {action} error: {e}')
                     if is_service:
-                        self.app.emit('plugin_manager@hook:plugin:did-stop', self, _origin=ORIGIN)
+                        self.app.emit('hook:did-stop', self, ns=NS)
                     else:
-                        self.app.emit('plugin_manager@hook:plugin:did-destroy', self, _origin=ORIGIN)
+                        self.app.emit('hook:did-destroy', self, ns=NS)
                     if not is_service:
                         try:
                             self._inst.destroy()
@@ -273,7 +271,7 @@ class PluginManager:
             self._name_raw = cls.name
             self._name_zh = getattr(cls, 'name_zh', None)
             self._name_en = getattr(cls, 'name_en', None)
-            self._pid = getattr(cls, 'plugin_id', None) or self._pid
+            self._namespace = getattr(cls, 'namespace', None) or self._namespace
             self.priority = cls.priority
             if issubclass(cls, GuiPlugin):
                 self.reload = cls.reload
@@ -302,13 +300,13 @@ class PluginManager:
                     self._inst.focus_force()
                     if was_hidden or not self._shown:
                         self._shown = True
-                        self.app.emit('plugin_manager@hook:plugin:will-show', self._inst, _origin=ORIGIN)
+                        self.app.emit('hook:will-show', self._inst, ns=NS)
                         try:
                             self._start(self._inst)
                         except Exception as e:
                             self._mgr.logger.error(
                                 f'[Plugin:{name}] on_show error: {e}')
-                        self.app.emit('plugin_manager@hook:plugin:did-show', self._inst, _origin=ORIGIN)
+                        self.app.emit('hook:did-show', self._inst, ns=NS)
                     return self._inst
 
             # ---- stale instance (GUI only — ServicePlugin always auto-restarts) ----
@@ -321,10 +319,11 @@ class PluginManager:
 
             # ---- create new instance ----
             try:
+                namespaced_app = self.app.module(self.namespace)
                 if is_service:
-                    self._inst = self._cls(app=self.app)
+                    self._inst = self._cls(app=namespaced_app)
                 else:
-                    self._inst = self._cls(parent, self.app)
+                    self._inst = self._cls(parent, namespaced_app)
             except Exception as e:
                 self._mgr.logger.error(
                     f'[Plugin:{name}] init error: {e}')
@@ -338,9 +337,9 @@ class PluginManager:
             else:
                 self._shown = True
                 if is_service:
-                    self.app.emit('plugin_manager@hook:plugin:will-start', self._inst, _origin=ORIGIN)
+                    self.app.emit('hook:will-start', self._inst, ns=NS)
                 else:
-                    self.app.emit('plugin_manager@hook:plugin:will-show', self._inst, _origin=ORIGIN)
+                    self.app.emit('hook:will-show', self._inst, ns=NS)
                 try:
                     self._start(self._inst)
                 except Exception as e:
@@ -350,9 +349,9 @@ class PluginManager:
                     if is_service:
                         return None  # did-start only emitted on success
                 if is_service:
-                    self.app.emit('plugin_manager@hook:plugin:did-start', self._inst, _origin=ORIGIN)
+                    self.app.emit('hook:did-start', self._inst, ns=NS)
                 else:
-                    self.app.emit('plugin_manager@hook:plugin:did-show', self._inst, _origin=ORIGIN)
+                    self.app.emit('hook:did-show', self._inst, ns=NS)
 
             # ---- window close protocol (GUI only) ----
             if not is_service:
@@ -364,13 +363,13 @@ class PluginManager:
                 else:
                     def _on_close():
                         if handle._inst is not None:
-                            handle.app.emit('plugin_manager@hook:plugin:will-hide', handle._inst, _origin=ORIGIN)
+                            handle.app.emit('hook:will-hide', handle._inst, ns=NS)
                             try:
                                 handle._inst.on_hide()
                             except Exception as e:
                                 handle._mgr.logger.error(
                                     f'[Plugin:{handle.get_name()}] on_hide error: {e}')
-                            handle.app.emit('plugin_manager@hook:plugin:did-hide', handle._inst, _origin=ORIGIN)
+                            handle.app.emit('hook:did-hide', handle._inst, ns=NS)
                             try:
                                 handle._inst.withdraw()
                             except Exception:
@@ -432,7 +431,7 @@ class PluginManager:
     def get_plugin_info(self, target=None, refresh=False):
         """Return plugin status info as a dict.
 
-        *target*: pid / registry key → single dict; ``None`` → dict of dicts keyed by pid.
+        *target*: namespace / registry key → single dict; ``None`` → dict of dicts keyed by namespace.
         *refresh*: if True, re-scan plugin directories before querying.
         """
         if refresh:
@@ -443,23 +442,20 @@ class PluginManager:
                 return None
             return self._info_for(h[1])
 
-        return {h.pid: self._info_for(h) for h in self.plugins.values()}
+        return {h.namespace: self._info_for(h) for h in self.plugins.values()}
 
     def _info_for(self, h):
         """Build an info dict for *handle*."""
         if h._cls:
-            ns = getattr(h._cls, 'namespace', None) or h._cls.__name__
             class_name = h._cls.__name__
         else:
-            ns = h._class_name or h._module_name
             class_name = h._class_name or 'Unknown'
         return {
-            'plugin_id':  h.pid,
+            'namespace':  h.namespace,
             'name':       h.get_name(),
             'type':       'ServicePlugin' if h.is_service else 'GuiPlugin',
             'alive':      h.alive,
             'visible':    h.visible,
-            'namespace':  ns,
             'class_name': class_name,
             'reload':     h.reload if not h.is_service else None,
         }
@@ -491,28 +487,28 @@ class PluginManager:
     # -- control events ---------------------------------------------------
 
     def _setup_control_events(self):
-        """Register lifecycle control events and services on the raw eventbus."""
-        bus = self._ctrl_app.eventbus
-        bus.on('plugin_manager@plugin:start', self._on_plugin_start, ns='plugin_manager')
-        bus.on('plugin_manager@plugin:stop',  self._on_plugin_stop,  ns='plugin_manager')
-        bus.on('plugin_manager@plugin:show',  self._on_plugin_show,  ns='plugin_manager')
-        bus.on('plugin_manager@plugin:hide',  self._on_plugin_hide,  ns='plugin_manager')
-        bus.on('plugin_manager@plugins:auto-start', self._on_auto_start, ns='plugin_manager')
+        """Register lifecycle control events and services."""
+        app = self._ctrl_app
+        app.on('start',       self._on_plugin_start, ns=NS)
+        app.on('stop',        self._on_plugin_stop,  ns=NS)
+        app.on('show',        self._on_plugin_show,  ns=NS)
+        app.on('hide',        self._on_plugin_hide,  ns=NS)
+        app.on('auto-start',  self._on_auto_start,   ns=NS)
 
-        self._ctrl_app.services.register('plugin_manager.get_plugin_info', self.get_plugin_info, owner='plugin_manager')
+        app.services.register('get_info', self.get_plugin_info, ns=NS)
 
     def _resolve_one(self, target):
-        """Look up a single target by pid or registry key. Returns (key, Handle) or None."""
+        """Look up a single target by namespace or registry key. Returns (key, Handle) or None."""
         for key, h in self.plugins.items():
-            if h.pid == target or key == target:
+            if h.namespace == target or key == target:
                 return key, h
         return None
 
     def _resolve_targets(self, targets, exclude=None):
         """Resolve *targets* to a flat list of (key, Handle) pairs.
 
-        *targets* may be a single plugin_id string, a list of strings,
-        or ``'*'`` for all registered plugins.  *exclude* (pid) is
+        *targets* may be a single namespace string, a list of strings,
+        or ``'*'`` for all registered plugins.  *exclude* (namespace) is
         removed from the result — used to skip the caller on wildcard
         stop/hide.
         """
@@ -534,7 +530,7 @@ class PluginManager:
                 exclude = {exclude}
             else:
                 exclude = set(exclude)
-            pairs = [(k, h) for k, h in pairs if h.pid not in exclude]
+            pairs = [(k, h) for k, h in pairs if h.namespace not in exclude]
         return pairs
 
     def _on_plugin_start(self, targets, hidden=False, exclude=None):
@@ -555,6 +551,7 @@ class PluginManager:
 
     def _on_auto_start(self):
         """Load plugins then auto-start those whose ``auto_start`` flag is set."""
+        self._ctrl_app.off('auto-start', self._on_auto_start, ns=NS)
         self.load(self._plugin_path)
         for h in self.plugins.values():
             if h.auto_start and not h.alive:
@@ -771,15 +768,15 @@ class PluginManager:
             h.unload()
             del self.plugins[stale]
 
-        # ---- validate plugin_id uniqueness on first load ---------------
-        pid_seen = {}
+        # ---- validate namespace uniqueness ---------------
+        ns_seen = {}
         for key, h in self.plugins.items():
-            pid = h.pid
-            if pid in pid_seen:
+            ns = h.namespace
+            if ns in ns_seen:
                 self.logger.error(
-                    '[PluginManager] duplicate plugin_id "%s": '
+                    '[PluginManager] duplicate namespace "%s": '
                     'used by both "%s" and "%s"',
-                    pid, pid_seen[pid], key)
+                    ns, ns_seen[ns], key)
             else:
-                pid_seen[pid] = key
+                ns_seen[ns] = key
 

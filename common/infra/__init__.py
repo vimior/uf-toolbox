@@ -62,14 +62,14 @@ class Infrastructure:
     def module(self, name, app=None):
         """Return a namespaced handle — store, services, eventbus all scoped.
         *app* (AppState) is used as a fallback for __getattr__."""
-        if name in ('app', 'plugin_manager'):
+        if name in ('app', 'plugins'):
             raise ValueError(f'reserved namespace: {name}')
         return _Module(self, name, app)
 
     # ---- eventbus delegates ----
 
-    def on(self, event, callback):
-        self.eventbus.on(event, callback)
+    def on(self, event, callback, ns=None):
+        self.eventbus.on(event, callback, ns=ns)
 
     def off(self, event, callback):
         self.eventbus.off(event, callback)
@@ -78,7 +78,7 @@ class Infrastructure:
         self.eventbus.clear(event)
 
     def emit(self, event, *args, **kwargs):
-        kwargs.setdefault('_origin', 'app')
+        kwargs.setdefault('ns', 'app')
         self.eventbus.emit(event, *args, **kwargs)
 
     # ---- plugin lifecycle ----
