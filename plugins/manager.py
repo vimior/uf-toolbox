@@ -6,7 +6,7 @@ import sys
 import pkgutil
 import importlib.util
 
-from plugins.plugin import GuiPlugin, ServicePlugin
+from plugins.plugin import GuiPlugin, HookInfo, ServicePlugin
 
 NS = 'plugins'
 
@@ -123,7 +123,7 @@ class PluginManager:
             if not self._inst.winfo_exists():
                 return
             name = self.get_name()
-            self.app.emit('hook:will-hide', self._inst, ns=NS)
+            self.app.emit('hook:will-hide', HookInfo.from_handle(self), ns=NS)
             try:
                 self._inst.on_hide()
             except Exception as e:
@@ -134,7 +134,7 @@ class PluginManager:
             except Exception:
                 pass
             self._shown = False
-            self.app.emit('hook:did-hide', self._inst, ns=NS)
+            self.app.emit('hook:did-hide', HookInfo.from_handle(self), ns=NS)
 
         def show(self):
             """Show a hidden GUI plugin window (no-op for ServicePlugin)."""
@@ -146,14 +146,14 @@ class PluginManager:
             self._inst.deiconify()
             self._inst.lift()
             self._inst.focus_force()
-            self.app.emit('hook:will-show', self._inst, ns=NS)
+            self.app.emit('hook:will-show', HookInfo.from_handle(self), ns=NS)
             try:
                 self._inst.on_show()
             except Exception as e:
                 self._mgr.logger.error(
                     f'[Plugin:{name}] on_show error: {e}')
             self._shown = True
-            self.app.emit('hook:did-show', self._inst, ns=NS)
+            self.app.emit('hook:did-show', HookInfo.from_handle(self), ns=NS)
 
         @property
         def visible(self):
@@ -181,9 +181,9 @@ class PluginManager:
             if self._inst is not None:
                 is_service = isinstance(self._inst, ServicePlugin)
                 if is_service:
-                    self.app.emit('hook:will-stop', self, ns=NS)
+                    self.app.emit('hook:will-stop', HookInfo.from_handle(self), ns=NS)
                 elif self._inst.winfo_exists():
-                    self.app.emit('hook:will-destroy', self, ns=NS)
+                    self.app.emit('hook:will-destroy', HookInfo.from_handle(self), ns=NS)
                 if is_service or self._inst.winfo_exists():
                     try:
                         self._stop(self._inst)
@@ -192,9 +192,9 @@ class PluginManager:
                         self._mgr.logger.error(
                             f'Plugin {self.get_name()} {action} error: {e}')
                     if is_service:
-                        self.app.emit('hook:did-stop', self, ns=NS)
+                        self.app.emit('hook:did-stop', HookInfo.from_handle(self), ns=NS)
                     else:
-                        self.app.emit('hook:did-destroy', self, ns=NS)
+                        self.app.emit('hook:did-destroy', HookInfo.from_handle(self), ns=NS)
                     if not is_service:
                         try:
                             self._inst.destroy()
@@ -216,9 +216,9 @@ class PluginManager:
             if self._inst is not None:
                 is_service = isinstance(self._inst, ServicePlugin)
                 if is_service:
-                    self.app.emit('hook:will-stop', self, ns=NS)
+                    self.app.emit('hook:will-stop', HookInfo.from_handle(self), ns=NS)
                 elif self._inst.winfo_exists():
-                    self.app.emit('hook:will-destroy', self, ns=NS)
+                    self.app.emit('hook:will-destroy', HookInfo.from_handle(self), ns=NS)
                 if is_service or self._inst.winfo_exists():
                     try:
                         self._stop(self._inst)
@@ -227,9 +227,9 @@ class PluginManager:
                         self._mgr.logger.error(
                             f'[Plugin:{self.get_name()}] {action} error: {e}')
                     if is_service:
-                        self.app.emit('hook:did-stop', self, ns=NS)
+                        self.app.emit('hook:did-stop', HookInfo.from_handle(self), ns=NS)
                     else:
-                        self.app.emit('hook:did-destroy', self, ns=NS)
+                        self.app.emit('hook:did-destroy', HookInfo.from_handle(self), ns=NS)
                     if not is_service:
                         try:
                             self._inst.destroy()
@@ -300,13 +300,13 @@ class PluginManager:
                     self._inst.focus_force()
                     if was_hidden or not self._shown:
                         self._shown = True
-                        self.app.emit('hook:will-show', self._inst, ns=NS)
+                        self.app.emit('hook:will-show', HookInfo.from_handle(self), ns=NS)
                         try:
                             self._start(self._inst)
                         except Exception as e:
                             self._mgr.logger.error(
                                 f'[Plugin:{name}] on_show error: {e}')
-                        self.app.emit('hook:did-show', self._inst, ns=NS)
+                        self.app.emit('hook:did-show', HookInfo.from_handle(self), ns=NS)
                     return self._inst
 
             # ---- stale instance (GUI only — ServicePlugin always auto-restarts) ----
@@ -337,9 +337,9 @@ class PluginManager:
             else:
                 self._shown = True
                 if is_service:
-                    self.app.emit('hook:will-start', self._inst, ns=NS)
+                    self.app.emit('hook:will-start', HookInfo.from_handle(self), ns=NS)
                 else:
-                    self.app.emit('hook:will-show', self._inst, ns=NS)
+                    self.app.emit('hook:will-show', HookInfo.from_handle(self), ns=NS)
                 try:
                     self._start(self._inst)
                 except Exception as e:
@@ -349,9 +349,9 @@ class PluginManager:
                     if is_service:
                         return None  # did-start only emitted on success
                 if is_service:
-                    self.app.emit('hook:did-start', self._inst, ns=NS)
+                    self.app.emit('hook:did-start', HookInfo.from_handle(self), ns=NS)
                 else:
-                    self.app.emit('hook:did-show', self._inst, ns=NS)
+                    self.app.emit('hook:did-show', HookInfo.from_handle(self), ns=NS)
 
             # ---- window close protocol (GUI only) ----
             if not is_service:
@@ -363,13 +363,13 @@ class PluginManager:
                 else:
                     def _on_close():
                         if handle._inst is not None:
-                            handle.app.emit('hook:will-hide', handle._inst, ns=NS)
+                            handle.app.emit('hook:will-hide', HookInfo.from_handle(handle), ns=NS)
                             try:
                                 handle._inst.on_hide()
                             except Exception as e:
                                 handle._mgr.logger.error(
                                     f'[Plugin:{handle.get_name()}] on_hide error: {e}')
-                            handle.app.emit('hook:did-hide', handle._inst, ns=NS)
+                            handle.app.emit('hook:did-hide', HookInfo.from_handle(handle), ns=NS)
                             try:
                                 handle._inst.withdraw()
                             except Exception:

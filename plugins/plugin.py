@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Plugin base class."""
 import tkinter as tk
+from dataclasses import dataclass
 
 
 class GuiPlugin(tk.Toplevel):
@@ -88,3 +89,28 @@ class ServicePlugin:
     def on_stop(self):
         """Called before shutdown — final cleanup."""
         pass
+
+
+@dataclass(frozen=True, slots=True)
+class HookInfo:
+    """Read-only lifecycle hook snapshot — 通知而非授权.
+
+    Passed to hook listeners so they know *what* happened without
+    gaining control over other plugins' lifecycle or internals.
+    """
+
+    namespace: str
+    name: str
+    is_service: bool
+    alive: bool
+    visible: bool
+
+    @classmethod
+    def from_handle(cls, handle):
+        return cls(
+            namespace=handle.namespace,
+            name=handle.get_name(),
+            is_service=handle.is_service,
+            alive=handle.alive,
+            visible=handle.visible,
+        )

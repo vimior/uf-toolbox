@@ -78,12 +78,12 @@ class AppState:
         except AttributeError:
             pass
 
-    def _on_plugin_destroyed(self, handle, **kwargs):
+    def _on_plugin_destroyed(self, info, **kwargs):
         """Clean up store/services when a plugin is stopped/destroyed."""
         emit_ns = kwargs.get('ns', None)
-        if not emit_ns or emit_ns != 'plugins' or not handle:
+        if not emit_ns or emit_ns != 'plugins' or not info:
             return
-        self._infra.cleanup(handle.namespace)
+        self._infra.cleanup(info.namespace)
 
     def init_state(self):
         """Initialize all state. Called once from main.py.__init__."""
