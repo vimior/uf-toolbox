@@ -36,6 +36,9 @@ class _Module:
     def emit(self, event, *args, **kwargs):
         self.eventbus.emit(event, *args, **kwargs)
 
+    def clear(self, event):
+        self.eventbus.clear(event)
+
     def __getattr__(self, name):
         try:
             return getattr(self._infra, name)
@@ -71,15 +74,14 @@ class Infrastructure:
     def on(self, event, callback, ns=None):
         self.eventbus.on(event, callback, ns=ns)
 
-    def off(self, event, callback):
-        self.eventbus.off(event, callback)
+    def off(self, event, callback, ns=None):
+        self.eventbus.off(event, callback, ns=ns)
 
-    def clear(self, event):
-        self.eventbus.clear(event)
+    def clear(self, event, ns=None):
+        self.eventbus.clear(event, ns=ns)
 
-    def emit(self, event, *args, **kwargs):
-        kwargs.setdefault('ns', 'app')
-        self.eventbus.emit(event, *args, **kwargs)
+    def emit(self, event, *args, ns=None, **kwargs):
+        self.eventbus.emit(event, *args, ns=ns or 'app', **kwargs)
 
     # ---- plugin lifecycle ----
 

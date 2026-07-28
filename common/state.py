@@ -8,8 +8,9 @@ from tkinter import ttk
 
 from themes import DARK_THEME, LIGHT_THEME
 from i18n import ZH, EN
-from common.common import logger
-from common.infra import Infrastructure
+from .common import logger
+from .infra import Infrastructure
+from .infra.utils import _resolve_name
 
 _CONFIG_PATH = os.path.join(os.path.expanduser('~'), '.uf_toolbox.json')
 
@@ -38,26 +39,24 @@ class AppState:
 
     # ---- event bus delegates ----------------------------------------
 
-    @staticmethod
-    def _resolve_event(event, ns=None):
-        """@ present → fully qualified, otherwise → ns@event (default ns=app)."""
-        if '@' in event:
-            return event
-        return f'{ns or "app"}@{event}'
-
     def on(self, event, callback, ns=None):
-        resolved = self._resolve_event(event, ns)
-        self._infra.on(resolved, callback, ns=ns or 'app')
+        ns = ns or 'app'
+        self._infra.on(_resolve_name(event, ns), callback, ns=ns)
 
     def off(self, event, callback, ns=None):
-        self._infra.off(self._resolve_event(event, ns), callback)
+        ns = ns or 'app'
+        self._infra.off(_resolve_name(event, ns), callback, ns=ns)
 
     def clear(self, event, ns=None):
-        self._infra.clear(self._resolve_event(event, ns))
+        ns = ns or 'app'
+        self._infra.clear(_resolve_name(event, ns), ns=ns)
 
     def emit(self, event, *args, ns=None, **kwargs):
-        kwargs.setdefault('ns', ns or 'app')
-        self._infra.emit(self._resolve_event(event, ns), *args, **kwargs)
+        ns = ns or 'app'
+        self._infra.emit(_resolve_name(event, ns), *args, ns=ns, **kwargs)
+
+    def cleanup(self, ns=None):
+        self._infra.cleanup(ns or 'app')
 
     # ---- lifecycle hooks -------------------------------------------
     #

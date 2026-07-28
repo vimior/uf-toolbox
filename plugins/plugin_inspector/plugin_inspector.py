@@ -264,7 +264,7 @@ class PluginInspector(GuiPlugin):
             if not show_all:
                 cbs = [e for e in cbs if e['namespace'] != 'app']
                 ns = event.partition('@')[0]
-                if ns in ('app', 'plugins'):
+                if ns in ('app', 'plugins', 'services'):
                     if not cbs:
                         continue
                     if info['count'] == 0 and all(cb['count'] == 0 for cb in cbs):
@@ -322,6 +322,9 @@ class PluginInspector(GuiPlugin):
     def _render_store(self, infra):
         data = infra.store.snapshot()
         keys = data['keys']
+        # index eventbus callbacks by event for subscriber lookup
+        evt_data = infra.eventbus.snapshot()['events']
+        evt_callbacks = {e: e_info['callbacks'] for e, e_info in evt_data.items()}
 
         by_owner = {}
         for entry in keys:
@@ -349,18 +352,15 @@ class PluginInspector(GuiPlugin):
                     stats.append(f"last {self._time_str(entry['last_commit'])}")
                 if stats:
                     lines.append(f"  {bar}  {'  '.join(stats)}")
-                # cross-ns subscribers
-                ext_subs = [s for s in entry['subscribers']
-                            if (s['namespace'] if isinstance(s, dict) else s) != owner]
+                # cross-ns subscribers (from eventbus snapshot)
+                ext_subs = [s for s in evt_callbacks.get(f'store:changed:{entry["key"]}', [])
+                            if s['namespace'] != owner]
                 if ext_subs:
                     lines.append(f"  {bar}  subscribers: {len(ext_subs)}")
                     for j, sub in enumerate(ext_subs):
                         s_prefix = "├─" if j < len(ext_subs) - 1 else "└─"
-                        ns = sub['namespace'] if isinstance(sub, dict) else sub
-                        cb = sub.get('callback', '') if isinstance(sub, dict) else ''
-                        count = sub.get('count', 0) if isinstance(sub, dict) else 0
-                        cb_name = cb.split('.')[-1] if '.' in cb else cb
-                        lines.append(f"  {bar}    {s_prefix} [{ns}] {cb_name}  ×{count}")
+                        cb_name = sub['name'].split('.')[-1] if '.' in sub['name'] else sub['name']
+                        lines.append(f"  {bar}    {s_prefix} [{sub['namespace']}] {cb_name}  ×{sub['count']}")
             lines.append("")
 
         self._set_text(self._texts["store"], lines)
@@ -384,7 +384,7 @@ class PluginInspector(GuiPlugin):
             for i, entry in enumerate(items):
                 prefix = "  ├─" if i < len(items) - 1 else "  └─"
                 short = entry['name']
-                pfx = owner + '.'
+                pfx = owner + '@'
                 if short.startswith(pfx):
                     short = short[len(pfx):]
                 is_last = (i == len(items) - 1)

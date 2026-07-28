@@ -2,6 +2,7 @@
 """Shared state store — namespaced, observable key-value storage."""
 import logging
 import time
+from .utils import _namespace_of, _resolve_name
 
 _SELF = object()  # sentinel: "show my own"
 
@@ -18,179 +19,155 @@ class Store:
         self._perf = perf  # PerfMonitor instance (optional)
         self._logger = logger or logging.getLogger(__name__)
         self._state = {}          # key → value
-        self._owners = {}         # key → owner (last writer)
-        self._subscriptions = {}  # owner → [(event_key, callback), ...]
+        self._owners = {}         # key → owner
         self._meta = {}           # key → {commit_count, last_commit}
 
     # ---- public API ----
 
-    def module(self, name):
-        """Return a namespaced handle for *name* (usually a plugin name).
+    def module(self, ns):
+        """Return a namespaced handle for *ns* (usually a plugin namespace)."""
+        return _StoreModule(self, ns)
 
-        All keys written through the handle are prefixed ``name.`` so
-        plugins don't step on each other's data.
-        """
-        return _StoreModule(self, name)
-
-    @staticmethod
-    def _key_owner(key):
-        """Extract namespace from a ``ns@...`` key, or '' if unscoped."""
-        return key.split('@')[0] if '@' in key else ''
-
-    def commit(self, key, value, owner=''):
+    def commit(self, key, value, ns):
         """Set *key* to *value* and notify subscribers.
 
-        Cross-namespace writes are rejected: a plugin whose *owner* differs
+        Cross-namespace writes are rejected: a plugin whose *ns* differs
         from the ``@`` prefix in *key* may not commit to that key.
         """
-        key_owner = self._key_owner(key)
-        if owner and key_owner and owner != key_owner:
+        key = _resolve_name(key, ns)
+        key_owner = _namespace_of(key)
+        if key_owner != ns:
             self._logger.warning(
-                '[store] %s → %s namespace rejected: %s', owner, key_owner, key)
+                '[store] %s → %s namespace rejected: %s', ns, key_owner, key)
             return
         old = self._state.get(key)
         self._state[key] = value
-        # Ownership is determined by the key's @ prefix, not by who wrote last
-        self._owners[key] = key_owner or owner
-        if self._perf and self._perf.enabled and owner:
-            self._perf.record_store_commit(owner)
+        self._owners[key] = ns
+        if self._perf and self._perf.enabled:
+            self._perf.record_store_commit(ns)
         meta = self._meta.get(key)
         if meta is None:
             self._meta[key] = {'commit_count': 1, 'last_commit': time.time()}
         else:
             meta['commit_count'] += 1
             meta['last_commit'] = time.time()
-        tag = key + (f' (from {owner})' if owner else '')
-        self._logger.debug('[store] commit %s => %s', tag, str(value)[:80])
-        self._eventbus.emit(f'store:changed:{key}', value, old)
+        self._logger.debug('[store] commit %s => %s (from %s)', key, value, ns)
+        self._eventbus.emit(f'store:changed:{key}', value, old, ns=ns)
 
-    def get(self, key, default=None):
+    def get(self, key, default=None, ns=None):
+        if ns:
+            key = _resolve_name(key, ns)
         return self._state.get(key, default)
 
-    def keys(self, owner=None):
-        """Return all keys, optionally filtered by *owner*."""
-        if owner is None:
+    def keys(self, ns=None):
+        """Return all keys, optionally filtered by namespace."""
+        if ns is None:
             return list(self._state.keys())
-        return [k for k, v in self._owners.items() if v == owner]
+        return [k for k, v in self._owners.items() if v == ns]
 
-    def subscribe(self, key, callback, owner=''):
+    def subscribe(self, key, callback, ns):
         """Register *callback* to be called when *key* changes."""
+        key = _resolve_name(key, ns)
         event = f'store:changed:{key}'
-        self._eventbus.on(event, callback, ns=owner)
-        if owner:
-            pairs = self._subscriptions.setdefault(owner, [])
-            if (event, callback) not in pairs:
-                pairs.append((event, callback))
-            if self._perf and self._perf.enabled:
-                self._perf.record_store_subscribe(owner)
+        self._eventbus.on(event, callback, ns=ns)
+        if self._perf and self._perf.enabled:
+            self._perf.record_store_subscribe(ns)
 
-    def unsubscribe(self, key, callback=None):
+    def unsubscribe(self, key, callback, ns):
         """Remove subscriptions for *key*."""
+        key = _resolve_name(key, ns)
         event = f'store:changed:{key}'
         if callback:
-            self._eventbus.off(event, callback)
+            self._eventbus.off(event, callback, ns=ns)
         else:
-            self._eventbus.clear(event)
+            self._eventbus.clear(event, ns=ns)
 
     # ---- cleanup ----
 
-    def cleanup(self, owner):
-        """Remove all traces of *owner* (called on plugin destroy).
+    def cleanup(self, ns):
+        """Remove all traces of a namespace (called on plugin destroy).
 
-        Subscription cleanup is unconditional — a plugin that subscribed
-        to someone else's key still gets cleaned up.  Data cleanup only
-        happens for keys this owner last wrote.
+        Callback cleanup is handled by EventBus.cleanup(ns).
+        Only data owned by *ns* is removed here.
         """
-        for event, callback in self._subscriptions.pop(owner, []):
-            self._eventbus.off(event, callback)
-        for k in [k for k, v in self._owners.items() if v == owner]:
+        for k in [k for k, v in self._owners.items() if v == ns]:
             self._state.pop(k, None)
             self._owners.pop(k, None)
             self._meta.pop(k, None)
-            # Don't clear listeners — other plugins may still listen to this
-            # key and expect callbacks when the key is re-committed later.
 
     # ---- snapshot ----
 
-    def snapshot(self):
+    def snapshot(self, ns=None):
         """Return a point-in-time snapshot of all stored keys.
 
-        Returns a dict::
+        If *ns* is given, only keys owned by or prefixed with
+        that namespace are returned.
 
-            {'keys': [{'key': str, 'value': str, 'owner': str,
-                       'commit_count': int, 'last_commit': float|None,
-                       'subscribers': [str, ...]}, ...]}
+        Returns::
+
+            {
+                'keys': [
+                    {
+                        'key':           str,
+                        'value':         str,
+                        'owner':         str,
+                        'commit_count':  int,
+                        'last_commit':   float | None,
+                    },
+                ],
+            }
         """
         keys = []
         for key, value in self._state.items():
-            owner = self._owners.get(key, '-')
             meta = self._meta.get(key, {})
-            subs = []
-            event = f'store:changed:{key}'
-            for sub_owner, pairs in self._subscriptions.items():
-                for ev, cb in pairs:
-                    if ev == event:
-                        count = self._eventbus._cb_count.get(id(cb), 0)
-                        if not count:
-                            # Find the matching callback actually in _listeners
-                            for ecb in self._eventbus._listeners.get(event, []):
-                                if ecb == cb:
-                                    count = self._eventbus._cb_count.get(id(ecb), 0)
-                                    break
-                        subs.append({
-                            'namespace': sub_owner,
-                            'callback': self._eventbus._name(cb),
-                            'count': count,
-                        })
             keys.append({
                 'key': key,
                 'value': str(value)[:80],
-                'owner': owner,
+                'owner': self._owners.get(key, '-'),
                 'commit_count': meta.get('commit_count', 0),
                 'last_commit': meta.get('last_commit'),
-                'subscribers': subs,
             })
+        if ns:
+            prefix = ns + '@'
+            keys = [k for k in keys if k['key'].startswith(prefix)
+                    or k['owner'] == ns]
         return {'keys': keys}
 
 
 class _StoreModule:
-    """Namespaced store handle bound to a specific owner.
-
-    Key resolution:
-    - ``@`` present → fully qualified, use as-is
-    - otherwise     → auto-prefixed with ``self._name@``
+    """Namespaced store handle — ns is auto-injected, key prefixing is
+    handled by :class:`Store` via :func:`_resolve_name`.
     """
 
-    def __init__(self, store, name):
-        self._store = store
-        self._name = name
+    __slots__ = ('_store', '_ns')
 
-    def _key(self, key):
-        """Resolve *key* to a fully-qualified store key."""
-        if '@' in key:
-            return key
-        return f'{self._name}@{key}'
+    def __init__(self, store, ns):
+        self._store = store
+        self._ns = ns
 
     def commit(self, key, value):
-        """Set *key*.  Auto-prefixed with ``name@``."""
-        self._store.commit(self._key(key), value, owner=self._name)
+        self._store.commit(key, value, ns=self._ns)
 
     def get(self, key, default=None):
-        return self._store.get(self._key(key), default)
+        return self._store.get(key, default, ns=self._ns)
 
     def subscribe(self, key, callback):
-        """Subscribe to changes on *key*.  Auto-prefixed with ``name@``."""
-        self._store.subscribe(self._key(key), callback, owner=self._name)
+        self._store.subscribe(key, callback, ns=self._ns)
 
     def unsubscribe(self, key, callback=None):
-        self._store.unsubscribe(self._key(key), callback)
+        self._store.unsubscribe(key, callback, ns=self._ns)
 
-    def keys(self, owner=_SELF):
-        """Return keys, filtered by *owner*.  Defaults to this module's own."""
-        if owner is _SELF:
-            owner = self._name
-        return self._store.keys(owner=owner)
+    def keys(self, ns=_SELF):
+        """Return keys, filtered by namespace.  Defaults to this module's own."""
+        ns = self._ns if ns is _SELF else ns
+        return self._store.keys(ns=ns)
+
+    def cleanup(self):
+        self._store.cleanup(self._ns)
+
+    def snapshot(self):
+        return self._store.snapshot(ns=self._ns)
 
     def dump(self):
         """Return a dict of all key-value pairs owned by this module."""
-        return {k: self._store.get(k) for k in self._store.keys(owner=self._name)}
+        return {k: self._store.get(k) for k in self._store.keys(ns=self._ns)}

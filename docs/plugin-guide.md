@@ -48,6 +48,15 @@ class MyPlugin(GuiPlugin):
         super().__init__(parent, app)
         self.title(self.name)
         tk.Label(self, text="Hello!").pack(padx=20, pady=20)
+
+    def on_show(self):
+        """Called when the window opens or restores from hide."""
+
+    def on_hide(self):
+        """Called when the window is hidden (reload=False only)."""
+
+    def on_destroy(self):
+        """Called before the window is destroyed — final cleanup."""
 ```
 
 Open menu → Plugins → click to launch.
@@ -61,7 +70,7 @@ Define these on the class body (read via AST scan, no instantiation needed):
 | `name` | str | — | Display name in menu (required) |
 | `name_zh` | str | — | Chinese display name |
 | `name_en` | str | — | English display name |
-| `namespace` | str | class name | Store/Service namespace for per-plugin isolation |
+| `namespace` | str | — | Store/Service namespace for per-plugin isolation. Defaults to the plugin directory name; explicit is recommended |
 | `priority` | int | `0` | Menu sort order, higher = first |
 | `reload` | bool | `True` | `True` = destroy & recreate each open. `False` = hide & reuse |
 | `fixed_position` | bool | `True` | Let app control window position |
@@ -69,19 +78,6 @@ Define these on the class body (read via AST scan, no instantiation needed):
 | `use_app_icon` | bool | `True` | Use app icon for the window |
 | `auto_start` | bool | `False` | Auto-open on app launch |
 | `start_hidden` | bool | `False` | Start hidden (requires `auto_start`) |
-
-### Overridable Methods
-
-```python
-def on_show(self):
-    """Called when window opens or restores from hide"""
-
-def on_hide(self):
-    """Called on close when reload=False (withdraw instead of destroy)"""
-
-def on_destroy(self):
-    """Called before destroy — final cleanup"""
-```
 
 ---
 
@@ -102,6 +98,7 @@ class MyService(ServicePlugin):
     auto_start = False
 
     def on_start(self):
+        """Service starts. Register services and listen to events here."""
         self.app.services.register('add', lambda a, b: a + b)
         self.app.services.register('greet', self._greet)
 
@@ -109,7 +106,7 @@ class MyService(ServicePlugin):
         return f"Hello, {name}!"
 
     def on_stop(self):
-        pass  # framework auto-cleans registered services & listeners
+        """Service stops. Framework auto-cleans registered services and listeners."""
 ```
 
 ### Configurable Attributes
@@ -119,69 +116,69 @@ class MyService(ServicePlugin):
 | `name` | str | — | Display name in menu (required) |
 | `name_zh` | str | — | Chinese display name |
 | `name_en` | str | — | English display name |
-| `namespace` | str | class name | Service namespace for per-plugin isolation |
+| `namespace` | str | — | Service namespace for per-plugin isolation. Defaults to the plugin directory name; explicit is recommended |
 | `priority` | int | `0` | Menu sort order, higher = first |
 | `auto_start` | bool | `False` | Auto-start on app launch |
-
-### Overridable Methods
-
-```python
-def on_start(self):
-    """Service starts — register services, listen to events"""
-
-def on_stop(self):
-    """Service stops — framework auto-cleans services and listeners"""
-```
 
 ---
 
 ## Inter-Plugin Communication
 
-Plugins access three shared components via `self.app`. Each is namespaced — reads and writes are automatically prefixed so plugins don't collide. All registrations are auto-cleaned when the plugin stops.
+Plugins access three shared components via `self.app`. All names use the `namespace@name` format: short names (no `@`) are auto-prefixed with `namespace@`, fully-qualified names (with `@`) are passed through as-is. All registrations are auto-cleaned when the plugin stops.
 
 ### 1. EventBus — Publish / Subscribe
 
 ```python
-# Listen (auto-unregistered on stop)
-self.app.on('store:changed:other.some_key', self._on_change)
+# Listen to events in your own namespace (auto-unregistered on stop)
+self.app.on('data-ready', self._on_data_ready)
 
-def _on_change(self, new_val, old_val):
-    print(f"Changed: {old_val} -> {new_val}")
+def _on_data_ready(self, payload):
+    print(f"Data received: {payload}")
 
-# Emit
-self.app.emit('some-event', data)
+# Emit an event (auto-prefixed with namespace@)
+self.app.emit('data-ready', {'key': 'value'})
+
+# Listen to another plugin's event (fully qualified name)
+self.app.on('other_plugin@data-ready', self._on_other_data)
+
+# Emit to another plugin (fully qualified name)
+self.app.emit('other_plugin@data-ready', {'key': 'value'})
 ```
 
 ### 2. Store — Shared State
 
 ```python
-# Write (auto-prefixed: my_ns.my_key)
+# Write (auto-prefixed, e.g. my_plugin@my_key)
 self.app.store.commit('my_key', 42)
 
-# Read own value
+# Read your own value
 val = self.app.store.get('my_key')
 
-# Read another plugin's value (fully qualified key)
-val = self.app.store.get('other_ns.their_key')
+# Read another plugin's value (fully qualified key with @)
+val = self.app.store.get('other_plugin@their_key')
 
-# Subscribe to changes
+# Subscribe to your own changes (auto-cancelled on stop)
 self.app.store.subscribe('my_key', self._on_my_key_changed)
+
+# Subscribe to another plugin's changes (fully qualified key)
+self.app.store.subscribe('other_plugin@their_key', self._on_their_key_changed)
 ```
 
 ### 3. Services — Remote Calls
 
 ```python
-# Register (auto-prefixed)
+# Register a function (auto-prefixed with namespace@)
 self.app.services.register('add', lambda a, b: a + b)
 
-# Call own service
-result = self.app.services.call('my_ns.add', 1, 2)
+# Call a service in your own namespace (auto-prefixed)
+result = self.app.services.call('add', 1, 2)
 
-# Call another plugin's service
-result = self.app.services.call('other_ns.sub', 5, 3)
+# Call another plugin's service (fully qualified name)
+result = self.app.services.call('other_plugin@sub', 5, 3)
 
-# Check if a service exists
-self.app.services.has('add')
+# Check if another plugin's service exists (fully qualified name)
+if self.app.services.has('other_plugin@sub'):
+    ...
 ```
 
 ### Lifecycle Events
@@ -190,10 +187,37 @@ Listen to these events to track other plugins:
 
 | Event | When |
 |-------|------|
-| `hook:plugin:will-start` / `did-start` | Service plugin starting |
-| `hook:plugin:will-stop` / `did-stop` | Service plugin stopping |
-| `hook:plugin:will-show` / `did-show` | GUI plugin window opening |
-| `hook:plugin:will-destroy` / `did-destroy` | GUI plugin window closing |
+| `plugins@hook:will-start` / `plugins@hook:did-start` | Service plugin starting |
+| `plugins@hook:will-stop` / `plugins@hook:did-stop` | Service plugin stopping |
+| `plugins@hook:will-show` / `plugins@hook:did-show` | GUI plugin window opening |
+| `plugins@hook:will-hide` / `plugins@hook:did-hide` | GUI plugin window hiding |
+| `plugins@hook:will-destroy` / `plugins@hook:did-destroy` | GUI plugin window destroying |
+
+Callbacks receive a `HookInfo` instance with these read-only fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `namespace` | str | Namespace of the plugin that fired the event |
+| `name` | str | Display name of the plugin |
+| `is_service` | bool | Whether it's a ServicePlugin |
+| `alive` | bool | Whether the plugin is alive |
+| `visible` | bool | Whether a GUI plugin is visible (always False for services) |
+
+```python
+from plugins.plugin import GuiPlugin, HookInfo
+
+class MyPlugin(GuiPlugin):
+    namespace = "my_plugin"
+
+    def init(self):
+        # Listen for other plugins' lifecycle events
+        self.app.on('plugins@hook:did-start', self._on_other_started)
+
+    def _on_other_started(self, info: HookInfo):
+        if info.namespace == self.namespace:
+            return  # ignore self
+        print(f"{info.name} ({info.namespace}) started")
+```
 
 ---
 
@@ -299,8 +323,8 @@ class MyPlugin(GuiPlugin):
         # Write shared state
         self.app.store.commit('status', 'ready')
 
-        # Listen for another plugin's state changes
-        self.app.on('store:changed:other.state', self._on_other_state)
+        # Listen for another plugin's state changes (prefer subscribe over direct store:changed:)
+        self.app.store.subscribe('other@state', self._on_other_state)
 
     def _on_other_state(self, new_val, old_val):
         print(f"Other plugin state: {old_val} -> {new_val}")
@@ -328,7 +352,8 @@ class MyService(ServicePlugin):
         self.app.services.register('add', lambda a, b: a + b)
         self.app.services.register('get_status', self._get_status)
         self.app.store.commit('counter', 0)
-        self.app.on('service:registered', self._on_new_service)
+        # Prefer on_registered() over direct eventbus listening
+        self.app.services.on_registered(self._on_new_service)
 
     def _get_status(self):
         return "running"
