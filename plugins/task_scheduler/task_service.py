@@ -81,8 +81,8 @@ class TasksService(ServicePlugin):
 
     # Fields preserved across edits
     _PRESERVE_ON_EDIT = ('count', 'errors', 'total_dur', 'avg_dur',
-                         'max_dur', 'history', 'last_run', 'created_at',
-                         'failed')
+                         'max_dur', 'history', 'last_run',
+                         'created_at', 'failed', 'fired')
 
     def __init__(self, app=None):
         super().__init__(app)
@@ -436,14 +436,13 @@ class TasksService(ServicePlugin):
     def _daily(self, task_id, time_str, fn_ref,
                auto_start=True, max_runs=0, timeout=0, updating=False):
         self._require_new_id(task_id, updating=updating)
+        h, m, s = self._parse_time(time_str)
+        target_secs = h * 3600 + m * 60 + s
+        now = datetime.now()
+        now_secs = now.hour * 3600 + now.minute * 60 + now.second
         extra = {}
-        if not updating:
-            h, m, s = self._parse_time(time_str)
-            target_secs = h * 3600 + m * 60 + s
-            now = datetime.now()
-            now_secs = now.hour * 3600 + now.minute * 60 + now.second
-            if now_secs >= target_secs:
-                extra['last_day'] = now.strftime('%Y-%m-%d')
+        if now_secs >= target_secs:
+            extra['last_day'] = now.strftime('%Y-%m-%d')
         old = self._tasks.get(task_id) if updating else None
         return self._add_task(task_id, self._base(
             'daily', fn_ref, time_str=time_str,
@@ -453,15 +452,14 @@ class TasksService(ServicePlugin):
     def _weekly(self, task_id, days, time_str, fn_ref,
                 auto_start=True, max_runs=0, timeout=0, updating=False):
         self._require_new_id(task_id, updating=updating)
+        h, m, s = self._parse_time(time_str)
+        target_secs = h * 3600 + m * 60 + s
+        now = datetime.now()
+        now_secs = now.hour * 3600 + now.minute * 60 + now.second
+        dow = now.weekday()
         extra = {}
-        if not updating:
-            h, m, s = self._parse_time(time_str)
-            target_secs = h * 3600 + m * 60 + s
-            now = datetime.now()
-            now_secs = now.hour * 3600 + now.minute * 60 + now.second
-            dow = now.weekday()
-            if now_secs >= target_secs or dow not in (days or []):
-                extra['last_day'] = now.strftime('%Y-%m-%d')
+        if now_secs >= target_secs or dow not in (days or []):
+            extra['last_day'] = now.strftime('%Y-%m-%d')
         old = self._tasks.get(task_id) if updating else None
         return self._add_task(task_id, self._base(
             'weekly', fn_ref, days=list(days), time_str=time_str,
@@ -471,9 +469,7 @@ class TasksService(ServicePlugin):
     def _cron(self, task_id, cron_expr, fn_ref,
               auto_start=True, max_runs=0, timeout=0, updating=False):
         self._require_new_id(task_id, updating=updating)
-        extra = {}
-        if not updating:
-            extra['last_minute'] = datetime.now().strftime('%Y-%m-%d %H:%M')
+        extra = {'last_minute': datetime.now().strftime('%Y-%m-%d %H:%M')}
         old = self._tasks.get(task_id) if updating else None
         return self._add_task(task_id, self._base(
             'cron', fn_ref, cron_expr=cron_expr,
