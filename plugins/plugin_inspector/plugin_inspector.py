@@ -264,7 +264,7 @@ class PluginInspector(GuiPlugin):
             if not show_all:
                 cbs = [e for e in cbs if e['namespace'] != 'app']
                 ns = event.partition('@')[0]
-                if ns in ('app', 'plugins', 'services'):
+                if ns in ('app', 'plugins', 'services', 'tasks'):
                     if not cbs:
                         continue
                     if info['count'] == 0 and all(cb['count'] == 0 for cb in cbs):

@@ -98,10 +98,7 @@ class EventBus:
         if ns:
             tags.append(f'(from {ns})')
         tag = ' '.join(tags)
-        if event.startswith('store:changed:') or event in ('services@registered', 'services@unregistered'):
-            pass
-        else:
-            self._logger.info('[eventbus] emit %s', tag)
+        # per-event stats
         meta = self._meta.get(event)
         if meta is None:
             self._meta[event] = {'count': 1, 'last_emit': time.time()}
@@ -115,6 +112,10 @@ class EventBus:
             self._emit_ns[event][ns]['last_emit'] = time.time()
 
         listeners = self._listeners.get(event, [])
+        is_noisy = event.startswith('store:changed:') or event in ('services@registered', 'services@unregistered')
+        if not is_noisy:
+            level = logging.DEBUG if not listeners else logging.INFO
+            self._logger.log(level, '[eventbus] emit %s → %d listener(s)', tag, len(listeners))
         t_emit = time.perf_counter() if (self._perf and ns) else 0
         if listeners:
             perf = self._perf

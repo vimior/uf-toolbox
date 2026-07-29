@@ -1,6 +1,11 @@
 @echo off
 :: ============================================================
-:: Nuitka build script for UF Toolbox
+:: Nuitka build script for UF Toolbox  (--onefile)
+:: ============================================================
+::
+:: Plugin .py files are compiled via --include-package for fast
+:: import, AND listed individually as --include-data-files so
+:: they exist on disk at runtime for pkgutil.iter_modules.
 :: ============================================================
 
 setlocal
@@ -19,15 +24,20 @@ python -m nuitka ^
     --include-package=i18n.en ^
     --include-package=plugins ^
     --include-package=plugins.plugin ^
-    --include-package=plugins.plugin_creator ^
-    --include-data-files=plugins\plugin_creator\__init__.py=plugins\plugin_creator\__init__.py ^
-    --include-data-files=plugins\plugin_creator\plugin_creator.py=plugins\plugin_creator\plugin_creator.py ^
     --include-package=plugins.plugin_guide ^
+    --include-package=plugins.plugin_creator ^
+    --include-package=plugins.plugin_inspector ^
+    --include-package=plugins.task_scheduler ^
     --include-data-files=plugins\plugin_guide\__init__.py=plugins\plugin_guide\__init__.py ^
     --include-data-files=plugins\plugin_guide\plugin_guide.py=plugins\plugin_guide\plugin_guide.py ^
-    --include-package=plugins.plugin_inspector ^
+    --include-data-files=plugins\plugin_creator\__init__.py=plugins\plugin_creator\__init__.py ^
+    --include-data-files=plugins\plugin_creator\plugin_creator.py=plugins\plugin_creator\plugin_creator.py ^
     --include-data-files=plugins\plugin_inspector\__init__.py=plugins\plugin_inspector\__init__.py ^
     --include-data-files=plugins\plugin_inspector\plugin_inspector.py=plugins\plugin_inspector\plugin_inspector.py ^
+    --include-data-files=plugins\task_scheduler\__init__.py=plugins\task_scheduler\__init__.py ^
+    --include-data-files=plugins\task_scheduler\task_scheduler.py=plugins\task_scheduler\task_scheduler.py ^
+    --include-data-files=plugins\task_scheduler\task_service.py=plugins\task_scheduler\task_service.py ^
+    --include-data-files=plugins\task_scheduler\_cron_utils.py=plugins\task_scheduler\_cron_utils.py ^
     --include-package=common ^
     --include-package=common.common ^
     --include-package=common.state ^
@@ -54,6 +64,8 @@ python -m nuitka ^
     --include-data-files=tools\tools_linux.json=tools\tools_linux.json ^
     --include-data-files=docs\plugin-guide.md=docs\plugin-guide.md ^
     --include-data-files=docs\plugin-guide-zh.md=docs\plugin-guide-zh.md ^
+    --include-data-files=docs\task-scheduler.md=docs\task-scheduler.md ^
+    --include-data-files=docs\task-scheduler-zh.md=docs\task-scheduler-zh.md ^
     --include-data-files=docs\tool-guide.md=docs\tool-guide.md ^
     --include-data-files=docs\tool-guide-zh.md=docs\tool-guide-zh.md ^
     --plugin-enable=tk-inter ^

@@ -324,6 +324,7 @@ class PluginManager:
                     self._inst = self._cls(app=namespaced_app)
                 else:
                     self._inst = self._cls(parent, namespaced_app)
+                    self._inst.withdraw()  # hide until positioned by _apply_window_setup
             except Exception as e:
                 self._mgr.logger.error(
                     f'[Plugin:{name}] init error: {e}')
@@ -484,6 +485,10 @@ class PluginManager:
         if handle.use_app_icon:
             app.emit('window:set-icon', win)
 
+        # Show the window now that it's positioned (was withdrawn during creation)
+        if handle._shown and win.winfo_exists():
+            win.deiconify()
+
     # -- control events ---------------------------------------------------
 
     def _setup_control_events(self):
@@ -556,6 +561,29 @@ class PluginManager:
         for h in self.plugins.values():
             if h.auto_start and not h.alive:
                 self.start_plugin(h, self._ctrl_app)
+        self._start_builtin_services()
+
+    def _start_builtin_services(self):
+        """Start built-in services that are not exported via __init__.py.
+
+        These services are invisible in the plugin menu and always run
+        in the background.  Each entry is a (import_path, class_name, namespace) tuple.
+        """
+        BUILTIN_SERVICES = [
+            ('plugins.task_scheduler.task_service', 'TasksService', 'tasks'),
+        ]
+        self._builtin_instances = getattr(self, '_builtin_instances', [])
+        for import_path, class_name, namespace in BUILTIN_SERVICES:
+            try:
+                mod = __import__(import_path, fromlist=[class_name])
+                cls = getattr(mod, class_name)
+                svc = cls(app=self._ctrl_app.module(namespace))
+                self._builtin_instances.append(svc)
+                self.logger.info('[PluginManager] built-in service started: %s', class_name)
+            except Exception as e:
+                self.logger.error(
+                    '[PluginManager] failed to start built-in service %s: %s',
+                    class_name, e)
 
     # -- AST-based metadata extraction (no import needed) --
 

@@ -79,6 +79,7 @@ class ServicePlugin:
 
     def __init__(self, app=None):
         self.app = app
+        self.root = app._app  # the root Tk window (for popups, toasts, etc.)
         self.store = self.app.store
         self.services = self.app.services
 
