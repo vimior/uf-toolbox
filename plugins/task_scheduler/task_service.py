@@ -82,7 +82,7 @@ class TasksService(ServicePlugin):
     # Fields preserved across edits
     _PRESERVE_ON_EDIT = ('count', 'errors', 'total_dur', 'avg_dur',
                          'max_dur', 'history', 'last_run',
-                         'created_at', 'failed', 'fired')
+                         'created_at', 'failed')
 
     def __init__(self, app=None):
         super().__init__(app)
@@ -327,7 +327,9 @@ class TasksService(ServicePlugin):
         Does NOT mutate *task* — state updates happen under lock in _fire.
         """
         def _call():
-            return self.services.call(target)
+            task_args = task.get('args', ())
+            task_kwargs = task.get('kwargs', {})
+            return self.services.call(target, *task_args, **task_kwargs)
 
         ok = False
         result = None
@@ -373,7 +375,7 @@ class TasksService(ServicePlugin):
                 raise ValueError(f"task_id '{task_id}' already exists")
 
     @staticmethod
-    def _base(typ, fn_ref, **kw):
+    def _base(typ, fn_ref, args=(), kwargs=None, **kw):
         return {'type': typ, 'fn_ref': fn_ref,
                 'auto_start': kw.get('auto_start', True),
                 'max_runs': kw.get('max_runs', 0) or 0,
@@ -381,6 +383,7 @@ class TasksService(ServicePlugin):
                 'enabled': True,
                 'last_run': 0, 'count': 0, 'errors': 0,
                 'total_dur': 0.0, 'avg_dur': 0.0, 'max_dur': 0.0,
+                'args': tuple(args), 'kwargs': dict(kwargs or {}),
                 'history': [],
                 'created_at': time.time(), **kw}
 
@@ -394,25 +397,27 @@ class TasksService(ServicePlugin):
         return task_id
 
     def _every(self, task_id, interval, fn_ref,
-               auto_start=True, max_runs=0, timeout=0, updating=False):
+               auto_start=True, max_runs=0, timeout=0, updating=False,
+               args=(), kwargs=None):
         self._require_new_id(task_id, updating=updating)
         extra = {}
         if not updating:
             extra['last_run'] = time.time()
         old = self._tasks.get(task_id) if updating else None
         return self._add_task(task_id, self._base(
-            'every', fn_ref, interval=float(interval),
+            'every', fn_ref, args=args, kwargs=kwargs,
+            interval=float(interval),
             auto_start=auto_start, max_runs=max_runs, timeout=timeout, **extra),
             old_task=old)
 
     def _once(self, task_id, delay, fn_ref, auto_start=True,
-              timeout=0, updating=False):
+              timeout=0, updating=False, args=(), kwargs=None):
         self._require_new_id(task_id, updating=updating)
         fire_at = self._resolve_once_fire_at(delay)
         old = self._tasks.get(task_id) if updating else None
         return self._add_task(task_id, self._base(
-            'once', fn_ref, delay=str(delay),
-            fire_at=fire_at,
+            'once', fn_ref, args=args, kwargs=kwargs,
+            delay=str(delay), fire_at=fire_at,
             auto_start=auto_start, timeout=timeout), old_task=old)
 
     @staticmethod
@@ -434,7 +439,8 @@ class TasksService(ServicePlugin):
         raise ValueError(f"Invalid delay value: {delay_str!r}") from None
 
     def _daily(self, task_id, time_str, fn_ref,
-               auto_start=True, max_runs=0, timeout=0, updating=False):
+               auto_start=True, max_runs=0, timeout=0, updating=False,
+               args=(), kwargs=None):
         self._require_new_id(task_id, updating=updating)
         h, m, s = self._parse_time(time_str)
         target_secs = h * 3600 + m * 60 + s
@@ -445,12 +451,14 @@ class TasksService(ServicePlugin):
             extra['last_day'] = now.strftime('%Y-%m-%d')
         old = self._tasks.get(task_id) if updating else None
         return self._add_task(task_id, self._base(
-            'daily', fn_ref, time_str=time_str,
+            'daily', fn_ref, args=args, kwargs=kwargs,
+            time_str=time_str,
             auto_start=auto_start, max_runs=max_runs, timeout=timeout,
             **extra), old_task=old)
 
     def _weekly(self, task_id, days, time_str, fn_ref,
-                auto_start=True, max_runs=0, timeout=0, updating=False):
+                auto_start=True, max_runs=0, timeout=0, updating=False,
+                args=(), kwargs=None):
         self._require_new_id(task_id, updating=updating)
         h, m, s = self._parse_time(time_str)
         target_secs = h * 3600 + m * 60 + s
@@ -462,17 +470,20 @@ class TasksService(ServicePlugin):
             extra['last_day'] = now.strftime('%Y-%m-%d')
         old = self._tasks.get(task_id) if updating else None
         return self._add_task(task_id, self._base(
-            'weekly', fn_ref, days=list(days), time_str=time_str,
+            'weekly', fn_ref, args=args, kwargs=kwargs,
+            days=list(days), time_str=time_str,
             auto_start=auto_start, max_runs=max_runs, timeout=timeout,
             **extra), old_task=old)
 
     def _cron(self, task_id, cron_expr, fn_ref,
-              auto_start=True, max_runs=0, timeout=0, updating=False):
+              auto_start=True, max_runs=0, timeout=0, updating=False,
+              args=(), kwargs=None):
         self._require_new_id(task_id, updating=updating)
         extra = {'last_minute': datetime.now().strftime('%Y-%m-%d %H:%M')}
         old = self._tasks.get(task_id) if updating else None
         return self._add_task(task_id, self._base(
-            'cron', fn_ref, cron_expr=cron_expr,
+            'cron', fn_ref, args=args, kwargs=kwargs,
+            cron_expr=cron_expr,
             auto_start=auto_start, max_runs=max_runs, timeout=timeout, **extra),
             old_task=old)
 
@@ -588,6 +599,8 @@ class TasksService(ServicePlugin):
             'auto_start': task.get('auto_start', True),
             'max_runs': task.get('max_runs', 0),
             'timeout': task.get('timeout', 0),
+            'args': task.get('args', ()),
+            'kwargs': task.get('kwargs', {}),
             'count': task['count'], 'errors': task['errors'],
             'avg_ms': int(task['avg_dur'] * 1000),
             'max_ms': int(task['max_dur'] * 1000),

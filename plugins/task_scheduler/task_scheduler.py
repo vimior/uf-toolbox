@@ -195,8 +195,8 @@ class TaskScheduler(GuiPlugin):
     def __init__(self, parent=None, app=None):
         super().__init__(parent, app)
 
-        lang_name = getattr(self.app, 'current_lang_name', 'en')
-        theme_name = getattr(self.app, 'current_theme_name', 'dark')
+        lang_name = self.app.current_lang_name
+        theme_name = self.app.current_theme_name
         self._l = _LANG.get(lang_name, _LANG['en'])
         self._s = _STYLE.get(theme_name, _STYLE['dark'])
         s = self._s
@@ -204,7 +204,7 @@ class TaskScheduler(GuiPlugin):
 
         self.title(l['title'])
         self.resizable(True, True)
-        self.minsize(520, 200)
+        self.minsize(666, 520)
         self.configure(bg=s['bg'])
 
         self._rows = {}
@@ -246,7 +246,7 @@ class TaskScheduler(GuiPlugin):
         hdr = tk.Frame(self, bg=s['bar'])
         hdr.pack(fill=tk.X, side=tk.TOP, padx=4, pady=(2, 0))
         hdr_lbls = [l['col_id'], l['col_type'], l['col_last'], l['col_status']]
-        hdr_widths = (14, 6, None, 6)
+        hdr_widths = (45, 6, None, 6)
         for label, w in zip(hdr_lbls, hdr_widths):
             kw = {'width': w} if w else {}
             tk.Label(hdr, text=label, font=('Consolas', 10, 'bold'),
@@ -427,7 +427,7 @@ class TaskScheduler(GuiPlugin):
 
         row.bind('<Button-1>', lambda e, t=tid: self._toggle_expand(t))
         lbls = []
-        widths = (14, 6, None, 6)
+        widths = (45, 6, None, 6)
         for v, w in zip(vals, widths):
             kw = {'width': w} if w else {}
             lbl = tk.Label(row, text=str(v)[:30], font=('Consolas', 10),
@@ -696,6 +696,12 @@ class TaskScheduler(GuiPlugin):
         refs['stats_frame'].pack(fill=tk.X, padx=12, pady=(0, 2))
 
         config = []
+        task_args = item.get('args')
+        if task_args:
+            config.append(f'Args: {", ".join(task_args)}')
+        task_kwargs = item.get('kwargs')
+        if task_kwargs:
+            config.append(f'Kwargs: {", ".join(f"{k}={v}" for k, v in task_kwargs.items())}')
         if item.get('max_runs'):
             config.append(f'Max runs: {item["max_runs"]}')
         if item.get('timeout'):
@@ -749,7 +755,7 @@ class TaskScheduler(GuiPlugin):
         dlg = tk.Toplevel(self)
         dlg.withdraw()  # hide until fully built and positioned
         dlg.title(l['edit_task'] if editing else l['add_task_title'])
-        dlg.resizable(False, False)
+        dlg.resizable(True, True)
         dlg.configure(bg=s['bg'])
         dlg.transient(self)
         self._form_win = dlg
@@ -909,6 +915,64 @@ class TaskScheduler(GuiPlugin):
                  bg=s['bg'], fg=s['hint'], anchor='w', justify=tk.LEFT).pack(
             fill=tk.X, padx=22, pady=(1, 2))
 
+        # ---- args (positional) ----
+        f = tk.Frame(dlg, bg=s['bg']); f.pack(fill=tk.X, **P)
+        tk.Label(f, text='Args', font=('Consolas', 9), bg=s['bg'],
+                 fg=s['hint'], width=12, anchor='w').pack(side=tk.LEFT)
+        saved_args = item.get('args', ())
+        args_var = tk.StringVar(value=', '.join(saved_args) if saved_args else '')
+        tk.Entry(f, textvariable=args_var, font=('Consolas', 9),
+                 bg=s['card'], fg=s['fg'], insertbackground=s['fg'],
+                 relief=tk.FLAT).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        tk.Label(dlg, text='  逗号分隔，如: hello, 42', font=('Consolas', 7),
+                 bg=s['bg'], fg=s['hint'], anchor='w').pack(
+            fill=tk.X, padx=22, pady=(0, 2))
+
+        # ---- kwargs (keyword) ----
+        f = tk.Frame(dlg, bg=s['bg']); f.pack(fill=tk.X, **P)
+        tk.Label(f, text='Kwargs', font=('Consolas', 9), bg=s['bg'],
+                 fg=s['hint'], width=12, anchor='w').pack(side=tk.LEFT)
+        add_kv_btn = tk.Label(f, text='＋', font=('Consolas', 10, 'bold'),
+                               bg=s['bar'], fg=s['accent'], padx=8,
+                               cursor='hand2')
+        add_kv_btn.pack(side=tk.RIGHT)
+
+        # ---- kv_frame placeholder (packed before options) ----
+        kv_frame = tk.Frame(dlg, bg=s['bg'])
+        kv_frame.pack(fill=tk.X)
+        kv_rows = []  # list of (key_var, val_var, row_frame)
+        saved_kwargs = item.get('kwargs', {})
+
+        def _add_kv_row(key='', value=''):
+            row = tk.Frame(kv_frame, bg=s['bg'])
+            row.pack(fill=tk.X)
+            key_var = tk.StringVar(value=key)
+            val_var = tk.StringVar(value=value)
+            tk.Entry(row, textvariable=key_var, font=('Consolas', 9),
+                     bg=s['card'], fg=s['fg'], insertbackground=s['fg'],
+                     relief=tk.FLAT, width=12).pack(side=tk.LEFT, padx=(0, 4))
+            tk.Entry(row, textvariable=val_var, font=('Consolas', 9),
+                     bg=s['card'], fg=s['fg'], insertbackground=s['fg'],
+                     relief=tk.FLAT).pack(side=tk.LEFT, fill=tk.X, expand=True)
+            del_btn = tk.Label(row, text='✕', font=('Consolas', 9),
+                               bg=s['bg'], fg=s['dead'], padx=4, cursor='hand2')
+            del_btn.pack(side=tk.RIGHT)
+            del_btn.bind('<Button-1>', lambda e, r=row: _remove_kv_row(r))
+            kv_rows.append((key_var, val_var, row))
+
+        def _remove_kv_row(row):
+            for i, (k, v, r) in enumerate(kv_rows):
+                if r is row:
+                    row.destroy()
+                    kv_rows.pop(i)
+                    break
+
+        add_kv_btn.bind('<Button-1>', lambda e: _add_kv_row())
+
+        if saved_kwargs:
+            for k, v in saved_kwargs.items():
+                _add_kv_row(k, v)
+
         # ---- options ----
         opt = tk.Frame(dlg, bg=s['bg']); opt.pack(fill=tk.X, **P)
         auto_var = tk.BooleanVar(value=item.get('auto_start', True))
@@ -981,6 +1045,15 @@ class TaskScheduler(GuiPlugin):
 
             au = auto_var.get()
 
+            # ---- args & kwargs ----
+            args_str = args_var.get().strip()
+            task_args = tuple(a.strip() for a in args_str.split(',') if a.strip()) if args_str else ()
+            task_kwargs = {}
+            for k, v, r in kv_rows:
+                key = k.get().strip()
+                if key:
+                    task_kwargs[key] = v.get().strip()
+
             try:
                 if not editing and tid in self._all_tasks():
                     err_var.set(l['form_validate_dup']); return
@@ -1000,31 +1073,32 @@ class TaskScheduler(GuiPlugin):
                         err_var.set(l['form_validate_interval']); return
                     result = self._srv('create_every', tid, fv, fn,
                               auto_start=au, max_runs=mr, timeout=to,
-                              updating=editing)
+                              updating=editing, args=task_args, kwargs=task_kwargs)
                 elif tp == 'once':
                     val = _get_once_value()
                     if not val:
                         err_var.set(l['form_validate_delay']); return
                     result = self._srv('create_once', tid, val, fn,
-                              auto_start=au, timeout=to, updating=editing)
+                              auto_start=au, timeout=to, updating=editing,
+                              args=task_args, kwargs=task_kwargs)
                 elif tp == 'daily':
                     result = self._srv('create_daily', tid, daily_time(), fn,
                               auto_start=au, max_runs=mr, timeout=to,
-                              updating=editing)
+                              updating=editing, args=task_args, kwargs=task_kwargs)
                 elif tp == 'weekly':
                     days = [i for i, v in day_vars.items() if v.get()]
                     if not days:
                         err_var.set(l['form_validate_days']); return
                     result = self._srv('create_weekly', tid, days, weekly_time(), fn,
                               auto_start=au, max_runs=mr, timeout=to,
-                              updating=editing)
+                              updating=editing, args=task_args, kwargs=task_kwargs)
                 elif tp == 'cron':
                     expr = cron_var.get().strip()
                     if expr and not validate_cron(expr):
                         err_var.set(l['form_validate_cron']); return
                     result = self._srv('create_cron', tid, expr, fn,
                               auto_start=au, max_runs=mr, timeout=to,
-                              updating=editing)
+                              updating=editing, args=task_args, kwargs=task_kwargs)
                 if result is None:
                     err_var.set('Service unavailable')
                     return
