@@ -12,11 +12,16 @@ from .common import logger
 from .infra import Infrastructure
 from .infra.utils import _resolve_name
 
-_CONFIG_PATH = os.path.join(os.path.expanduser('~'), '.uf_toolbox.json')
+_CONFIG_DIR = os.path.join(os.path.expanduser('~'), '.uf_toolbox')
+_CONFIG_PATH = os.path.join(_CONFIG_DIR, 'config.json')
 
 
 class AppState:
     """Cross-component shared state. Writes use set_xxx() methods."""
+
+    @property
+    def config_dir(self):
+        return _CONFIG_DIR
 
     # ---- event bus / store / services -------------------------------
 
@@ -225,6 +230,7 @@ class AppState:
 
     def _save_config(self):
         try:
+            os.makedirs(_CONFIG_DIR, exist_ok=True)
             with open(_CONFIG_PATH, 'w', encoding='utf-8') as f:
                 json.dump(self._config, f)
         except Exception:

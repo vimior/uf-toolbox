@@ -4,9 +4,10 @@
 Requires TasksService (task_service.py) to be running at the app level.
 Communicates via services: tasks@list, tasks@get, tasks@create_*, etc.
 """
+import json
 import time
 import tkinter as tk
-from tkinter import ttk
+from tkinter import filedialog, messagebox, ttk
 
 from plugins.plugin import GuiPlugin
 from plugins.plugin_guide.plugin_guide import PluginGuide
@@ -30,6 +31,8 @@ _LANG = {
         'title':           '任务调度器',
         'no_tasks':        '暂无任务',
         'add_task':        '+ 新建',
+        'import_tasks':    '导入',
+        'export_tasks':    '导出',
         'pause_all':       '全部暂停',
         'resume_all':      '全部恢复',
         'status_failed':   '失败',
@@ -48,8 +51,10 @@ _LANG = {
         'form_task_id':    '任务 ID',
         'form_type':       '类型',
         'form_interval':   '间隔 (秒)',
-        'form_delay':      '延迟 (秒)',
-        'form_at':         '指定时间',
+        'form_start_time': '起始时间',
+        'form_start_time_hint': '可选，计时锚点 (HH:MM:SS / 时间戳 / 日期时间)',
+        'form_delay':      '延迟/时间',
+        'form_delay_hint': '相对秒数 / HH:MM:SS / 日期时间(如 2026-08-05 14:30:00)',
         'form_time':       '时间',
         'form_days':       '星期',
         'form_cron':       'Cron 表达式',
@@ -73,6 +78,8 @@ _LANG = {
         'title':           'Task Scheduler',
         'no_tasks':        'No tasks',
         'add_task':        '+ Add',
+        'import_tasks':    'Import',
+        'export_tasks':    'Export',
         'pause_all':       'Pause All',
         'resume_all':      'Resume All',
         'status_failed':   'failed',
@@ -91,8 +98,10 @@ _LANG = {
         'form_task_id':    'Task ID',
         'form_type':       'Type',
         'form_interval':   'Interval (s)',
-        'form_delay':      'Delay (s)',
-        'form_at':         'At Time',
+        'form_start_time': 'Start Time',
+        'form_start_time_hint': 'Optional anchor (HH:MM:SS / timestamp / datetime)',
+        'form_delay':      'Delay',
+        'form_delay_hint': 'relative secs / HH:MM:SS / datetime (e.g. 2026-08-05 14:30:00)',
         'form_time':       'Time',
         'form_days':       'Days',
         'form_cron':       'Cron',
@@ -232,6 +241,8 @@ class TaskScheduler(GuiPlugin):
         self._pause_btn.pack(side=tk.RIGHT, padx=2, pady=5)
 
         for text, cmd in [
+            (l['import_tasks'], self._import_tasks),
+            (l['export_tasks'], self._export_tasks),
             (l['add_task'], self._show_form),
             ('?', self._show_help),
         ]:
@@ -480,7 +491,11 @@ class TaskScheduler(GuiPlugin):
             self._srv('pause', tid)
         else:
             self._srv('resume', tid)
-        self._rebuild_ui()
+        # update just this row's group to prevent _refresh_display from rebuilding
+        item = self._srv('get', tid)
+        if item and tid in self._rows:
+            self._rows[tid]['group'] = self._task_group(item)
+        self._refresh_display()
 
     def _do_cancel(self, tid):
         self._srv('cancel', tid)
@@ -497,7 +512,199 @@ class TaskScheduler(GuiPlugin):
                 if not t.get('enabled') and not t.get('failed'):
                     self._srv('resume', t['id'])
             self._pause_btn.config(text=self._l['pause_all'])
+        # sync all row groups to avoid rebuild
+        tasks = self._all_tasks()
+        for tid, row in self._rows.items():
+            t = tasks.get(tid)
+            if t:
+                row['group'] = self._task_group(t)
+        self._refresh_display()
+
+    # ===================================================================
+    #  import / export
+    # ===================================================================
+
+    _COMMON_KEYS = ('id', 'type', 'fn_ref', 'auto_start', 'enabled',
+                    'max_runs', 'timeout', 'args', 'kwargs', 'created_at')
+    _EXPORT_KEYS = {
+        'every':  _COMMON_KEYS + ('interval', 'start_time'),
+        'once':   _COMMON_KEYS + ('delay',),
+        'daily':  _COMMON_KEYS + ('time_str',),
+        'weekly': _COMMON_KEYS + ('days', 'time_str'),
+        'cron':   _COMMON_KEYS + ('cron_expr',),
+    }
+
+    def _export_tasks(self):
+        tasks = self._all_tasks()
+        if not tasks:
+            messagebox.showinfo(self._l['export_tasks'], self._l['no_tasks'])
+            return
+
+        dlg = tk.Toplevel(self)
+        dlg.title(self._l['export_tasks'])
+        dlg.configure(bg=self._s['bg'])
+        dlg.transient(self)
+        dlg.resizable(False, True)
+        dlg.minsize(280, 200)
+        dlg.geometry('+{}+{}'.format(self.winfo_rootx() + 60,
+                                      self.winfo_rooty() + 60))
+        self.app.emit('app@window:set-icon', dlg)
+
+        def _do_export():
+            export_list = []
+            for tid, var in check_vars.items():
+                if var.get() and tid in tasks:
+                    t = tasks[tid]
+                    keys = self._EXPORT_KEYS.get(t['type'], self._COMMON_KEYS)
+                    item = {}
+                    for k in keys:
+                        v = t.get(k)
+                        if v is not None and v != '' and v != [] and v != {}:
+                            item[k] = v
+                    export_list.append(item)
+            if not export_list:
+                return
+            path = filedialog.asksaveasfilename(
+                parent=dlg, defaultextension='.json',
+                filetypes=[('JSON', '*.json')])
+            if path:
+                try:
+                    with open(path, 'w', encoding='utf-8') as f:
+                        json.dump({'tasks': export_list,
+                                   'exported_at': time.strftime('%Y-%m-%d %H:%M:%S')},
+                                  f, ensure_ascii=False, indent=2)
+                    dlg.destroy()
+                except Exception as e:
+                    messagebox.showerror('Error', str(e))
+
+        # top bar: select-all + save button
+        top_bar = tk.Frame(dlg, bg=self._s['bg'])
+        top_bar.pack(fill=tk.X, padx=10, pady=(8, 4))
+        select_all_var = tk.BooleanVar(value=True)
+        cb_all = tk.Checkbutton(top_bar, text='全选', variable=select_all_var,
+                                font=('Consolas', 10), bg=self._s['bg'],
+                                fg=self._s['fg'], selectcolor=self._s['card'],
+                                activebackground=self._s['bg'],
+                                activeforeground=self._s['fg'])
+        cb_all.pack(side=tk.LEFT)
+        tk.Button(top_bar, text='保存', command=_do_export,
+                  bg=self._s['accent'], fg=self._s['accent_fg'],
+                  relief=tk.FLAT, padx=16,
+                  font=('Consolas', 9, 'bold')).pack(side=tk.RIGHT, padx=4)
+
+        # scrollable checkbox area
+        canvas = tk.Canvas(dlg, bg=self._s['bg'], highlightthickness=0)
+        scrollbar = tk.Scrollbar(dlg, orient=tk.VERTICAL, width=6,
+                                  command=canvas.yview)
+        inner = tk.Frame(canvas, bg=self._s['bg'])
+        canvas.create_window((0, 0), window=inner, anchor='nw', tags=('inner',))
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(12, 0))
+        canvas.bind('<Configure>', lambda e: canvas.itemconfig('inner', width=e.width))
+        inner.bind('<Configure>', lambda e: (
+            canvas.configure(scrollregion=canvas.bbox('all')),
+            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            if canvas.bbox('all')[3] > canvas.winfo_height()
+            else scrollbar.pack_forget()))
+        canvas.bind('<Enter>', lambda e: canvas.bind_all(
+            '<MouseWheel>', lambda ev: canvas.yview_scroll(
+                int(-ev.delta / 120), 'units')))
+        canvas.bind('<Leave>', lambda e: canvas.unbind_all('<MouseWheel>'))
+
+        # task checkboxes inside scrollable area
+        check_vars = {}
+        for tid, t in sorted(tasks.items()):
+            var = tk.BooleanVar(value=True)
+            check_vars[tid] = var
+            cb = tk.Checkbutton(inner, text=f'{tid}  ({t["type"]})',
+                                variable=var, font=('Consolas', 9),
+                                bg=self._s['bg'], fg=self._s['fg'],
+                                selectcolor=self._s['card'],
+                                activebackground=self._s['bg'],
+                                activeforeground=self._s['fg'])
+            cb.pack(anchor='w', padx=8, pady=1)
+
+        def _toggle_all():
+            v = select_all_var.get()
+            for var in check_vars.values():
+                var.set(v)
+
+        cb_all.config(command=_toggle_all)
+
+    def _import_tasks(self):
+        path = filedialog.askopenfilename(
+            parent=self, filetypes=[('JSON', '*.json')])
+        if not path:
+            return
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception as e:
+            messagebox.showerror('Error', str(e))
+            return
+
+        items = data.get('tasks', data) if isinstance(data, dict) else data
+        if not isinstance(items, list):
+            return
+
+        existing = self._all_tasks()
+        added = 0
+        skipped = 0
+        for item in items:
+            if not isinstance(item, dict) or 'id' not in item:
+                continue
+            tid = item['id']
+            if tid in existing:
+                skipped += 1
+                continue
+            tp = item.get('type', 'every')
+            fn = item.get('fn_ref', '')
+            if not fn:
+                continue
+            # extra kwargs = exported keys minus id/type/fn_ref/positional/enabled/created_at
+            _POS_ARGS = {'every': ('interval',), 'once': ('delay',),
+                         'daily': ('time_str',), 'weekly': ('days', 'time_str'),
+                         'cron': ('cron_expr',)}
+            _SKIP_EXTRA = ('id', 'type', 'fn_ref', 'enabled', 'created_at')
+            allowed = [k for k in self._EXPORT_KEYS.get(tp, self._COMMON_KEYS)
+                       if k not in _SKIP_EXTRA
+                       and k not in _POS_ARGS.get(tp, ())]
+            extra = {k: item[k] for k in allowed if k in item}
+            try:
+                if tp == 'every':
+                    self._srv('create_every', tid, item.get('interval', 60), fn,
+                              updating=False, **extra)
+                elif tp == 'once':
+                    self._srv('create_once', tid, item.get('delay', ''), fn,
+                              updating=False, **extra)
+                elif tp == 'daily':
+                    self._srv('create_daily', tid, item.get('time_str', '00:00'), fn,
+                              updating=False, **extra)
+                elif tp == 'weekly':
+                    self._srv('create_weekly', tid, item.get('days', []),
+                              item.get('time_str', '00:00'), fn,
+                              updating=False, **extra)
+                elif tp == 'cron':
+                    self._srv('create_cron', tid, item.get('cron_expr', '* * * * *'), fn,
+                              updating=False, **extra)
+                else:
+                    skipped += 1
+                    continue
+                added += 1
+                # restore paused state
+                if not item.get('enabled', True):
+                    self._srv('pause', tid)
+            except ValueError:
+                skipped += 1  # duplicate ID
+            except Exception as e:
+                skipped += 1
+                import traceback
+                traceback.print_exc()
+
         self._rebuild_ui()
+        messagebox.showinfo(
+            self._l['import_tasks'],
+            f'导入 {added} 个任务，跳过 {skipped} 个')
 
     def _refresh_display(self):
         s = self._s
@@ -676,6 +883,9 @@ class TaskScheduler(GuiPlugin):
                 stats.append(f'At: {dly}')
         elif tp == 'every':
             stats.append(f'Interval: {item.get("interval", "?")}s')
+            st = item.get('start_time')
+            if st:
+                stats.append(f'Start: {time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(st))}')
         elif tp == 'daily':
             stats.append(f'At: {item.get("time_str", "?")}')
         elif tp == 'weekly':
@@ -755,7 +965,7 @@ class TaskScheduler(GuiPlugin):
         dlg = tk.Toplevel(self)
         dlg.withdraw()  # hide until fully built and positioned
         dlg.title(l['edit_task'] if editing else l['add_task_title'])
-        dlg.resizable(True, True)
+        dlg.resizable(False, True)
         dlg.configure(bg=s['bg'])
         dlg.transient(self)
         self._form_win = dlg
@@ -764,6 +974,9 @@ class TaskScheduler(GuiPlugin):
         self.app.emit('app@window:set-icon', dlg)
 
         P = {'padx': 10, 'pady': 3}
+
+        # top spacer
+        tk.Frame(dlg, bg=s['bg'], height=6).pack(fill=tk.X)
 
         # ---- task_id ----
         f = tk.Frame(dlg, bg=s['bg']); f.pack(fill=tk.X, **P)
@@ -797,75 +1010,148 @@ class TaskScheduler(GuiPlugin):
 
         every_f = tk.Frame(detail, bg=s['bg'])
         tk.Label(every_f, text=l['form_interval'], font=('Consolas', 9),
-                 bg=s['bg'], fg=s['hint'], anchor='w').pack(side=tk.LEFT)
+                 bg=s['bg'], fg=s['hint'], anchor='w', width=10).pack(
+            side=tk.LEFT, padx=(0, 8))
         every_var = tk.StringVar(value=str(item.get('interval', '')))
         tk.Entry(every_f, textvariable=every_var, font=('Consolas', 9),
                  bg=s['card'], fg=s['fg'], insertbackground=s['fg'],
                  relief=tk.FLAT, width=8).pack(side=tk.LEFT, padx=4)
 
-        once_f = tk.Frame(detail, bg=s['bg'])
-        dly = str(item.get('delay', ''))
-        once_mode = tk.StringVar(value='at' if ':' in dly else 'delay')
-        tk.Radiobutton(once_f, text=l['form_delay'], variable=once_mode,
-                       value='delay', font=('Consolas', 9), bg=s['bg'],
-                       fg=s['fg'], selectcolor=s['card'],
-                       activebackground=s['bg'], activeforeground=s['fg'],
-                       command=lambda: _toggle_once()).pack(side=tk.LEFT, padx=2)
-        tk.Radiobutton(once_f, text=l['form_at'], variable=once_mode,
-                       value='at', font=('Consolas', 9), bg=s['bg'],
-                       fg=s['fg'], selectcolor=s['card'],
-                       activebackground=s['bg'], activeforeground=s['fg'],
-                       command=lambda: _toggle_once()).pack(side=tk.LEFT, padx=2)
-
-        once_delay_f = tk.Frame(once_f, bg=s['bg'])
-        once_delay_var = tk.StringVar(value=dly if dly and ':' not in dly else '')
-        tk.Entry(once_delay_f, textvariable=once_delay_var, font=('Consolas', 9),
+        every_start_f = tk.Frame(detail, bg=s['bg'])
+        tk.Label(every_start_f, text=l['form_start_time'], font=('Consolas', 9),
+                 bg=s['bg'], fg=s['hint'], anchor='w', width=10).pack(
+            side=tk.LEFT, padx=(0, 8))
+        saved_start = item.get('start_time')
+        every_start_var = tk.StringVar(
+            value=time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(saved_start))
+            if saved_start else '')
+        tk.Entry(every_start_f, textvariable=every_start_var, font=('Consolas', 9),
                  bg=s['card'], fg=s['fg'], insertbackground=s['fg'],
-                 relief=tk.FLAT, width=8).pack(side=tk.LEFT, padx=6)
+                 relief=tk.FLAT, width=18).pack(side=tk.LEFT, padx=4)
 
-        once_at_f = tk.Frame(once_f, bg=s['bg'])
-        once_at_time = _make_time_picker(once_at_f, dly if ':' in dly else '')
+        every_picker_btn = tk.Label(every_start_f, text=' 🕐', font=('Consolas', 10),
+                                    bg=s['bg'], fg=s['hint'], cursor='hand2')
+        every_picker_btn.pack(side=tk.LEFT)
 
-        def _toggle_once():
-            once_delay_f.pack_forget()
-            once_at_f.pack_forget()
-            if once_mode.get() == 'delay':
-                once_delay_f.pack(side=tk.LEFT)
+        # inline time picker — toggles to the right of the button
+        every_start_picker_f = tk.Frame(every_start_f, bg=s['bg'])
+        get_every_start_time = _make_time_picker(every_start_picker_f,
+            every_start_var.get() if ':' in every_start_var.get() else '')
+
+        def _merge_every_start():
+            picked = get_every_start_time()
+            current = every_start_var.get().strip()
+            if not current:
+                every_start_var.set(picked)
+            elif len(current) >= 19 and current[4] == '-' and current[10] == ' ':
+                every_start_var.set(current[:11] + picked)
+            elif len(current) == 10 and current[4] == '-':
+                every_start_var.set(current + ' ' + picked)
             else:
-                once_at_f.pack(side=tk.LEFT)
+                every_start_var.set(picked)
 
-        _toggle_once()
+        tk.Button(every_start_picker_f, text='✓',
+                  command=lambda: (_merge_every_start(),
+                                   every_start_picker_f.pack_forget(),
+                                   every_start_hint.pack(side=tk.LEFT, padx=(2, 0))),
+                  bg=s['accent'], fg=s['accent_fg'], relief=tk.FLAT, padx=8,
+                  font=('Consolas', 9, 'bold')).pack(side=tk.LEFT, padx=4)
 
-        def _get_once_value():
-            if once_mode.get() == 'delay':
-                return once_delay_var.get().strip()
+        def _toggle_every_start_picker():
+            if every_start_picker_f.winfo_ismapped():
+                every_start_picker_f.pack_forget()
+                every_start_hint.pack(side=tk.LEFT, padx=(2, 0))
             else:
-                return once_at_time()
+                every_start_hint.pack_forget()
+                every_start_picker_f.pack(side=tk.LEFT, padx=(4, 0))
+
+        every_picker_btn.bind('<Button-1>', lambda e: _toggle_every_start_picker())
+
+        every_start_hint = tk.Label(every_start_f, text=l['form_start_time_hint'],
+                                    font=('Consolas', 7), bg=s['bg'], fg=s['hint'])
+        every_start_hint.pack(side=tk.LEFT, padx=(2, 0))
+
+        once_f = tk.Frame(detail, bg=s['bg'])
+        tk.Label(once_f, text=l['form_delay'], font=('Consolas', 9),
+                 bg=s['bg'], fg=s['hint'], anchor='w', width=10).pack(
+            side=tk.LEFT, padx=(0, 8))
+        once_delay_var = tk.StringVar(value=str(item.get('delay', '')))
+        tk.Entry(once_f, textvariable=once_delay_var, font=('Consolas', 9),
+                 bg=s['card'], fg=s['fg'], insertbackground=s['fg'],
+                 relief=tk.FLAT, width=18).pack(side=tk.LEFT, padx=4)
+
+        picker_btn = tk.Label(once_f, text=' 🕐', font=('Consolas', 10),
+                              bg=s['bg'], fg=s['hint'], cursor='hand2')
+        picker_btn.pack(side=tk.LEFT)
+
+        # inline time picker — toggles to the right of the button
+        once_time_f = tk.Frame(once_f, bg=s['bg'])
+        get_once_time = _make_time_picker(once_time_f,
+            once_delay_var.get() if ':' in once_delay_var.get() else '')
+
+        def _merge_time():
+            picked = get_once_time()
+            current = once_delay_var.get().strip()
+            if not current:
+                once_delay_var.set(picked)
+            elif len(current) >= 19 and current[4] == '-' and current[10] == ' ':
+                once_delay_var.set(current[:11] + picked)
+            elif len(current) == 10 and current[4] == '-':
+                once_delay_var.set(current + ' ' + picked)
+            else:
+                once_delay_var.set(picked)
+
+        tk.Button(once_time_f, text='✓',
+                  command=lambda: (_merge_time(), once_time_f.pack_forget()),
+                  bg=s['accent'], fg=s['accent_fg'], relief=tk.FLAT, padx=8,
+                  font=('Consolas', 9, 'bold')).pack(side=tk.LEFT, padx=4)
+
+        def _toggle_time_picker():
+            if once_time_f.winfo_ismapped():
+                once_time_f.pack_forget()
+            else:
+                once_time_f.pack(side=tk.LEFT, padx=(4, 0))
+
+        picker_btn.bind('<Button-1>', lambda e: _toggle_time_picker())
+
+        once_hint = tk.Label(once_f, text=l['form_delay_hint'], font=('Consolas', 7),
+                             bg=s['bg'], fg=s['hint'], anchor='w')
+        once_hint.pack(fill=tk.X, padx=(4, 0), pady=(1, 2))
 
         daily_f = tk.Frame(detail, bg=s['bg'])
         tk.Label(daily_f, text=l['form_time'], font=('Consolas', 9),
-                 bg=s['bg'], fg=s['hint'], anchor='w').pack(side=tk.LEFT)
+                 bg=s['bg'], fg=s['hint'], anchor='w', width=10).pack(
+            side=tk.LEFT, padx=(0, 8))
         daily_time = _make_time_picker(daily_f, item.get('time_str', ''))
 
         weekly_f = tk.Frame(detail, bg=s['bg'])
-        tk.Label(weekly_f, text=l['form_days'], font=('Consolas', 9),
-                 bg=s['bg'], fg=s['hint'], anchor='w').pack(side=tk.LEFT)
+        # row 1: days
+        weekly_days_f = tk.Frame(weekly_f, bg=s['bg'])
+        tk.Label(weekly_days_f, text=l['form_days'], font=('Consolas', 9),
+                 bg=s['bg'], fg=s['hint'], anchor='w', width=10).pack(
+            side=tk.LEFT, padx=(0, 8))
         day_vars = {}
         saved_days = set(item.get('days') or [])
         for i, name in enumerate(_WEEKDAY_NAMES):
             day_vars[i] = tk.BooleanVar(value=i in saved_days)
-            tk.Checkbutton(weekly_f, text=name, variable=day_vars[i],
+            tk.Checkbutton(weekly_days_f, text=name, variable=day_vars[i],
                            font=('Consolas', 8), bg=s['bg'], fg=s['fg'],
                            selectcolor=s['card'],
                            activebackground=s['bg'],
                            activeforeground=s['fg']).pack(side=tk.LEFT, padx=2)
-        tk.Label(weekly_f, text=f'  {l["form_time"]}', font=('Consolas', 9),
-                 bg=s['bg'], fg=s['hint']).pack(side=tk.LEFT)
-        weekly_time = _make_time_picker(weekly_f, item.get('time_str', ''))
+        weekly_days_f.pack(fill=tk.X, pady=(0, 3))
+        # row 2: time
+        weekly_time_f = tk.Frame(weekly_f, bg=s['bg'])
+        tk.Label(weekly_time_f, text=l['form_time'], font=('Consolas', 9),
+                 bg=s['bg'], fg=s['hint'], anchor='w', width=10).pack(
+            side=tk.LEFT, padx=(0, 8))
+        weekly_time = _make_time_picker(weekly_time_f, item.get('time_str', ''))
+        weekly_time_f.pack(fill=tk.X)
 
         cron_f = tk.Frame(detail, bg=s['bg'])
         tk.Label(cron_f, text=l['form_cron'], font=('Consolas', 9),
-                 bg=s['bg'], fg=s['hint'], anchor='w').pack(side=tk.LEFT)
+                 bg=s['bg'], fg=s['hint'], anchor='w', width=10).pack(
+            side=tk.LEFT, padx=(0, 8))
         cron_var = tk.StringVar(value=item.get('cron_expr', ''))
         tk.Entry(cron_f, textvariable=cron_var, font=('Consolas', 9),
                  bg=s['card'], fg=s['fg'], insertbackground=s['fg'],
@@ -875,14 +1161,25 @@ class TaskScheduler(GuiPlugin):
                                  bg=s['bg'], fg=s['hint'])
         cron_preview.pack(side=tk.LEFT, padx=4)
 
-        _type_frames = {'every': every_f, 'once': once_f,
+        _type_frames = {'every': [every_f, every_start_f], 'once': once_f,
                         'daily': daily_f, 'weekly': weekly_f, 'cron': cron_f}
 
         def _toggle_type():
+            once_time_f.pack_forget()
             for f2 in _type_frames.values():
-                f2.pack_forget()
+                if isinstance(f2, list):
+                    for item in f2:
+                        item.pack_forget()
+                else:
+                    f2.pack_forget()
             sel = type_var.get()
-            _type_frames[sel].pack(fill=tk.X)
+            frames = _type_frames[sel]
+            if isinstance(frames, list):
+                for i, item in enumerate(frames):
+                    extra = (4, 0) if i > 0 else (2, 0)
+                    item.pack(fill=tk.X, pady=extra)
+            else:
+                frames.pack(fill=tk.X, pady=(2, 0))
             if sel == 'once':
                 max_runs_frame.pack_forget()
             else:
@@ -911,9 +1208,14 @@ class TaskScheduler(GuiPlugin):
         tk.Entry(f, textvariable=fn_var, font=('Consolas', 9),
                  bg=s['card'], fg=s['fg'], insertbackground=s['fg'],
                  relief=tk.FLAT).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        tk.Label(dlg, text=l['form_target_hint'], font=('Consolas', 7),
+        # hint aligned with input field
+        target_hint_f = tk.Frame(dlg, bg=s['bg'])
+        target_hint_f.pack(fill=tk.X, padx=10, pady=(1, 2))
+        tk.Label(target_hint_f, text='', font=('Consolas', 9), bg=s['bg'],
+                 width=12).pack(side=tk.LEFT)
+        tk.Label(target_hint_f, text=l['form_target_hint'], font=('Consolas', 7),
                  bg=s['bg'], fg=s['hint'], anchor='w', justify=tk.LEFT).pack(
-            fill=tk.X, padx=22, pady=(1, 2))
+            side=tk.LEFT, fill=tk.X, expand=True)
 
         # ---- args (positional) ----
         f = tk.Frame(dlg, bg=s['bg']); f.pack(fill=tk.X, **P)
@@ -924,9 +1226,13 @@ class TaskScheduler(GuiPlugin):
         tk.Entry(f, textvariable=args_var, font=('Consolas', 9),
                  bg=s['card'], fg=s['fg'], insertbackground=s['fg'],
                  relief=tk.FLAT).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        tk.Label(dlg, text='  逗号分隔，如: hello, 42', font=('Consolas', 7),
+        args_hint_f = tk.Frame(dlg, bg=s['bg'])
+        args_hint_f.pack(fill=tk.X, padx=10, pady=(0, 2))
+        tk.Label(args_hint_f, text='', font=('Consolas', 9), bg=s['bg'],
+                 width=12).pack(side=tk.LEFT)
+        tk.Label(args_hint_f, text='逗号分隔，如: hello, 42', font=('Consolas', 7),
                  bg=s['bg'], fg=s['hint'], anchor='w').pack(
-            fill=tk.X, padx=22, pady=(0, 2))
+            side=tk.LEFT, fill=tk.X, expand=True)
 
         # ---- kwargs (keyword) ----
         f = tk.Frame(dlg, bg=s['bg']); f.pack(fill=tk.X, **P)
@@ -937,17 +1243,61 @@ class TaskScheduler(GuiPlugin):
                                cursor='hand2')
         add_kv_btn.pack(side=tk.RIGHT)
 
-        # ---- kv_frame placeholder (packed before options) ----
+        # ---- options frame (declared & packed early so kv_frame can reference it) ----
+        opt = tk.Frame(dlg, bg=s['bg'])
+        opt.pack(fill=tk.X, **P)
+
+        # ---- kv_frame (scrollable, show/hide with before=opt to keep position) ----
         kv_frame = tk.Frame(dlg, bg=s['bg'])
-        kv_frame.pack(fill=tk.X)
+        kv_canvas = tk.Canvas(kv_frame, bg=s['bg'], highlightthickness=0, height=0)
+        kv_scroll = tk.Scrollbar(kv_frame, orient=tk.VERTICAL, width=6,
+                                  command=kv_canvas.yview)
+        kv_inner = tk.Frame(kv_canvas, bg=s['bg'])
+        kv_canvas.create_window((0, 0), window=kv_inner, anchor='nw', tags=('kv_inner',))
+        kv_canvas.configure(yscrollcommand=kv_scroll.set)
+        kv_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        kv_canvas.bind('<Configure>', lambda e: (
+            kv_canvas.itemconfig('kv_inner', width=e.width)), '+')
+        kv_canvas.bind('<Enter>', lambda e: kv_canvas.bind_all(
+            '<MouseWheel>', lambda ev: kv_canvas.yview_scroll(
+                int(-ev.delta / 120), 'units')))
+        kv_canvas.bind('<Leave>', lambda e: kv_canvas.unbind_all('<MouseWheel>'))
         kv_rows = []  # list of (key_var, val_var, row_frame)
         saved_kwargs = item.get('kwargs', {})
+        _KV_MAX_VISIBLE = 5
+        _KV_ROW_H = 26
+
+        def _sync_kv_scroll():
+            kv_canvas.update_idletasks()
+            bbox = kv_canvas.bbox('all')
+            if bbox:
+                _, _, _, h = bbox
+                visible = min(len(kv_rows), _KV_MAX_VISIBLE) * _KV_ROW_H + 2
+                canvas_h = min(h, visible)
+                kv_canvas.configure(height=canvas_h, scrollregion=(0, 0, bbox[2], h))
+                if h > visible:
+                    kv_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+                else:
+                    kv_scroll.pack_forget()
+            else:
+                kv_canvas.configure(height=0, scrollregion=(0, 0, 0, 0))
+                kv_scroll.pack_forget()
+
+        def _sync_kv_frame():
+            if kv_rows:
+                if not kv_frame.winfo_ismapped():
+                    kv_frame.pack(fill=tk.X, padx=10, pady=(0, 2), before=opt)
+                _sync_kv_scroll()
+            else:
+                kv_frame.pack_forget()
 
         def _add_kv_row(key='', value=''):
-            row = tk.Frame(kv_frame, bg=s['bg'])
-            row.pack(fill=tk.X)
+            row = tk.Frame(kv_inner, bg=s['bg'])
+            row.pack(fill=tk.X, pady=(2, 0))
             key_var = tk.StringVar(value=key)
             val_var = tk.StringVar(value=value)
+            tk.Label(row, text='', font=('Consolas', 9), bg=s['bg'],
+                     width=12).pack(side=tk.LEFT)
             tk.Entry(row, textvariable=key_var, font=('Consolas', 9),
                      bg=s['card'], fg=s['fg'], insertbackground=s['fg'],
                      relief=tk.FLAT, width=12).pack(side=tk.LEFT, padx=(0, 4))
@@ -959,12 +1309,14 @@ class TaskScheduler(GuiPlugin):
             del_btn.pack(side=tk.RIGHT)
             del_btn.bind('<Button-1>', lambda e, r=row: _remove_kv_row(r))
             kv_rows.append((key_var, val_var, row))
+            _sync_kv_frame()
 
         def _remove_kv_row(row):
             for i, (k, v, r) in enumerate(kv_rows):
                 if r is row:
                     row.destroy()
                     kv_rows.pop(i)
+                    _sync_kv_frame()
                     break
 
         add_kv_btn.bind('<Button-1>', lambda e: _add_kv_row())
@@ -974,7 +1326,7 @@ class TaskScheduler(GuiPlugin):
                 _add_kv_row(k, v)
 
         # ---- options ----
-        opt = tk.Frame(dlg, bg=s['bg']); opt.pack(fill=tk.X, **P)
+
         auto_var = tk.BooleanVar(value=item.get('auto_start', True))
         tk.Checkbutton(opt, text=l['form_auto_start'], variable=auto_var,
                        font=('Consolas', 9), bg=s['bg'], fg=s['fg'],
@@ -1071,11 +1423,13 @@ class TaskScheduler(GuiPlugin):
                     fv = float(val)
                     if fv <= 0:
                         err_var.set(l['form_validate_interval']); return
+                    st_val = every_start_var.get().strip()
                     result = self._srv('create_every', tid, fv, fn,
                               auto_start=au, max_runs=mr, timeout=to,
-                              updating=editing, args=task_args, kwargs=task_kwargs)
+                              updating=editing, args=task_args, kwargs=task_kwargs,
+                              start_time=st_val if st_val else None)
                 elif tp == 'once':
-                    val = _get_once_value()
+                    val = once_delay_var.get().strip()
                     if not val:
                         err_var.set(l['form_validate_delay']); return
                     result = self._srv('create_once', tid, val, fn,
@@ -1109,6 +1463,11 @@ class TaskScheduler(GuiPlugin):
                 err_var.set(str(exc)[:60])
 
         _toggle_type()
+        dlg.update_idletasks()
+        w = dlg.winfo_reqwidth()
+        max_h = int(self.winfo_screenheight() * 0.85)
+        dlg.minsize(w, 1)
+        dlg.maxsize(w, max_h)
         dlg.geometry('+%d+%d' % (self.winfo_rootx() + 40, self.winfo_rooty() + 40))
         dlg.deiconify()
         dlg.focus_set()

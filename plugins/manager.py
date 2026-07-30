@@ -571,6 +571,7 @@ class PluginManager:
         """
         BUILTIN_SERVICES = [
             ('plugins.task_scheduler.task_service', 'TasksService', 'tasks'),
+            ('plugins.task_scheduler.notify_service', 'NotifyService', 'notify'),
         ]
         self._builtin_instances = getattr(self, '_builtin_instances', [])
         for import_path, class_name, namespace in BUILTIN_SERVICES:

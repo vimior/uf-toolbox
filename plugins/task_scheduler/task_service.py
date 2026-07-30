@@ -14,6 +14,8 @@ Target fn_ref supports comma-separated multiple services:
   "ns@method1, ns@method2"
 """
 import concurrent.futures
+import json
+import os
 import threading
 import time
 from datetime import datetime, timedelta
@@ -82,15 +84,16 @@ class TasksService(ServicePlugin):
     # Fields preserved across edits
     _PRESERVE_ON_EDIT = ('count', 'errors', 'total_dur', 'avg_dur',
                          'max_dur', 'history', 'last_run',
-                         'created_at', 'failed')
+                         'created_at')
 
     def __init__(self, app=None):
         super().__init__(app)
         self._tasks = {}
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._global_paused = False
         self._pre_pause_state = {}
         self._prewarmed = {}
+        self._tasks_path = os.path.join(self.root.config_dir, 'tasks.json')
 
         # ---- register public API ----
         s = self.services
@@ -106,7 +109,48 @@ class TasksService(ServicePlugin):
         s.register('get', self._get)
 
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=8)
+        self._load()
         self._start_tick()
+
+    # ===================================================================
+    #  persistence
+    # ===================================================================
+
+    def _save(self):
+        if not os.path.isabs(self._tasks_path):
+            return  # mock path, skip
+        with self._lock:
+            data = {tid: {k: v for k, v in t.items()
+                          if k not in ('firing',)}
+                    for tid, t in self._tasks.items()}
+        try:
+            os.makedirs(os.path.dirname(self._tasks_path), exist_ok=True)
+            tmp = self._tasks_path + '.tmp'
+            with open(tmp, 'w', encoding='utf-8') as f:
+                json.dump({'tasks': data, 'updated_at': time.strftime('%Y-%m-%d %H:%M:%S')}, f)
+            os.replace(tmp, self._tasks_path)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+
+    def _load(self):
+        if not os.path.exists(self._tasks_path):
+            return
+        try:
+            with open(self._tasks_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception:
+            return
+        now_ts = time.time()
+        for tid, t in (data.get('tasks') or {}).items():
+            t.setdefault('enabled', True)
+            t.pop('firing', None)
+            t.pop('dead', None)
+            t.pop('failed', None)
+            if t.get('type') == 'every' and not t.get('start_time'):
+                t['last_run'] = now_ts  # reset timer on startup
+            self._tasks[tid] = t
+            self._skip_to_now(t)
 
     # ===================================================================
     #  timer
@@ -155,6 +199,16 @@ class TasksService(ServicePlugin):
     def _should_fire(self, task, now, now_ts):
         tp = task['type']
         if tp == 'every':
+            if task.get('start_time'):
+                if now_ts < task['start_time']:
+                    return False
+                first_slot = task['start_time'] + task['interval']
+                if now_ts < first_slot:
+                    return False
+                base = max(task['last_run'], task['start_time'])
+                k = int((base - task['start_time']) / task['interval']) + 1
+                next_slot = task['start_time'] + k * task['interval']
+                return now_ts >= next_slot
             return now_ts - task['last_run'] >= task['interval']
         if tp == 'once':
             return not task.get('fired') and now_ts >= task['fire_at']
@@ -192,6 +246,16 @@ class TasksService(ServicePlugin):
     def _will_fire_within(self, task, now, now_ts, seconds):
         tp = task['type']
         if tp == 'every':
+            if task.get('start_time'):
+                if now_ts < task['start_time']:
+                    return False
+                first_slot = task['start_time'] + task['interval']
+                if now_ts < first_slot:
+                    return first_slot - now_ts <= seconds
+                base = max(task['last_run'], task['start_time'])
+                k = int((base - task['start_time']) / task['interval']) + 1
+                next_slot = task['start_time'] + k * task['interval']
+                return next_slot - now_ts <= seconds
             return (task['last_run'] + task['interval']) - now_ts <= seconds
         if tp == 'once':
             return (not task.get('fired') and
@@ -253,6 +317,36 @@ class TasksService(ServicePlugin):
         m = int(parts[1]) if len(parts) > 1 else 0
         s = int(parts[2]) if len(parts) > 2 else 0
         return h, m, s
+
+    @staticmethod
+    def _resolve_start_time(value):
+        """Resolve *value* to a Unix timestamp (float).
+
+        Accepted formats
+        ----------------
+        - int / float  →  Unix timestamp (used directly)
+        - ``"YYYY-MM-DD HH:MM:SS"``  →  absolute datetime
+        - ``"HH:MM:SS"`` or ``"HH:MM"``  →  today at that time (past is valid)
+        - ``None``  →  returns ``None``
+        """
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        s = str(value).strip()
+        # absolute datetime: "2026-07-30 14:30:00"
+        try:
+            return datetime.strptime(s, '%Y-%m-%d %H:%M:%S').timestamp()
+        except ValueError:
+            pass
+        # time string: "HH:MM:SS" or "HH:MM"
+        parts = s.split(':')
+        if 2 <= len(parts) <= 3 and all(p.isdigit() for p in parts):
+            h, m = int(parts[0]), int(parts[1])
+            sec = int(parts[2]) if len(parts) > 2 else 0
+            return datetime.now().replace(
+                hour=h, minute=m, second=sec, microsecond=0).timestamp()
+        raise ValueError(f"Invalid start_time: {value!r}") from None
 
     # ===================================================================
     #  fire (runs in thread-pool worker)
@@ -361,6 +455,8 @@ class TasksService(ServicePlugin):
             else:
                 result = 'not found'
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             result = str(e)[:80]
 
         return ok, str(result)[:80] if result is not None else 'ok', startup_ms
@@ -392,17 +488,36 @@ class TasksService(ServicePlugin):
             for key in self._PRESERVE_ON_EDIT:
                 if key in old_task:
                     task_data[key] = old_task[key]
+            # editing revives a failed/dead/disabled task
+            if old_task.get('failed') or old_task.get('dead') or not old_task.get('enabled', True):
+                task_data['failed'] = False
+                task_data['dead'] = False
+                task_data['enabled'] = True
+                if old_task.get('failed') or old_task.get('dead'):
+                    # failure/dead → reset timer
+                    if old_task.get('type') == 'once':
+                        task_data['fired'] = False
+                        task_data['fire_at'] = self._resolve_once_fire_at(
+                            task_data.get('delay', '0'))
+                    elif old_task.get('type') == 'every':
+                        task_data['last_run'] = time.time()
+                else:
+                    # just paused → preserve cadence
+                    self._skip_to_now(task_data)
         with self._lock:
             self._tasks[task_id] = task_data
+        self._save()
         return task_id
 
     def _every(self, task_id, interval, fn_ref,
                auto_start=True, max_runs=0, timeout=0, updating=False,
-               args=(), kwargs=None):
+               args=(), kwargs=None, start_time=None):
         self._require_new_id(task_id, updating=updating)
         extra = {}
         if not updating:
             extra['last_run'] = time.time()
+        if start_time is not None:
+            extra['start_time'] = self._resolve_start_time(start_time)
         old = self._tasks.get(task_id) if updating else None
         return self._add_task(task_id, self._base(
             'every', fn_ref, args=args, kwargs=kwargs,
@@ -421,12 +536,14 @@ class TasksService(ServicePlugin):
             auto_start=auto_start, timeout=timeout), old_task=old)
 
     @staticmethod
-    def _resolve_once_fire_at(delay_str):
-        s = str(delay_str).strip()
+    def _resolve_once_fire_at(delay_value):
+        s = str(delay_value).strip()
+        # absolute datetime: "2026-07-30 14:30:00"
         try:
-            return time.time() + float(s)
+            return datetime.strptime(s, '%Y-%m-%d %H:%M:%S').timestamp()
         except ValueError:
             pass
+        # time string: "HH:MM:SS" or "HH:MM"
         parts = s.split(':')
         if 2 <= len(parts) <= 3 and all(p.isdigit() for p in parts):
             h, m = int(parts[0]), int(parts[1])
@@ -436,7 +553,12 @@ class TasksService(ServicePlugin):
             if target <= now:
                 target += timedelta(days=1)
             return target.timestamp()
-        raise ValueError(f"Invalid delay value: {delay_str!r}") from None
+        # numeric: always relative seconds (use datetime string for absolute times)
+        try:
+            return time.time() + float(s)
+        except ValueError:
+            pass
+        raise ValueError(f"Invalid delay value: {delay_value!r}") from None
 
     def _daily(self, task_id, time_str, fn_ref,
                auto_start=True, max_runs=0, timeout=0, updating=False,
@@ -492,6 +614,7 @@ class TasksService(ServicePlugin):
             r = self._tasks.pop(task_id, None) is not None
             if r:
                 self._pre_pause_state.pop(task_id, None)
+                self._save()
         return r
 
     def _skip_to_now(self, t):
@@ -499,7 +622,15 @@ class TasksService(ServicePlugin):
         now_ts = time.time()
         now_dt = datetime.now()
         if tp == 'every':
-            t['last_run'] = now_ts
+            if t.get('start_time'):
+                t['last_run'] = now_ts  # grid logic handles alignment
+            elif t.get('last_run', 0) > 0:
+                elapsed = now_ts - t['last_run']
+                periods = int(elapsed / t['interval'])
+                if periods > 0:
+                    t['last_run'] += periods * t['interval']
+            else:
+                t['last_run'] = now_ts
         elif tp in ('daily', 'weekly'):
             time_str = t.get('time_str', '00:00')
             parts = time_str.split(':')
@@ -520,10 +651,22 @@ class TasksService(ServicePlugin):
         with self._lock:
             t = self._tasks.get(task_id)
             if t:
+                was_failed = t.get('failed')
                 t['enabled'] = True
                 t['dead'] = False
                 t['failed'] = False
-                self._skip_to_now(t)
+                if was_failed:
+                    # failure → reset timer, start fresh
+                    if t.get('type') == 'once':
+                        t['fired'] = False
+                        t['fire_at'] = self._resolve_once_fire_at(
+                            t.get('delay', '0'))
+                    elif t.get('type') == 'every':
+                        t['last_run'] = time.time()
+                else:
+                    # normal pause → preserve cadence
+                    self._skip_to_now(t)
+                self._save()
         return t is not None
 
     def _pause(self, task_id):
@@ -531,6 +674,7 @@ class TasksService(ServicePlugin):
             t = self._tasks.get(task_id)
             if t:
                 t['enabled'] = False
+                self._save()
         return t is not None
 
     def _toggle_enabled(self, task_id):
@@ -540,9 +684,19 @@ class TasksService(ServicePlugin):
                 return None
             t['enabled'] = not t.get('enabled', True)
             if t['enabled']:
+                was_failed = t.get('failed')
                 t['dead'] = False
                 t['failed'] = False
-                self._skip_to_now(t)
+                if was_failed:
+                    if t.get('type') == 'once':
+                        t['fired'] = False
+                        t['fire_at'] = self._resolve_once_fire_at(
+                            t.get('delay', '0'))
+                    elif t.get('type') == 'every':
+                        t['last_run'] = time.time()
+                else:
+                    self._skip_to_now(t)
+                self._save()
             new_state = t['enabled']
         return new_state
 
@@ -553,6 +707,7 @@ class TasksService(ServicePlugin):
                     self._pre_pause_state[tid] = True
                     t['enabled'] = False
         self._global_paused = True
+        self._save()
 
     def _resume_all(self):
         with self._lock:
@@ -565,6 +720,7 @@ class TasksService(ServicePlugin):
                     self._skip_to_now(t)
             self._pre_pause_state.clear()
         self._global_paused = False
+        self._save()
 
     @property
     def global_paused(self):
@@ -595,6 +751,7 @@ class TasksService(ServicePlugin):
             'time_str': task.get('time_str'),
             'days': task.get('days'),
             'cron_expr': task.get('cron_expr'),
+            'start_time': task.get('start_time'),
             'enabled': task.get('enabled', True),
             'auto_start': task.get('auto_start', True),
             'max_runs': task.get('max_runs', 0),
