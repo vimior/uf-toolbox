@@ -166,7 +166,7 @@ class TasksService(ServicePlugin):
             import traceback
             traceback.print_exc()
         if self.root:
-            self.root.after(1000, self._tick)
+            self.root.after(100, self._tick)
 
     def _tick_impl(self):
         now = datetime.now()
