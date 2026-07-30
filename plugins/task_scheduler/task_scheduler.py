@@ -219,6 +219,9 @@ class TaskScheduler(GuiPlugin):
         self._rows = {}
         self._expanded = set()
         self._detail_frames = {}
+        self._group_labels = {}  # group_key -> Label widget
+        self._group_seps = {}    # 'sep_{key}' -> separator Frame
+        self._row_cache = {}     # tid -> {display-relevant fields for diff}
         self._help_win = None
         self._form_win = None
 
@@ -330,7 +333,7 @@ class TaskScheduler(GuiPlugin):
 
     def _tick_refresh(self):
         if self.winfo_exists():
-            self._refresh_display()
+            self._sync_display()
             self._status_lbl.config(text=time.strftime('%H:%M:%S'))
             self.after(1000, self._tick_refresh)
 
@@ -345,10 +348,18 @@ class TaskScheduler(GuiPlugin):
         mr = task.get('max_runs', 0)
         return bool(mr and task.get('count', 0) >= mr)
 
+    @staticmethod
+    def _is_failed(task):
+        """True if *task* is dead, explicitly failed, or heuristically failed."""
+        if task.get('dead') or task.get('failed'):
+            return True
+        # Heuristic: errors>0 + disabled → likely failed (flag lost on restart)
+        return task.get('errors', 0) > 0 and not task.get('enabled', True)
+
     def _status_text(self, task):
         if task.get('dead'):
             return self._l['status_dead']
-        if task.get('failed'):
+        if self._is_failed(task):
             return self._l['status_failed']
         if self._is_done(task):
             return self._l['status_done']
@@ -360,10 +371,10 @@ class TaskScheduler(GuiPlugin):
 
     def _task_group(self, task):
         """Return the group key for *task*."""
+        if self._is_failed(task):
+            return 'failed'
         if self._is_done(task):
             return 'done'
-        if task.get('failed'):
-            return 'failed'
         if not task.get('enabled', True):
             return 'off'
         return 'active'
@@ -383,6 +394,9 @@ class TaskScheduler(GuiPlugin):
                 w.destroy()
         self._rows.clear()
         self._detail_frames.clear()
+        self._group_labels.clear()
+        self._group_seps.clear()
+        self._row_cache.clear()
         self._expanded.clear()
 
         tasks = self._all_tasks()
@@ -403,27 +417,191 @@ class TaskScheduler(GuiPlugin):
             if not items:
                 continue
             if not first:
-                tk.Frame(self._inner, bg=s['hint'], height=1).pack(
-                    fill=tk.X, padx=8, pady=(6, 2))
+                sep = tk.Frame(self._inner, bg=s['hint'], height=1)
+                sep.pack(fill=tk.X, padx=8, pady=(6, 2))
+                self._group_seps[f'_sep_{key}'] = sep
             first = False
-            tk.Label(self._inner, text=self._group_title(key, len(items)),
-                     font=('Consolas', 9, 'bold'),
-                     bg=s['bg'], fg=s['hint'], anchor='w').pack(
-                fill=tk.X, padx=8, pady=(2, 1))
+            glbl = tk.Label(self._inner, text=self._group_title(key, len(items)),
+                           font=('Consolas', 9, 'bold'),
+                           bg=s['bg'], fg=s['hint'], anchor='w')
+            glbl.pack(fill=tk.X, padx=8, pady=(2, 1))
+            self._group_labels[key] = glbl
 
             for tid, task in sorted(items, key=lambda x: x[0]):
                 self._add_row(tid, task, s)
 
-    def _add_row(self, tid, task, s):
-        dead = task.get('dead')
-        failed = task.get('failed')
+    def _ensure_groups(self):
+        """Pre-create group labels and separators (once, reused forever)."""
+        s = self._s
+        for key in self._GROUP_ORDER:
+            if key not in self._group_labels:
+                glbl = tk.Label(self._inner, font=('Consolas', 9, 'bold'),
+                                bg=s['bg'], fg=s['hint'], anchor='w')
+                self._group_labels[key] = glbl
+            sep_key = f'_sep_{key}'
+            if sep_key not in self._group_seps:
+                self._group_seps[sep_key] = tk.Frame(self._inner, bg=s['hint'], height=1)
+
+    def _update_all_group_labels(self):
+        """Refresh group label counts and hide empty groups."""
+        for key in self._GROUP_ORDER:
+            all_tids = [t for t, rd in self._rows.items() if rd['group'] == key]
+            if key in self._group_labels:
+                if all_tids:
+                    self._group_labels[key].config(
+                        text=self._group_title(key, len(all_tids)))
+                else:
+                    self._group_labels[key].pack_forget()
+                    sep = self._group_seps.get(f'_sep_{key}')
+                    if sep:
+                        sep.pack_forget()
+
+    def _insert_new_rows(self, added):
+        """Insert newly created rows at the correct sorted positions,
+        handling empty→non-empty group transitions.  No full repack."""
+        self._ensure_groups()
+
+        # Group the new tids
+        new_by_group = {k: [] for k in self._GROUP_ORDER}
+        for tid in added:
+            new_by_group[self._rows[tid]['group']].append(tid)
+
+        for key in self._GROUP_ORDER:
+            new_tids = sorted(new_by_group[key])
+            if not new_tids:
+                continue
+
+            # All tids currently in this group (new + existing) sorted
+            all_tids = sorted(
+                [t for t, rd in self._rows.items() if rd['group'] == key])
+
+            # Ensure group label + separator are packed for non-empty group
+            glbl = self._group_labels[key]
+            glbl.config(text=self._group_title(key, len(all_tids)))
+            if not glbl.winfo_ismapped():
+                # Group was empty — need to pack separator (except first group)
+                self._ensure_groups()
+                sep = self._group_seps.get(f'_sep_{key}')
+                # Find if any earlier group has items
+                has_earlier = any(
+                    new_by_group.get(k) or
+                    [t for t, rd in self._rows.items()
+                     if rd['group'] == k and t not in added]
+                    for k in self._GROUP_ORDER[:self._GROUP_ORDER.index(key)]
+                )
+                if has_earlier and sep:
+                    sep.pack(fill=tk.X, padx=8, pady=(6, 2))
+                glbl.pack(fill=tk.X, padx=8, pady=(2, 1))
+
+            for tid in new_tids:
+                idx = all_tids.index(tid)
+                row_widget = self._rows[tid]['row']
+                detail = self._detail_frames.get(tid)
+
+                if idx == 0:
+                    row_widget.pack(after=glbl, fill=tk.X, padx=4, pady=1)
+                else:
+                    prev_tid = all_tids[idx - 1]
+                    prev_detail = self._detail_frames.get(prev_tid)
+                    after_widget = (prev_detail['frame'] if prev_detail
+                                    else self._rows[prev_tid]['row'])
+                    row_widget.pack(after=after_widget, fill=tk.X, padx=4, pady=1)
+
+                if detail:
+                    detail['frame'].pack(after=row_widget, fill=tk.X,
+                                         padx=4, pady=(0, 2))
+
+        self._update_all_group_labels()
+
+    def _relocate_row(self, tid):
+        """Move an existing row to its correct position (after group change)."""
+        group = self._rows[tid]['group']
+        row_widget = self._rows[tid]['row']
+        detail = self._detail_frames.get(tid)
+
+        row_widget.pack_forget()
+        if detail:
+            detail['frame'].pack_forget()
+
+        self._ensure_groups()
+        group_tids = sorted(
+            [t for t, rd in self._rows.items() if rd['group'] == group])
+        idx = group_tids.index(tid)
+        glbl = self._group_labels[group]
+
+        # Ensure group label + separator are packed
+        if not glbl.winfo_ismapped():
+            has_earlier = any(
+                [t for t, rd in self._rows.items()
+                 if rd['group'] == k and t != tid]
+                for k in self._GROUP_ORDER[:self._GROUP_ORDER.index(group)]
+            )
+            if has_earlier:
+                sep = self._group_seps.get(f'_sep_{group}')
+                if sep:
+                    sep.pack(fill=tk.X, padx=8, pady=(6, 2))
+            glbl.pack(fill=tk.X, padx=8, pady=(2, 1))
+
+        if idx == 0:
+            row_widget.pack(after=glbl, fill=tk.X, padx=4, pady=1)
+        else:
+            prev_tid = group_tids[idx - 1]
+            prev_detail = self._detail_frames.get(prev_tid)
+            after_widget = (prev_detail['frame'] if prev_detail
+                            else self._rows[prev_tid]['row'])
+            row_widget.pack(after=after_widget, fill=tk.X, padx=4, pady=1)
+
+        if detail:
+            detail['frame'].pack(after=row_widget, fill=tk.X,
+                                 padx=4, pady=(0, 2))
+
+        self._update_all_group_labels()
+
+    def _repack_rows(self):
+        """Repack rows, details, separators, labels without destroying widgets."""
+        s = self._s
+        for w in self._inner.winfo_children():
+            if w is not self._empty:
+                w.pack_forget()
+
+        grouped = {k: [] for k in self._GROUP_ORDER}
+        for tid, row_data in self._rows.items():
+            grouped[row_data['group']].append(tid)
+
+        first = True
+        for key in self._GROUP_ORDER:
+            items = grouped.get(key, [])
+            if not items:
+                continue
+            if not first:
+                self._group_seps[f'_sep_{key}'].pack(
+                    fill=tk.X, padx=8, pady=(6, 2))
+            first = False
+
+            self._group_labels[key].config(
+                text=self._group_title(key, len(items)))
+            self._group_labels[key].pack(fill=tk.X, padx=8, pady=(2, 1))
+
+            for tid in sorted(items):
+                self._rows[tid]['row'].pack(fill=tk.X, padx=4, pady=1)
+                detail = self._detail_frames.get(tid)
+                if detail:
+                    detail['frame'].pack(fill=tk.X, padx=4, pady=(0, 2))
+
+        if any(grouped.values()):
+            self._empty.pack_forget()
+        else:
+            self._empty.pack(pady=30)
+
+    def _add_row(self, tid, task, s, pack=True):
         disabled = not task.get('enabled', True)
         is_done = self._is_done(task)
 
         row = tk.Frame(self._inner, bg=s['card'])
-        row.pack(fill=tk.X, padx=4, pady=1)
+        if pack:
+            row.pack(fill=tk.X, padx=4, pady=1)
 
-        if dead or failed:
+        if self._is_failed(task):
             fg = s['dead']
         elif disabled or is_done:
             fg = s['hint']
@@ -462,8 +640,8 @@ class TaskScheduler(GuiPlugin):
             pause_btn = tk.Label(row, text='✓', font=('Consolas', 10),
                                   width=2, bg=s['card'], fg=s['hint'])
         else:
-            pause_text = '▶' if (disabled or failed) else '⏸'
-            pause_fg = s['hint'] if (disabled or failed) else s['fg']
+            pause_text = '▶' if (disabled or self._is_failed(task)) else '⏸'
+            pause_fg = s['hint'] if (disabled or self._is_failed(task)) else s['fg']
             pause_btn = tk.Button(row, text=pause_text,
                       command=lambda t=tid: self._do_toggle(t),
                       font=('Consolas', 10), width=2,
@@ -483,23 +661,105 @@ class TaskScheduler(GuiPlugin):
         self._rows[tid] = {'labels': lbls, 'pause_btn': pause_btn,
                            'row': row, 'fg': fg, 'group': self._task_group(task)}
 
+    # ------------------------------------------------------------------
+    #  row-level incremental updates
+    # ------------------------------------------------------------------
+
+    _CACHE_KEYS = ('dead', 'failed', 'enabled', 'firing', 'last_run',
+                   'count', 'errors')
+
+    def _row_needs_update(self, tid, task):
+        """Return True if *task* display differs from cached row state."""
+        cache = self._row_cache.get(tid)
+        if not cache:
+            return True
+        for k in self._CACHE_KEYS:
+            if cache.get(k) != task.get(k):
+                return True
+        if self._is_done(task) != cache.get('_done', False):
+            return True
+        return False
+
+    def _update_row(self, tid, task):
+        """Update an existing row's labels and buttons in-place."""
+        s = self._s
+        row_data = self._rows.get(tid)
+        if not row_data:
+            return
+
+        disabled = not task.get('enabled', True)
+        is_done = self._is_done(task)
+
+        if self._is_failed(task):
+            fg = s['dead']
+        elif disabled or is_done:
+            fg = s['hint']
+        elif task.get('firing'):
+            fg = s['accent']
+        else:
+            fg = s['fg']
+
+        last_str = '-' if not task.get('last_run') else \
+                   time.strftime('%m-%d %H:%M:%S', time.localtime(task['last_run']))
+        vals = [tid, task['type'], last_str, self._status_text(task)]
+        for lbl, v in zip(row_data['labels'], vals):
+            lbl.config(text=str(v)[:30], fg=fg)
+        row_data['fg'] = fg
+
+        # pause / play button
+        pause_btn = row_data.get('pause_btn')
+        if pause_btn and not is_done:
+            if disabled or self._is_failed(task):
+                pause_btn.config(text='▶', fg=s['hint'])
+            else:
+                pause_btn.config(text='⏸', fg=s['fg'])
+        elif pause_btn:
+            pause_btn.config(text='✓', fg=s['hint'])
+
+        # Update expanded detail
+        if tid in self._expanded:
+            self._refresh_detail(tid)
+
+        # Update cache
+        self._row_cache[tid] = {k: task.get(k) for k in self._CACHE_KEYS}
+        self._row_cache[tid]['_done'] = is_done
+
+    def _remove_row(self, tid):
+        """Destroy a single row and its detail frame."""
+        row_data = self._rows.pop(tid, None)
+        if row_data:
+            row_data['row'].destroy()
+        detail = self._detail_frames.pop(tid, None)
+        if detail:
+            detail['frame'].destroy()
+        self._expanded.discard(tid)
+        self._row_cache.pop(tid, None)
+
     def _do_toggle(self, tid):
         item = self._srv('get', tid)
-        if not item:
+        if not item or tid not in self._rows:
             return
-        if item.get('enabled'):
+        was_enabled = item.get('enabled', True)
+        if was_enabled:
             self._srv('pause', tid)
         else:
             self._srv('resume', tid)
-        # update just this row's group to prevent _refresh_display from rebuilding
-        item = self._srv('get', tid)
-        if item and tid in self._rows:
-            self._rows[tid]['group'] = self._task_group(item)
-        self._refresh_display()
+        # Compute new state locally (avoids second service call)
+        item = dict(item)
+        item['enabled'] = not was_enabled
+        if not was_enabled:
+            item['failed'] = False  # resume clears failed
+        old_group = self._rows[tid]['group']
+        new_group = self._task_group(item)
+        self._rows[tid]['group'] = new_group
+        self._update_row(tid, item)
+        if old_group != new_group:
+            self._relocate_row(tid)
 
     def _do_cancel(self, tid):
         self._srv('cancel', tid)
-        self._rebuild_ui()
+        self._remove_row(tid)
+        self._update_all_group_labels()
 
     def _toggle_global_pause(self):
         if self._pause_btn.cget('text') == self._l['pause_all']:
@@ -512,13 +772,7 @@ class TaskScheduler(GuiPlugin):
                 if not t.get('enabled') and not t.get('failed'):
                     self._srv('resume', t['id'])
             self._pause_btn.config(text=self._l['pause_all'])
-        # sync all row groups to avoid rebuild
-        tasks = self._all_tasks()
-        for tid, row in self._rows.items():
-            t = tasks.get(tid)
-            if t:
-                row['group'] = self._task_group(t)
-        self._refresh_display()
+        self._sync_display()
 
     # ===================================================================
     #  import / export
@@ -701,60 +955,62 @@ class TaskScheduler(GuiPlugin):
                 import traceback
                 traceback.print_exc()
 
-        self._rebuild_ui()
+        self._sync_display(rebuild=True)
         messagebox.showinfo(
             self._l['import_tasks'],
             f'导入 {added} 个任务，跳过 {skipped} 个')
 
-    def _refresh_display(self):
-        s = self._s
-        tasks = self._all_tasks()
-        task_ids = set(tasks.keys())
-        row_ids = set(self._rows.keys())
+    def _sync_display(self, rebuild=False):
+        """Incrementally sync the display with the current task list.
 
-        # Tasks appeared, disappeared, or changed group — rebuild
-        if task_ids != row_ids:
+        - *rebuild*=True: destroy everything and recreate (import, cancel-all).
+        - *rebuild*=False: create/update/remove rows one-by-one.
+        """
+        if rebuild:
             self._rebuild_ui()
             return
-        for tid, task in tasks.items():
-            if self._task_group(task) != self._rows[tid].get('group'):
-                self._rebuild_ui()
-                return
 
+        tasks = self._all_tasks()
+        current_tids = set(tasks.keys())
+        existing_tids = set(self._rows.keys())
+
+        # 1. Remove rows for deleted tasks (just destroy, no repack needed)
+        removed = existing_tids - current_tids
+        for tid in removed:
+            self._remove_row(tid)
+
+        # 2. Create rows for new tasks
+        added = current_tids - existing_tids
+        for tid in added:
+            self._add_row(tid, tasks[tid], self._s, pack=False)
+
+        # 3. Detect group changes + diff rows in single pass
+        changed_groups = []  # (tid,) tuples for relocate
         for tid, task in tasks.items():
             row_data = self._rows.get(tid)
-            if not row_data:
+            if not row_data or tid in added:
                 continue
-            lbls = row_data['labels']
-            pause_btn = row_data.get('pause_btn')
-            dead = task.get('dead')
-            failed = task.get('failed')
-            disabled = not task.get('enabled', True)
-            is_done = self._is_done(task)
+            new_group = self._task_group(task)
+            if row_data['group'] != new_group:
+                row_data['group'] = new_group
+                changed_groups.append(tid)
+            if self._row_needs_update(tid, task):
+                self._update_row(tid, task)
 
-            if dead or failed:
-                fg = s['dead']
-            elif disabled or is_done:
-                fg = s['hint']
-            elif task.get('firing'):
-                fg = s['accent']
-            else:
-                fg = s['fg']
+        # 4. Apply changes: insert new rows, relocate moved rows, update labels
+        if added:
+            self._insert_new_rows(added)
+        for tid in changed_groups:
+            self._relocate_row(tid)
+        if removed:
+            # Update group labels after removals
+            self._update_all_group_labels()
 
-            last_str = '-' if not task.get('last_run') else \
-                       time.strftime('%m-%d %H:%M:%S', time.localtime(task['last_run']))
-            vals = [tid, task['type'], last_str, self._status_text(task)]
-            for lbl, v in zip(lbls, vals):
-                lbl.config(text=str(v)[:30], fg=fg)
-
-            if pause_btn and not is_done:
-                if disabled or failed:
-                    pause_btn.config(text='▶', fg=s['hint'])
-                else:
-                    pause_btn.config(text='⏸', fg=s['fg'])
-
-            if tid in self._expanded:
-                self._refresh_detail(tid)
+        # 5. Show/hide empty
+        if tasks:
+            self._empty.pack_forget()
+        else:
+            self._empty.pack(pady=30)
 
     # ===================================================================
     #  detail panel
@@ -1458,7 +1714,7 @@ class TaskScheduler(GuiPlugin):
                     return
                 self._form_win = None
                 dlg.destroy()
-                self._rebuild_ui()
+                self._sync_display()
             except (ValueError, KeyError) as exc:
                 err_var.set(str(exc)[:60])
 

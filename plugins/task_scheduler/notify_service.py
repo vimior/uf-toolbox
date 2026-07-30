@@ -4,13 +4,13 @@
 Services for other plugins / task callbacks:
   notify@toast (text=None, *, timeout=3, duration=300, position='br',
                 bg='#333333', fg='#ffffff', font_size=10,
-                width=0, height=0, x=None, y=None)
+                width=0, height=0, x=None, y=None, show_time=True)
   notify@popup (text=None, *, title=None, timeout=0, width=360, height=200,
                 bg='#2b2b2b', fg='#e0e0e0', font_size=10,
-                x=None, y=None)
+                x=None, y=None, show_time=True)
   notify@banner(text=None, *, timeout=5, duration=400,
                 bg='#2d5a8a', fg='#ffffff', font_size=11,
-                width=0, height=0)
+                width=0, height=0, show_time=True)
   notify@canvas(text=None, *, pattern='flower', title=None, timeout=0,
                 width=300, height=360, bg='#1a1a2e', fg='#f0e68c',
                 font_size=13, x=None, y=None, show_time=True)
@@ -54,7 +54,14 @@ class _NotifyBase(tk.Toplevel):
             return default
         raise ValueError(f'expected int, got {v!r}')
 
-    def __init__(self, owner, timeout=0):
+    @staticmethod
+    def _parse_show_time(v):
+        """Parse show_time value to boolean."""
+        return v not in (False, 0, '0', 'False', 'false', '')
+
+    def __init__(self, owner, timeout=0, show_time=True,
+                 bg='#2b2b2b', fg='#ffffff', font_size=10,
+                 time_font_size=9, time_fg=None):
         super().__init__(owner.root)
         self.geometry('+30000+30000')  # park far off-screen during build
         self.update_idletasks()  # force the geometry to take effect
@@ -62,7 +69,13 @@ class _NotifyBase(tk.Toplevel):
         self._owner = owner
         self._timeout = self._i(timeout)
         self._timer_id = None
-        self.configure(bg='#2b2b2b')
+        self._show_time = self._parse_show_time(show_time)
+        self._bg = bg
+        self._fg = fg
+        self._font_size = font_size
+        self._time_font_size = time_font_size
+        self._time_fg = time_fg
+        self.configure(bg=self._bg)
         self.transient(owner.root)
         self.protocol('WM_DELETE_WINDOW', self.destroy)
         self._reset_timer()
@@ -87,11 +100,66 @@ class _NotifyBase(tk.Toplevel):
 
     def refresh(self, text='', timeout=None, **kw):
         """Override in subclasses to update content and reset timer."""
+        if 'show_time' in kw:
+            self._show_time = self._parse_show_time(kw['show_time'])
+        if 'bg' in kw:
+            self._bg = kw['bg']
+        if 'fg' in kw:
+            self._fg = kw['fg']
+        if 'font_size' in kw:
+            self._font_size = kw['font_size']
+        if 'time_font_size' in kw:
+            self._time_font_size = kw['time_font_size']
+        if 'time_fg' in kw:
+            self._time_fg = kw['time_fg']
+        if text:
+            self._apply_text(text)
+        self._apply_style()
+        self._refresh_time_label()
+        if 'width' in kw or 'height' in kw:
+            w = self._i(kw.get('width', 0), 0) or self.winfo_width()
+            h = self._i(kw.get('height', 0), 0) or self.winfo_height()
+            self._apply_geometry(w, h)
+        if 'x' in kw and 'y' in kw:
+            self._apply_position(self._i(kw['x']), self._i(kw['y']))
         if timeout is not None:
             self._timeout = self._i(timeout)
         self._reset_timer()
         self.lift()
         self.focus_force()
+
+    def _apply_style(self):
+        """Apply bg/fg/font_size to all common widgets."""
+        self.configure(bg=self._bg)
+        if hasattr(self, '_frame'):
+            self._frame.configure(bg=self._bg)
+        if hasattr(self, '_label'):
+            self._label.configure(bg=self._bg, fg=self._fg,
+                                  font=(FONT_FAMILY, self._font_size))
+        if hasattr(self, '_time_label'):
+            self._time_label.configure(bg=self._bg,
+                                        fg=self._time_fg or self._fg,
+                                        font=('Consolas', self._time_font_size))
+
+    def _apply_text(self, text):
+        if hasattr(self, '_label'):
+            self._label.configure(text=text)
+
+    def _refresh_time_label(self):
+        if hasattr(self, '_time_label'):
+            if self._show_time:
+                self._time_label.configure(text=time.strftime('%Y-%m-%d %H:%M:%S'))
+                self._time_label.pack(fill=tk.X)
+            else:
+                self._time_label.pack_forget()
+
+    def _apply_geometry(self, w, h):
+        """Override in subclasses for custom geometry handling."""
+        self.geometry(f'{w}x{h}')
+
+    def _apply_position(self, x, y):
+        """Override in subclasses for custom position handling."""
+        self.geometry(f'+{x}+{y}')
 
 
 # ===================================================================
@@ -112,9 +180,11 @@ class _Toast(_NotifyBase):
                  position='br', bg='#333333', fg='#ffffff',
                  font_size=10, width=0, height=0,
                  x=None, y=None, **_kw):
-        super().__init__(owner, timeout)
+        super().__init__(owner, timeout, bg=bg, fg=fg, font_size=font_size,
+                         show_time=_kw.pop('show_time', True),
+                         time_font_size=_kw.pop('time_font_size', 8),
+                         time_fg=_kw.pop('time_fg', None))
         self.overrideredirect(True)
-        self.configure(bg=bg)
         self.attributes('-topmost', True)
 
         self._duration = self._i(duration, 300)
@@ -128,13 +198,18 @@ class _Toast(_NotifyBase):
 
         # build content
         wraplen = max(200, _w - 40) if _w else 340
-        self._frame = tk.Frame(self, bg=bg, padx=16, pady=10)
+        self._frame = tk.Frame(self, bg=self._bg, padx=16, pady=10)
         self._frame.pack(fill=tk.BOTH, expand=True)
 
-        self._label = tk.Label(self._frame, text=text, font=(FONT_FAMILY, font_size),
-                               bg=bg, fg=fg, wraplength=wraplen,
+        self._label = tk.Label(self._frame, text=text, font=(FONT_FAMILY, self._font_size),
+                               bg=self._bg, fg=self._fg, wraplength=wraplen,
                                anchor='center', justify=tk.CENTER)
         self._label.pack(fill=tk.BOTH, expand=True)
+
+        self._time_label = tk.Label(self._frame, text='',
+                                     font=('Consolas', self._time_font_size),
+                                     bg=self._bg, fg=self._fg)
+        self._refresh_time_label()
 
         self.update_idletasks()
 
@@ -180,24 +255,7 @@ class _Toast(_NotifyBase):
         self._reset_timer()
 
     def refresh(self, text='', timeout=None, **kw):
-        if text:
-            self._label.configure(text=text)
-        if 'fg' in kw:
-            self._label.configure(fg=kw['fg'])
-        if 'font_size' in kw:
-            self._label.configure(font=(FONT_FAMILY, kw['font_size']))
-        if 'bg' in kw:
-            c = kw['bg']
-            self.configure(bg=c)
-            self._frame.configure(bg=c)
-            self._label.configure(bg=c)
-        if 'width' in kw or 'height' in kw:
-            w = self._i(kw.get('width', 0), 0) or self.winfo_width()
-            h = self._i(kw.get('height', 0), 0) or self.winfo_height()
-            self.geometry(f'{w}x{h}')
-        if 'x' in kw and 'y' in kw:
-            self.geometry(f'+{self._i(kw["x"])}+{self._i(kw["y"])}')
-        elif 'position' in kw:
+        if 'position' in kw:
             rx, ry, _, _ = self._POS.get(kw['position'], self._POS['br'])
             sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
             bm = 50 if ry > 0.5 else 12
@@ -222,9 +280,11 @@ class _Popup(_NotifyBase):
     def __init__(self, owner, text=None, title=None, timeout=0,
                  width=360, height=200, bg='#2b2b2b', fg='#e0e0e0',
                  font_size=10, x=None, y=None, **_kw):
-        super().__init__(owner, timeout)
+        super().__init__(owner, timeout, bg=bg, fg=fg, font_size=font_size,
+                         show_time=_kw.pop('show_time', True),
+                         time_font_size=_kw.pop('time_font_size', 9),
+                         time_fg=_kw.pop('time_fg', None))
         self.resizable(False, False)
-        self.configure(bg=bg)
 
         if text is None:
             text = ''
@@ -233,10 +293,18 @@ class _Popup(_NotifyBase):
         _w = self._i(width, 360) or 360
         _h = self._i(height, 200) or 200
 
-        self._label = tk.Label(self, text=text, font=(FONT_FAMILY, font_size),
-                               bg=bg, fg=fg, wraplength=_w - 40,
+        self._frame = tk.Frame(self, bg=self._bg)
+        self._frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+
+        self._label = tk.Label(self._frame, text=text, font=(FONT_FAMILY, self._font_size),
+                               bg=self._bg, fg=self._fg, wraplength=_w - 40,
                                anchor='center', justify=tk.CENTER)
-        self._label.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        self._label.pack(fill=tk.BOTH, expand=True)
+
+        self._time_label = tk.Label(self._frame, text='',
+                                     font=('Consolas', self._time_font_size),
+                                     bg=self._bg, fg=self._fg)
+        self._refresh_time_label()
 
         sw = self.winfo_screenwidth()
         sh = self.winfo_screenheight()
@@ -248,22 +316,6 @@ class _Popup(_NotifyBase):
         self.focus_set()
 
     def refresh(self, text='', timeout=None, **kw):
-        if text:
-            self._label.configure(text=text)
-        if 'fg' in kw:
-            self._label.configure(fg=kw['fg'])
-        if 'font_size' in kw:
-            self._label.configure(font=(FONT_FAMILY, kw['font_size']))
-        if 'bg' in kw:
-            c = kw['bg']
-            self.configure(bg=c)
-            self._label.configure(bg=c)
-        if 'width' in kw or 'height' in kw:
-            w = self._i(kw.get('width', 0), 0) or self.winfo_width()
-            h = self._i(kw.get('height', 0), 0) or self.winfo_height()
-            self.geometry(f'{w}x{h}')
-        if 'x' in kw and 'y' in kw:
-            self.geometry(f'+{self._i(kw["x"])}+{self._i(kw["y"])}')
         if 'title' in kw:
             self.title(kw['title'])
         super().refresh(text, timeout, **kw)
@@ -279,9 +331,11 @@ class _Banner(_NotifyBase):
     def __init__(self, owner, text=None, timeout=5, duration=400,
                  bg='#2d5a8a', fg='#ffffff', font_size=11,
                  width=0, height=0, **_kw):
-        super().__init__(owner, timeout)
+        super().__init__(owner, timeout, bg=bg, fg=fg, font_size=font_size,
+                         show_time=_kw.pop('show_time', True),
+                         time_font_size=_kw.pop('time_font_size', 9),
+                         time_fg=_kw.pop('time_fg', None))
         self.overrideredirect(True)
-        self.configure(bg=bg)
         self.attributes('-topmost', True)
         self._duration = self._i(duration, 400)
 
@@ -292,12 +346,18 @@ class _Banner(_NotifyBase):
         _bw = self._i(width)
         bw = _bw if _bw > 0 else sw
 
-        self._frame = tk.Frame(self, bg=bg, padx=20, pady=8)
+        self._frame = tk.Frame(self, bg=self._bg, padx=20, pady=8)
         self._frame.pack(fill=tk.BOTH, expand=True)
         self._label = tk.Label(self._frame, text=text,
-                               font=(FONT_FAMILY, font_size, 'bold'),
-                               bg=bg, fg=fg, anchor='center', justify=tk.CENTER)
-        self._label.pack(fill=tk.X)
+                               font=(FONT_FAMILY, self._font_size),
+                               bg=self._bg, fg=self._fg,
+                               anchor='center', justify=tk.CENTER)
+        self._label.pack(fill=tk.BOTH, expand=True)
+
+        self._time_label = tk.Label(self._frame, text='',
+                                     font=('Consolas', self._time_font_size),
+                                     bg=self._bg, fg=self._fg)
+        self._refresh_time_label()
 
         self.update_idletasks()
         _bh = self._i(height)
@@ -321,24 +381,6 @@ class _Banner(_NotifyBase):
         self._timeout = 3
         self._reset_timer()
 
-    def refresh(self, text='', timeout=None, **kw):
-        if text:
-            self._label.configure(text=text)
-        if 'fg' in kw:
-            self._label.configure(fg=kw['fg'])
-        if 'font_size' in kw:
-            self._label.configure(font=(FONT_FAMILY, kw['font_size'], 'bold'))
-        if 'bg' in kw:
-            c = kw['bg']
-            self.configure(bg=c)
-            self._frame.configure(bg=c)
-            self._label.configure(bg=c)
-        if 'width' in kw or 'height' in kw:
-            w = self._i(kw.get('width', 0), 0) or self.winfo_width()
-            h = self._i(kw.get('height', 0), 0) or self.winfo_height()
-            self.geometry(f'{w}x{h}')
-        super().refresh(text, timeout, **kw)
-
     def destroy(self):
         self.attributes('-topmost', False)
         super().destroy()
@@ -359,25 +401,24 @@ class _Canvas(_NotifyBase):
 
     def __init__(self, owner, text=None, timeout=0, title=None, pattern='flower',
                  width=None, height=None, bg='#1a1a2e', fg='#f0e68c',
-                 font_size=13, x=None, y=None, show_time=True, **_kw):
-        super().__init__(owner, timeout)
+                 font_size=13, x=None, y=None, time_font_size=9,
+                 time_fg='#888888', **_kw):
+        super().__init__(owner, timeout, bg=bg, fg=fg, font_size=font_size,
+                         show_time=_kw.pop('show_time', True),
+                         time_font_size=time_font_size, time_fg=time_fg)
         self.resizable(False, False)
-        self.configure(bg=bg)
 
         self._text = text if text is not None else ''
-        self._fg = fg
-        self._font_size = font_size
         self._pattern = pattern if pattern in self._PATTERNS else 'flower'
         if title is None:
             title = self._TITLES.get(self._pattern, '🌸')
         self.title(title)
         dw, dh = self._SIZES.get(self._pattern, (300, 360))
-        self._show_time = show_time not in (False, 0, '0', 'False', 'false', '')
         self._fw = dw if width is None else (self._i(width, dw) or dw)
         self._fh = dh if height is None else (self._i(height, dh) or dh)
 
         self._canvas = tk.Canvas(self, width=self._fw, height=self._fh,
-                                 bg=bg, highlightthickness=0)
+                                 bg=self._bg, highlightthickness=0)
         self._canvas.pack()
         self._draw()
 
@@ -389,11 +430,8 @@ class _Canvas(_NotifyBase):
         self.deiconify()
 
     def refresh(self, text='', timeout=None, **kw):
-        self._text = text
-        if 'fg' in kw:
-            self._fg = kw['fg']
-        if 'font_size' in kw:
-            self._font_size = kw['font_size']
+        if text:
+            self._text = text
         if 'pattern' in kw:
             p = kw['pattern']
             self._pattern = p if p in self._PATTERNS else 'flower'
@@ -405,26 +443,21 @@ class _Canvas(_NotifyBase):
                 kw.setdefault('height', dh)
         if 'title' in kw:
             self.title(kw['title'])
-        if 'show_time' in kw:
-            v = kw['show_time']
-            self._show_time = v not in (False, 0, '0', 'False', 'false', '')
-        # resize if needed
-        if 'width' in kw or 'height' in kw:
-            w = (self._i(kw.get('width'), self._fw) or self._fw) if 'width' in kw else self._fw
-            h = (self._i(kw.get('height'), self._fh) or self._fh) if 'height' in kw else self._fh
-            if w != self._fw or h != self._fh:
-                self._fw, self._fh = w, h
-                self._canvas.configure(width=w, height=h)
-                self.geometry(f'{w}x{h}')
-        # reposition if needed
+        # Pop x/y before super (Canvas uses OR logic, base uses AND)
         if 'x' in kw or 'y' in kw:
-            px = self._i(kw.get('x', None), None)
-            py = self._i(kw.get('y', None), None)
+            px = self._i(kw.pop('x', None), None)
+            py = self._i(kw.pop('y', None), None)
             if px is not None and py is not None:
                 self.geometry(f'+{px}+{py}')
         self._canvas.delete('all')
         self._draw()
         super().refresh(text, timeout, **kw)
+
+    def _apply_geometry(self, w, h):
+        if w != self._fw or h != self._fh:
+            self._fw, self._fh = w, h
+            self._canvas.configure(width=w, height=h)
+        self.geometry(f'{w}x{h}')
 
     def _draw(self):
         getattr(self, f'_draw_{self._pattern}')()
@@ -439,8 +472,8 @@ class _Canvas(_NotifyBase):
         if self._show_time:
             c.create_text(w / 2, h - 25,
                           text=time.strftime('%Y-%m-%d %H:%M:%S'),
-                          font=('Consolas', 9),
-                          fill='#888888')
+                          font=('Consolas', self._time_font_size),
+                          fill=self._time_fg or self._fg)
 
     # -- flower --
     def _draw_flower(self):
