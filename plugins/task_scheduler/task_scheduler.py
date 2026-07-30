@@ -635,19 +635,22 @@ class TaskScheduler(GuiPlugin):
                   activebackground=s['card'], activeforeground=s['accent'],
                   bd=0, cursor='hand2').pack(side=tk.RIGHT, padx=3)
 
-        # pause / play
+        # pause / play — always a Label with click bind (even when done)
         if is_done:
-            pause_btn = tk.Label(row, text='✓', font=('Consolas', 10),
-                                  width=2, bg=s['card'], fg=s['hint'])
+            pause_text = '✓'
+            pause_fg = s['hint']
+        elif disabled or self._is_failed(task):
+            pause_text = '▶'
+            pause_fg = s['hint']
         else:
-            pause_text = '▶' if (disabled or self._is_failed(task)) else '⏸'
-            pause_fg = s['hint'] if (disabled or self._is_failed(task)) else s['fg']
-            pause_btn = tk.Button(row, text=pause_text,
-                      command=lambda t=tid: self._do_toggle(t),
-                      font=('Consolas', 10), width=2,
-                      bg=s['card'], fg=pause_fg, relief=tk.FLAT, padx=0,
-                      activebackground=s['card'], activeforeground=s['hint'],
-                      bd=0, cursor='hand2')
+            pause_text = '⏸'
+            pause_fg = s['fg']
+        pause_btn = tk.Label(row, text=pause_text,
+                             font=('Consolas', 10), width=2,
+                             bg=s['card'], fg=pause_fg,
+                             cursor='hand2')
+        pause_btn.bind('<Button-1>',
+                       lambda e, t=tid: self._do_toggle(t))
         pause_btn.pack(side=tk.RIGHT, padx=3)
 
         # cancel
@@ -742,13 +745,33 @@ class TaskScheduler(GuiPlugin):
         was_enabled = item.get('enabled', True)
         if was_enabled:
             self._srv('pause', tid)
+            item = dict(item)
+            item['enabled'] = False
+        elif item['type'] == 'once':
+            # once + numeric delay → cancel & recreate to reset countdown
+            delay = item.get('delay', '')
+            try:
+                float(delay)
+                # numeric delay: recreate so timer starts from now
+                extra = {k: item[k] for k in self._IMPORT_EXTRA['once']
+                         if k in item}
+                self._srv('cancel', tid)
+                self._srv('create_once', tid, delay, item['fn_ref'],
+                          updating=False, **extra)
+                item = self._srv('get', tid)
+                if not item:
+                    return
+            except (ValueError, TypeError):
+                # absolute time: just resume
+                self._srv('resume', tid)
+                item = self._srv('get', tid)
+                if not item:
+                    return
         else:
             self._srv('resume', tid)
-        # Compute new state locally (avoids second service call)
-        item = dict(item)
-        item['enabled'] = not was_enabled
-        if not was_enabled:
-            item['failed'] = False  # resume clears failed
+            item = self._srv('get', tid)
+            if not item:
+                return
         old_group = self._rows[tid]['group']
         new_group = self._task_group(item)
         self._rows[tid]['group'] = new_group
@@ -787,6 +810,17 @@ class TaskScheduler(GuiPlugin):
         'weekly': _COMMON_KEYS + ('days', 'time_str'),
         'cron':   _COMMON_KEYS + ('cron_expr',),
     }
+    # Per-type whitelist of extra kwargs accepted on import (future-proof:
+    # unknown keys in imported JSON are silently ignored).
+    _IMPORT_EXTRA = {
+        'every':  ('auto_start', 'max_runs', 'timeout', 'args', 'kwargs', 'start_time'),
+        'once':   ('auto_start', 'timeout', 'args', 'kwargs'),
+        'daily':  ('auto_start', 'max_runs', 'timeout', 'args', 'kwargs'),
+        'weekly': ('auto_start', 'max_runs', 'timeout', 'args', 'kwargs'),
+        'cron':   ('auto_start', 'max_runs', 'timeout', 'args', 'kwargs'),
+    }
+    # Fields whose zero value means "not set" (skip on export)
+    _ZERO_IS_UNSET = frozenset({'max_runs', 'timeout'})
 
     def _export_tasks(self):
         tasks = self._all_tasks()
@@ -813,8 +847,20 @@ class TaskScheduler(GuiPlugin):
                     item = {}
                     for k in keys:
                         v = t.get(k)
-                        if v is not None and v != '' and v != [] and v != {}:
-                            item[k] = v
+                        if v is None or v == '' or v == [] or v == {}:
+                            continue
+                        if k in self._ZERO_IS_UNSET and v == 0:
+                            continue
+                        if isinstance(v, (list, tuple)) and len(v) == 0:
+                            continue
+                        item[k] = v
+                    # once + numeric delay → relative time, disable on import
+                    if t['type'] == 'once':
+                        try:
+                            float(t.get('delay', ''))
+                            item['enabled'] = False
+                        except (ValueError, TypeError):
+                            pass  # absolute time string, keep original
                     export_list.append(item)
             if not export_list:
                 return
@@ -915,15 +961,37 @@ class TaskScheduler(GuiPlugin):
             fn = item.get('fn_ref', '')
             if not fn:
                 continue
-            # extra kwargs = exported keys minus id/type/fn_ref/positional/enabled/created_at
-            _POS_ARGS = {'every': ('interval',), 'once': ('delay',),
-                         'daily': ('time_str',), 'weekly': ('days', 'time_str'),
-                         'cron': ('cron_expr',)}
-            _SKIP_EXTRA = ('id', 'type', 'fn_ref', 'enabled', 'created_at')
-            allowed = [k for k in self._EXPORT_KEYS.get(tp, self._COMMON_KEYS)
-                       if k not in _SKIP_EXTRA
-                       and k not in _POS_ARGS.get(tp, ())]
-            extra = {k: item[k] for k in allowed if k in item}
+            # once tasks: disable if delay is relative (numeric) or absolute
+            # time already in the past (would fire immediately otherwise).
+            if tp == 'once':
+                delay = str(item.get('delay', ''))
+                try:
+                    float(delay)
+                    item['enabled'] = False  # numeric → relative
+                except ValueError:
+                    parsed = False
+                    for fmt in ('%Y-%m-%d %H:%M:%S', '%H:%M:%S'):
+                        try:
+                            t = time.strptime(delay, fmt)
+                            if fmt == '%H:%M:%S':
+                                now = time.localtime()
+                                t = time.struct_time((
+                                    now.tm_year, now.tm_mon, now.tm_mday,
+                                    t.tm_hour, t.tm_min, t.tm_sec,
+                                    0, 0, now.tm_isdst))
+                            if time.mktime(t) <= time.time():
+                                item['enabled'] = False
+                            parsed = True
+                            break
+                        except (ValueError, OverflowError):
+                            continue
+                    if not parsed:
+                        item['enabled'] = False  # unrecognized format, disable
+            # Only pass type-appropriate extra kwargs (future-proof: unknown
+            # keys in imported JSON are silently ignored).
+            extra = {k: item[k]
+                     for k in self._IMPORT_EXTRA.get(tp, ())
+                     if k in item}
             try:
                 if tp == 'every':
                     self._srv('create_every', tid, item.get('interval', 60), fn,
