@@ -37,6 +37,7 @@ python -m nuitka \
     --include-data-files=plugins/task_scheduler/__init__.py=plugins/task_scheduler/__init__.py \
     --include-data-files=plugins/task_scheduler/task_scheduler.py=plugins/task_scheduler/task_scheduler.py \
     --include-data-files=plugins/task_scheduler/task_service.py=plugins/task_scheduler/task_service.py \
+    --include-data-files=plugins/task_scheduler/notify_service.py=plugins/task_scheduler/notify_service.py \
     --include-data-files=plugins/task_scheduler/_cron_utils.py=plugins/task_scheduler/_cron_utils.py \
     --include-package=common \
     --include-package=common.common \
