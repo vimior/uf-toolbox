@@ -31,7 +31,7 @@ _LANG = {
         'update_to':       '更新到 v{}',
         'current':        '已安装',
         'local_plugin':   '本地插件',
-        'orphan':         '未在商店中',
+        'orphan':         '未在插件商店中',
         'updated_at':     '上次刷新: {}',
         'never':          '从未刷新',
         'retry':          '重试',
@@ -45,12 +45,12 @@ _LANG = {
         'confirm_title':  '确认安装',
         'confirm_install': '确定要安装 "{}" 吗？',
         'confirm_update':  '确定要将 "{}" 从 v{} 更新到 v{} 吗？',
-        'confirm_overwrite': '检测到本地已有 "{}"，确定要覆盖安装 v{} 吗？\n\n（覆盖后可在商店中正常更新）',
+        'confirm_overwrite': '检测到本地已有 "{}"，确定要覆盖安装 v{} 吗？\n\n（覆盖后可在插件商店中正常更新）',
         'filter_remote': '远程',
         'filter_local':  '本地',
         'delete':        '删除',
-        'delete_confirm': '确定要删除 "{}" v{} 吗？\n\n可通过商店重新安装恢复。',
-        'delete_confirm_orphan': '⚠️ "{}" 是本地插件，删除后无法通过商店恢复！\n\n确定要删除吗？',
+        'delete_confirm': '确定要删除 "{}" v{} 吗？\n\n可通过插件商店重新安装恢复。',
+        'delete_confirm_orphan': '⚠️ "{}" 是本地插件，删除后无法通过插件商店恢复！\n\n确定要删除吗？',
         'delete_done':   '已删除',
         'local_ver':     '本地版本',
         'ok':            '确定',
@@ -331,15 +331,22 @@ class PluginStore(GuiPlugin):
     def _handle_queue_msg(self, msg):
         """主线程处理队列消息。"""
         msg_type = msg.get('type')
-        if msg_type == 'fetch_done':
-            self._on_fetch_done(msg.get('data'), msg.get('installed'))
+        if msg_type == 'local_done':
+            # 本地扫描先行完成 → 先渲染本地插件（不阻塞远程 fetch）
+            self._on_local_done(msg.get('installed'))
+        elif msg_type == 'fetch_done':
+            self._on_fetch_done(msg.get('data'))
         elif msg_type == 'install_done':
             self._on_install_done(msg.get('namespace'), msg.get('error'))
 
     # ---- 数据加载 ----
 
     def _fetch_plugin_list(self):
-        """在线程中获取远程插件列表和本地扫描。"""
+        """在线程中获取远程插件列表和本地扫描。
+
+        本地扫描先行（不依赖网络），到达后立即渲染本地插件；
+        远程 fetch 在同一线程随后执行（超时/失败不阻塞本地显示）。
+        """
         if self._fetching:
             return
         self._fetching = True
@@ -351,7 +358,18 @@ class PluginStore(GuiPlugin):
         repo_url = self.app.repo_url
 
         def _run():
-            # 远程获取（失败不影响本地扫描）
+            # 1. 本地扫描（快、无网络），先行渲染
+            try:
+                installed = PluginRepo.scan_installed(self.app)
+            except Exception as e:
+                installed = {}
+                self._fetch_error = f"本地扫描失败: {e}"
+            self._result_queue.put({
+                'type': 'local_done',
+                'installed': installed,
+            })
+
+            # 2. 远程获取（失败不影响已显示的本地列表）
             data = None
             try:
                 data = PluginRepo.fetch_index(repo_url or None)
@@ -359,20 +377,7 @@ class PluginStore(GuiPlugin):
                 self._fetch_error = str(e)
             except Exception as e:
                 self._fetch_error = f"未知错误: {e}"
-
-            # 本地扫描（独立执行，网络失败也显示本地插件）
-            try:
-                installed = PluginRepo.scan_installed(self.app)
-            except Exception as e:
-                installed = {}
-                if not self._fetch_error:
-                    self._fetch_error = f"本地扫描失败: {e}"
-
-            self._result_queue.put({
-                'type': 'fetch_done',
-                'data': data,
-                'installed': installed,
-            })
+            self._result_queue.put({'type': 'fetch_done', 'data': data})
 
         t = threading.Thread(target=_run, daemon=True)
         t.start()
@@ -382,13 +387,21 @@ class PluginStore(GuiPlugin):
         except Exception:
             pass
 
-    def _on_fetch_done(self, data, installed):
-        """主线程回调：合并远程 + 本地数据并渲染。
+    def _on_local_done(self, installed):
+        """主线程回调：本地扫描完成 → 先渲染本地插件。
 
-        远程获取失败时仍然渲染本地插件，并在顶栏提示错误。
+        此时远程列表未知，本地插件统一按"已安装"显示，
+        不判定 orphan（等 fetch_done 后完整渲染再判定）。
+        """
+        self._installed = installed
+        self._render_list(local_only=True)
+
+    def _on_fetch_done(self, data):
+        """主线程回调：远程 fetch 完成 → 合并远程 + 本地数据完整渲染。
+
+        远程获取失败时保留已显示的本地插件，并在顶栏提示错误。
         """
         self._fetching = False
-        self._installed = installed
 
         if data is not None:
             self._loaded = True
@@ -425,11 +438,14 @@ class PluginStore(GuiPlugin):
         lbl.pack(pady=40)
         self._bind_mousewheel(self._scrollable_frame)
 
-    def _render_list(self):
+    def _render_list(self, local_only=False):
         """渲染插件卡片列表。
 
         先构建合并列表（每条包含 remote_info / local_info / status），
         再按复选框筛选渲染。
+
+        *local_only*: 远程列表尚未拿到时只渲染本地插件，
+        此时不做 orphan 判定（统一按"已安装"显示）。
         """
         self._clear_canvas()
         s = self._s
@@ -441,17 +457,9 @@ class PluginStore(GuiPlugin):
         merged = []          # [(display_pi, status, local_info, source)]
         seen = set()         # 已处理的 namespace
 
-        # 远程插件
-        for pi in self._remote_plugins:
-            ns = pi.get('namespace', '')
-            local_info = installed_map.get(ns)
-            status = PluginRepo.compare_status(local_info, pi)
-            merged.append((pi, status, local_info, 'remote'))
-            seen.add(ns)
-
-        # 本地 orphan（不在远程中的）
-        for ns, local_info in installed_map.items():
-            if ns not in seen:
+        if local_only:
+            # 远程未知：本地插件统一按"已安装"显示
+            for ns, local_info in installed_map.items():
                 pi = {
                     'name': ns,
                     'namespace': ns,
@@ -459,8 +467,29 @@ class PluginStore(GuiPlugin):
                     'description': '',
                     'author': local_info.get('author', ''),
                 }
-                merged.append((pi, 'orphan', local_info, 'local'))
+                merged.append((pi, 'current', local_info, 'local'))
                 seen.add(ns)
+        else:
+            # 远程插件
+            for pi in self._remote_plugins:
+                ns = pi.get('namespace', '')
+                local_info = installed_map.get(ns)
+                status = PluginRepo.compare_status(local_info, pi)
+                merged.append((pi, status, local_info, 'remote'))
+                seen.add(ns)
+
+            # 本地 orphan（不在远程中的）
+            for ns, local_info in installed_map.items():
+                if ns not in seen:
+                    pi = {
+                        'name': ns,
+                        'namespace': ns,
+                        'version': local_info.get('version', ''),
+                        'description': '',
+                        'author': local_info.get('author', ''),
+                    }
+                    merged.append((pi, 'orphan', local_info, 'local'))
+                    seen.add(ns)
 
         # ---- 按复选框筛选 ----
         total = 0
@@ -793,8 +822,15 @@ class PluginStore(GuiPlugin):
             self._notice('error', self._lbl['delete'], f"删除失败: {e}")
             return
 
-        # 刷新
-        self._fetch_plugin_list()
+        # 立即从本地安装映射移除并刷新界面。
+        # 不能依赖 _fetch_plugin_list()：fetch 进行中会被 _fetching 跳过，
+        # 且 fetch_done 会用旧映射重渲染导致删除"复活"。
+        self._installed.pop(namespace, None)
+        if self._fetching:
+            # fetch 未完成：局部刷新本地列表，fetch_done 到达后会自动完整重渲染
+            self._render_list(local_only=True)
+        else:
+            self._fetch_plugin_list()
 
     # ---- 覆盖安装 ----
 
