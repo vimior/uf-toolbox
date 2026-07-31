@@ -31,13 +31,13 @@ class SettingsUI(AppState, tk.Tk):
         w['frame'].config(bg=t['bg'])
         w['bottom'].config(bg=t['bg'])
 
-        for key in ('tool_lbl', 'plugin_lbl'):
+        for key in ('tool_lbl', 'plugin_lbl', 'repo_lbl'):
             w[key].config(bg=t['bg'], fg=t['fg'])
 
-        for key in ('row1', 'row2'):
+        for key in ('row1', 'row2', 'row3'):
             w[key].config(bg=t['bg'])
 
-        for key in ('tool_entry', 'plugin_entry'):
+        for key in ('tool_entry', 'plugin_entry', 'repo_entry'):
             w[key].config(bg=t['input_bg'], fg=t['fg'],
                           insertbackground=t['fg'],
                           highlightbackground=t['separator'])
@@ -65,6 +65,7 @@ class SettingsUI(AppState, tk.Tk):
         w = self._config_widgets
         w['tool_lbl'].config(text=l['config_tool_path'])
         w['plugin_lbl'].config(text=l['config_plugin_path'])
+        w['repo_lbl'].config(text=l['config_repo_url'])
         w['tool_btn'].config(text=l['config_select'])
         w['plugin_btn'].config(text=l['config_select'])
         w['save_btn'].config(text=l['config_save'])
@@ -152,6 +153,25 @@ class SettingsUI(AppState, tk.Tk):
         plugin_btn.pack(side=tk.RIGHT, padx=(6, 0), ipady=1)
         w['plugin_btn'] = plugin_btn
 
+        # Repo URL
+        repo_lbl = tk.Label(frame, text=l['config_repo_url'], bg=t['bg'],
+                             fg=t['fg'], font=(FONT_FAMILY, 10), anchor=tk.W)
+        repo_lbl.pack(fill=tk.X)
+        w['repo_lbl'] = repo_lbl
+
+        row3 = tk.Frame(frame, bg=t['bg'])
+        row3.pack(fill=tk.X, pady=(2, 8))
+        w['row3'] = row3
+
+        repo_var = tk.StringVar(value=self.repo_url)
+        self._orig_repo = self.repo_url
+        repo_entry = tk.Entry(row3, textvariable=repo_var, bg=t['input_bg'],
+                               fg=t['fg'], insertbackground=t['fg'],
+                               font=(FONT_FAMILY, 10), relief=tk.FLAT, bd=0,
+                               highlightthickness=1, highlightbackground=t['separator'])
+        repo_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=3)
+        w['repo_entry'] = repo_entry
+
         # --- Save button at bottom ---
         bottom = tk.Frame(win, bg=t['bg'])
         bottom.pack(fill=tk.X, padx=8, pady=(0, 6))
@@ -159,8 +179,9 @@ class SettingsUI(AppState, tk.Tk):
 
         save_btn = tk.Button(
             bottom, text=l['config_save'],
-            command=lambda: self._save_config_paths(
-                tool_var.get().strip(), plugin_var.get().strip(), win),
+            command=lambda: self._save_config_fields(
+                tool_var.get().strip(), plugin_var.get().strip(),
+                repo_var.get().strip(), win),
             bg=t['btn_disabled_bg'], fg=t['btn_fg'],
             font=(FONT_FAMILY, 9, 'bold'),
             relief=tk.RAISED, bd=1, padx=8, pady=1, cursor='hand2',
@@ -178,8 +199,10 @@ class SettingsUI(AppState, tk.Tk):
         def _check_dirty(*args):
             cur_tool = tool_var.get().strip()
             cur_plugin = plugin_var.get().strip()
+            cur_repo = repo_var.get().strip()
             is_dirty = (cur_tool != self._orig_tool
-                        or cur_plugin != self._orig_plugin)
+                        or cur_plugin != self._orig_plugin
+                        or cur_repo != self._orig_repo)
             if is_dirty and not self._settings_dirty:
                 self._settings_dirty = True
                 save_btn.config(bg=t['accent'], state=tk.NORMAL,
@@ -190,25 +213,29 @@ class SettingsUI(AppState, tk.Tk):
 
         tool_var.trace('w', _check_dirty)
         plugin_var.trace('w', _check_dirty)
+        repo_var.trace('w', _check_dirty)
 
         # --- Close guard ---
         def _on_close():
             cur_tool = tool_var.get().strip()
             cur_plugin = plugin_var.get().strip()
-            if cur_tool != self._orig_tool or cur_plugin != self._orig_plugin:
+            cur_repo = repo_var.get().strip()
+            if (cur_tool != self._orig_tool
+                    or cur_plugin != self._orig_plugin
+                    or cur_repo != self._orig_repo):
                 answer = messagebox.askyesnocancel(
                     l['config_title'], l['config_unsaved_msg'])
                 if answer is None:
                     return
                 if answer:
-                    self._save_config_paths(cur_tool, cur_plugin, win)
+                    self._save_config_fields(cur_tool, cur_plugin, cur_repo, win)
                     return
             win.destroy()
 
         win.protocol('WM_DELETE_WINDOW', _on_close)
         win.bind('<Destroy>', lambda _: self._on_config_win_closed())
 
-        self.emit('window:set-geometry', win, h=200)
+        self.emit('window:set-geometry', win, h=260)
         # win.lift()
         # win.focus_force()
 
@@ -222,8 +249,10 @@ class SettingsUI(AppState, tk.Tk):
         if path:
             var.set(path)
 
-    def _save_config_paths(self, tool_path, plugin_path, win):
+    def _save_config_fields(self, tool_path, plugin_path, repo_url, win):
+        """保存配置字段并关闭窗口（避免与 AppState._save_config 重名冲突）。"""
         self._config['tool_path'] = tool_path
         self._config['plugin_path'] = plugin_path
+        self._config['repo_url'] = repo_url
         self._save_config()
         win.destroy()

@@ -30,6 +30,7 @@ EN = {
     'config_title': 'Configuration',
     'config_tool_path': 'Tool Path',
     'config_plugin_path': 'Plugin Path',
+    'config_repo_url': 'Plugin Repo Addr',
     'config_select': 'Select',
     'config_save': 'Save',
     'config_unsaved_msg': 'Unsaved changes. Save before closing?',

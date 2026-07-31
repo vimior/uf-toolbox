@@ -175,6 +175,10 @@ class AppState:
         return self._config.get('plugin_path', 'plugins')
 
     @property
+    def repo_url(self):
+        return self._config.get('repo_url', '')
+
+    @property
     def ttk_style(self):
         return self._ttk_style
 

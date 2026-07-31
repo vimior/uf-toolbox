@@ -30,6 +30,7 @@ ZH = {
     'config_title': '配置',
     'config_tool_path': '工具路径',
     'config_plugin_path': '插件路径',
+    'config_repo_url': '插件仓库地址',
     'config_select': '选择',
     'config_save': '保存',
     'config_unsaved_msg': '有未保存的修改，是否保存后关闭？',
