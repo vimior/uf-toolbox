@@ -142,7 +142,7 @@ class PluginStore(GuiPlugin):
     name_zh = "插件管理器"
     name_en = "Plugin Manager"
     namespace = "plugin_store"
-    priority = 996
+    priority = 997
     reload = True
     fixed_size = False
 

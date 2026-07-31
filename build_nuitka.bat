@@ -27,6 +27,7 @@ python -m nuitka ^
     --include-package=plugins.plugin_guide ^
     --include-package=plugins.plugin_creator ^
     --include-package=plugins.plugin_inspector ^
+    --include-package=plugins.plugin_store ^
     --include-package=plugins.task_scheduler ^
     --include-data-files=plugins\plugin_guide\__init__.py=plugins\plugin_guide\__init__.py ^
     --include-data-files=plugins\plugin_guide\plugin_guide.py=plugins\plugin_guide\plugin_guide.py ^
@@ -34,6 +35,9 @@ python -m nuitka ^
     --include-data-files=plugins\plugin_creator\plugin_creator.py=plugins\plugin_creator\plugin_creator.py ^
     --include-data-files=plugins\plugin_inspector\__init__.py=plugins\plugin_inspector\__init__.py ^
     --include-data-files=plugins\plugin_inspector\plugin_inspector.py=plugins\plugin_inspector\plugin_inspector.py ^
+    --include-data-files=plugins\plugin_store\__init__.py=plugins\plugin_store\__init__.py ^
+    --include-data-files=plugins\plugin_store\plugin_store.py=plugins\plugin_store\plugin_store.py ^
+    --include-data-files=plugins\plugin_store\repo.py=plugins\plugin_store\repo.py ^
     --include-data-files=plugins\task_scheduler\__init__.py=plugins\task_scheduler\__init__.py ^
     --include-data-files=plugins\task_scheduler\task_scheduler.py=plugins\task_scheduler\task_scheduler.py ^
     --include-data-files=plugins\task_scheduler\task_service.py=plugins\task_scheduler\task_service.py ^

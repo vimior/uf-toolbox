@@ -39,6 +39,7 @@ a = Analysis(
         ('plugins/plugin_guide', 'plugins/plugin_guide'),
         ('plugins/plugin_creator', 'plugins/plugin_creator'),
         ('plugins/plugin_inspector', 'plugins/plugin_inspector'),
+        ('plugins/plugin_store', 'plugins/plugin_store'),
         ('plugins/task_scheduler', 'plugins/task_scheduler'),
         ('docs/plugin-guide.md', 'docs'),
         ('docs/plugin-guide-zh.md', 'docs'),
