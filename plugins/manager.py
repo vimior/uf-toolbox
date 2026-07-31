@@ -11,6 +11,35 @@ from plugins.plugin import GuiPlugin, HookInfo, ServicePlugin
 NS = 'plugins'
 
 
+class NamespaceManager:
+    _RESERVED = set(['app', NS, 'services'])
+    _USED = set([])
+
+    @classmethod
+    def add(cls, ns, reserved=False):
+        if reserved:
+            cls._RESERVED.add(ns)
+        else:
+            cls._USED.add(ns)
+
+    @classmethod
+    def remove(cls, ns):
+        if ns in cls._USED:
+            cls._USED.remove(ns)
+
+    @classmethod
+    def check(cls, ns):
+        if ns in cls._RESERVED:
+            raise ValueError(f'namespace({ns}) conflict [Reserved], please change the namespace.')
+        if ns in cls._USED:
+            raise ValueError(f'namespace({ns}) conflict [Used], please change the namespace.')
+
+    @classmethod
+    def update(cls, ns_used):
+        if ns_used != cls._USED:
+            cls._USED = ns_used
+
+
 class PluginManager:
     """Manages plugin discovery, loading, lifecycle, and hot-reload.
 
@@ -202,6 +231,7 @@ class PluginManager:
                             pass
                 self._inst = None
                 self._shown = False
+                NamespaceManager.remove(self.namespace)
             if self._pkg_dir is not None and self._pkg_dir in sys.path:
                 sys.path.remove(self._pkg_dir)
             # Reset so next click re-imports (hot-reload)
@@ -237,6 +267,7 @@ class PluginManager:
                             pass
                 self._inst = None
                 self._shown = False
+                NamespaceManager.remove(self.namespace)
 
         def restart(self, parent):
             """Force destroy + recreate the plugin window (dev-time hot-reload)."""
@@ -319,12 +350,14 @@ class PluginManager:
 
             # ---- create new instance ----
             try:
+                NamespaceManager.check(self.namespace)
                 namespaced_app = self.app.module(self.namespace)
                 if is_service:
                     self._inst = self._cls(app=namespaced_app)
                 else:
                     self._inst = self._cls(parent, namespaced_app)
                     self._inst.withdraw()  # hide until positioned by _apply_window_setup
+                NamespaceManager.add(self.namespace)
             except Exception as e:
                 self._mgr.logger.error(
                     f'[Plugin:{name}] init error: {e}')
@@ -579,6 +612,7 @@ class PluginManager:
                 mod = __import__(import_path, fromlist=[class_name])
                 cls = getattr(mod, class_name)
                 svc = cls(app=self._ctrl_app.module(namespace))
+                NamespaceManager.add(namespace, True)
                 self._builtin_instances.append(svc)
                 self.logger.info('[PluginManager] built-in service started: %s', class_name)
             except Exception as e:
@@ -799,8 +833,11 @@ class PluginManager:
 
         # ---- validate namespace uniqueness ---------------
         ns_seen = {}
+        ns_used = set([])
         for key, h in self.plugins.items():
             ns = h.namespace
+            if h.alive:
+                ns_used.add(ns)
             if ns in ns_seen:
                 self.logger.error(
                     '[PluginManager] duplicate namespace "%s": '
@@ -808,4 +845,5 @@ class PluginManager:
                     ns, ns_seen[ns], key)
             else:
                 ns_seen[ns] = key
+        NamespaceManager.update(ns_used)
 
