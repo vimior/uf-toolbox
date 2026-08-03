@@ -2,6 +2,10 @@
 """Lightweight pub-sub event bus."""
 import time
 import logging
+import asyncio
+import inspect
+import threading
+import functools
 from .utils import _callback_name, _resolve_name
 
 
@@ -21,22 +25,86 @@ class EventBus:
         self._cb_count = {}  # id(callback) → invocation count
         self._perf = perf  # PerfMonitor instance (optional)
         self._logger = logger or logging.getLogger(__name__)
+        self._is_shutting_down = False
+        self._asyncio_loop = None
+        self._asyncio_thread = None
+        threading.Thread(target=self._asyncio_watchdog, daemon=True).start()
+        time.sleep(0.1)  # Give the watchdog a moment to start the event loop thread
+
+    def _asyncio_watchdog(self):
+        """Watchdog thread to monitor the asyncio event loop."""
+        while not self._is_shutting_down:
+            if self._asyncio_thread is None:
+                self._spawn_asyncio_thread()
+            else:
+                self._asyncio_thread.join(timeout=1.0)
+                if not self._asyncio_thread.is_alive() and not self._is_shutting_down:
+                    self._spawn_asyncio_thread()  # Restart the event loop thread
+            time.sleep(1)
+
+    def _spawn_asyncio_thread(self):
+        """Spawn a watchdog thread to monitor the asyncio event loop."""
+        self._asyncio_thread = threading.Thread(target=self._run_asyncio_loop, daemon=True)
+        self._asyncio_thread.start()
+
+    def _run_asyncio_loop(self):
+        """Run asyncio event loop in a separate thread."""
+        self._asyncio_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._asyncio_loop)
+        self._logger.info('[EventLoop] asyncio event loop thread started')
+
+        def global_exception_handler(loop, context):
+            msg = context.get("exception", context["message"])
+            self._logger.error('[EventLoop] Caught unhandled exception: %s', msg, exc_info=True)
+        self._asyncio_loop.set_exception_handler(global_exception_handler)
+
+        try:
+            self._asyncio_loop.run_forever()
+        except Exception as e:
+            self._logger.error(f'[EventLoop] asyncio event loop has stopped unexpectedly: {e}', exc_info=True)
+        finally:
+            try:
+                pending = asyncio.all_tasks(loop=self._asyncio_loop)
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    self._asyncio_loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            finally:
+                self._asyncio_loop.close()
 
     # ---- public API ----
 
     def on(self, event, callback, ns):
         """Register *callback* for *event* (no-op if already registered)."""
         event = _resolve_name(event, ns)
+        final_callback = callback
+
+        # Identify and wrap asynchronous callbacks
+        if inspect.iscoroutinefunction(callback):
+            @functools.wraps(callback)
+            def async_wrapper(*args, **kwargs):
+                if self._asyncio_loop and self._asyncio_loop.is_running():
+                    asyncio.run_coroutine_threadsafe(callback(*args, **kwargs), self._asyncio_loop)
+            async_wrapper.__wrapped__ = callback  # Preserve original function references
+            final_callback = async_wrapper
+
         listeners = self._listeners.setdefault(event, [])
-        if callback in listeners:
-            return
-        listeners.append(callback)
+        # Obtain the "__qualname__" of the original callback as a unique identifier.
+        # Solving the problem of the id changing every time in Bound Method
+        current_qualname = getattr(callback, '__qualname__', id(callback))
+        for existing_cb in listeners:
+            existing_identity = getattr(existing_cb, '__wrapped__', existing_cb)
+            existing_qualname = getattr(existing_identity, '__qualname__', id(existing_identity))
+            if existing_qualname == current_qualname:
+                return
+
+        listeners.append(final_callback)
         if ns:
-            self._namespaced.setdefault(ns, []).append((event, callback))
+            self._namespaced.setdefault(ns, []).append((event, final_callback))
             if self._perf:
-                self._perf.register_cb(ns, callback)
-        self._cb_since[id(callback)] = time.time()
-        self._logger.info('[eventbus] on %s → %s', event, _callback_name(callback))
+                self._perf.register_cb(ns, final_callback)
+        self._cb_since[id(final_callback)] = time.time()
+        self._logger.info('[eventbus] on %s → %s', event, _callback_name(final_callback))
 
     def off(self, event, callback, ns=None):
         """Remove a previously registered *callback* for *event*.
@@ -46,13 +114,21 @@ class EventBus:
         """
         if ns:
             event = _resolve_name(event, ns)
+        # Obtain the "__qualname__" of the original callback as a unique identifier.
+        current_qualname = getattr(callback, '__qualname__', id(callback))
         listeners = self._listeners.get(event, [])
-        if not listeners or callback not in listeners:
+        index = -1
+        # Iterate through the list and use `__qualname__` to pinpoint the exact location (never use `list.remove`).
+        for i, existing_cb in enumerate(listeners):
+            existing_identity = getattr(existing_cb, '__wrapped__', existing_cb)
+            existing_qualname = getattr(existing_identity, '__qualname__', id(existing_identity))
+            if existing_qualname == current_qualname:
+                index = i
+                break
+        if index < 0:
             return
-        try:
-            listeners.remove(callback)
-        except ValueError:
-            pass
+        # Obtain the final callback
+        callback = listeners.pop(index)
         if self._perf:
             self._perf.unregister_cb(callback)
         self._cb_since.pop(id(callback), None)
