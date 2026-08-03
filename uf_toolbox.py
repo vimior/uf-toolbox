@@ -54,10 +54,6 @@ class UFToolBox(MenuUI, LogUI, SettingsUI, AboutUI, tk.Tk):
         # Trigger initial auto-hide check 5s after startup
         self.after(5000, self._check_auto_hide)
 
-    def destroy(self):
-        self._tm.kill_all()
-        super().destroy()
-
     def init(self):
         super().init()
         self.on('window:set-geometry', self._set_window_geometry)

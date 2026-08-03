@@ -130,6 +130,10 @@ class MenuUI(AppState, tk.Tk):
         self.bind('<FocusOut>', self._on_focus_out)
         self._fit_window()
 
+    def destroy(self):
+        self._tm.kill_all()
+        super().destroy()
+
     def apply_theme(self, name):
         t = self.theme
         self.configure(bg=t['bg'])
