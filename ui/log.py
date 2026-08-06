@@ -4,7 +4,6 @@ import sys
 import queue
 import logging
 import tkinter as tk
-from tkinter import ttk
 from common.state import AppState
 from common.common import FONT_FAMILY, LOG_FMT, LOG_DATE_FMT, logger
 
@@ -65,7 +64,9 @@ class LogUI(AppState, tk.Tk):
         outer = tk.Frame(win, bg=t['bg'])
         outer.pack(fill=tk.BOTH, expand=True, padx=(8, 0), pady=(8, 4))
 
-        scrollbar = ttk.Scrollbar(outer, orient=tk.VERTICAL)
+        scrollbar = tk.Scrollbar(outer, orient=tk.VERTICAL,
+                                 width=12, relief=tk.FLAT,
+                                 borderwidth=0, bg=t['scroll_bar'], troughcolor=t['scroll_frame'])
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         self._log_border_frame = border = tk.Frame(

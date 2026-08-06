@@ -18,4 +18,6 @@ DARK_THEME = {
     'btn_active_bg': '#2d5a8a',
     'btn_fg': '#e0e0e0',
     'btn_disabled_bg': '#4a4a4a',
+    'scroll_frame': '#252525',
+    'scroll_bar': '#333333',
 }

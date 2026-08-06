@@ -18,4 +18,6 @@ LIGHT_THEME = {
     'btn_active_bg': '#3a7bc8',
     'btn_fg': 'white',
     'btn_disabled_bg': '#dcdcdc',
+    'scroll_frame': '#f5f5f5',
+    'scroll_bar': '#e0e0e0',
 }

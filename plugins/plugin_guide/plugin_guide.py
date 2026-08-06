@@ -3,7 +3,6 @@
 import os
 import re
 import tkinter as tk
-from tkinter import ttk
 from plugins.plugin import GuiPlugin
 
 STYLE = {
@@ -14,6 +13,7 @@ STYLE = {
         'code_fg': '#ce9178',  'link': '#569cd6',
         'th': '#9cdcfe',       'bar': '#333333',
         'bar_fg': '#ffffff',   'hr': '#444444',
+        'scroll_frame': '#252525', 'scroll_bar': '#333333',
     },
     'light': {
         'bg': '#ffffff',       'frame': '#f5f5f5',
@@ -22,6 +22,7 @@ STYLE = {
         'code_fg': '#a31515',  'link': '#0066cc',
         'th': '#0066cc',       'bar': '#e0e0e0',
         'bar_fg': '#333333',   'hr': '#cccccc',
+        'scroll_frame': '#f5f5f5', 'scroll_bar': '#e0e0e0',
     },
 }
 
@@ -65,7 +66,9 @@ class PluginGuide(GuiPlugin):
         outer = tk.Frame(self, bg=s['bg'])
         outer.pack(fill=tk.BOTH, expand=True, padx=(16, 4), pady=(12, 8))
 
-        scrollbar = ttk.Scrollbar(outer, orient=tk.VERTICAL)
+        scrollbar = tk.Scrollbar(outer, orient=tk.VERTICAL,
+                                 width=12, relief=tk.FLAT, borderwidth=0,
+                                 bg=s['scroll_bar'], troughcolor=s['scroll_frame'])
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         self._txt = tk.Text(outer, wrap=tk.WORD, font=("Consolas", 10),

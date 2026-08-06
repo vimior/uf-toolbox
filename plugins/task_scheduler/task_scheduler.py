@@ -139,6 +139,8 @@ _STYLE = {
         'accent_fg': '#ffffff',
         'dead':      '#d94a4a',
         'sep':       '#3c3c3c',
+        'scroll_frame': '#252525',
+        'scroll_bar':   '#333333',
     },
     'light': {
         'bg':        '#f5f5f5',
@@ -151,6 +153,8 @@ _STYLE = {
         'accent_fg': '#ffffff',
         'dead':      '#c0392b',
         'sep':       '#d0d0d0',
+        'scroll_frame': '#f5f5f5',
+        'scroll_bar':   '#e0e0e0',
     },
 }
 
@@ -278,8 +282,9 @@ class TaskScheduler(GuiPlugin):
         scroll_frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=(0, 4))
 
         self._canvas = tk.Canvas(scroll_frame, bg=s['bg'], highlightthickness=0)
-        self._scrollbar = tk.Scrollbar(scroll_frame, orient=tk.VERTICAL, width=8,
-                                       command=self._canvas.yview)
+        self._scrollbar = tk.Scrollbar(scroll_frame, orient=tk.VERTICAL, command=self._canvas.yview,
+                                       width=12, relief=tk.FLAT, borderwidth=0,
+                                       bg=s['scroll_bar'], troughcolor=s['scroll_frame'])
         self._canvas.configure(yscrollcommand=self._scrollbar.set)
         self._scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self._canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -894,8 +899,9 @@ class TaskScheduler(GuiPlugin):
 
         # scrollable checkbox area
         canvas = tk.Canvas(dlg, bg=self._s['bg'], highlightthickness=0)
-        scrollbar = tk.Scrollbar(dlg, orient=tk.VERTICAL, width=6,
-                                  command=canvas.yview)
+        scrollbar = tk.Scrollbar(dlg, orient=tk.VERTICAL, command=canvas.yview,
+                                 width=12, relief=tk.FLAT, borderwidth=0,
+                                 bg=self._s['scroll_bar'], troughcolor=self._s['scroll_frame'])
         inner = tk.Frame(canvas, bg=self._s['bg'])
         canvas.create_window((0, 0), window=inner, anchor='nw', tags=('inner',))
         canvas.configure(yscrollcommand=scrollbar.set)
@@ -1574,8 +1580,9 @@ class TaskScheduler(GuiPlugin):
         # ---- kv_frame (scrollable, show/hide with before=opt to keep position) ----
         kv_frame = tk.Frame(dlg, bg=s['bg'])
         kv_canvas = tk.Canvas(kv_frame, bg=s['bg'], highlightthickness=0, height=0)
-        kv_scroll = tk.Scrollbar(kv_frame, orient=tk.VERTICAL, width=6,
-                                  command=kv_canvas.yview)
+        kv_scroll = tk.Scrollbar(kv_frame, orient=tk.VERTICAL, command=kv_canvas.yview,
+                                 width=12, relief=tk.FLAT, borderwidth=0,
+                                 bg=s['scroll_bar'], troughcolor=s['scroll_frame'])
         kv_inner = tk.Frame(kv_canvas, bg=s['bg'])
         kv_canvas.create_window((0, 0), window=kv_inner, anchor='nw', tags=('kv_inner',))
         kv_canvas.configure(yscrollcommand=kv_scroll.set)

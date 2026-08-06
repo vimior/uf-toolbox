@@ -113,6 +113,8 @@ _STYLE = {
         'sep':       '#444444',
         'progress_bg': '#555555',
         'progress_fg': '#2d5a8a',
+        'scroll_frame': '#252525',
+        'scroll_bar':   '#333333',
     },
     'light': {
         'bg':        '#f5f5f5',
@@ -131,6 +133,8 @@ _STYLE = {
         'sep':       '#cccccc',
         'progress_bg': '#e0e0e0',
         'progress_fg': '#2d5a8a',
+        'scroll_frame': '#f5f5f5',
+        'scroll_bar':   '#e0e0e0',
     },
 }
 
@@ -235,8 +239,9 @@ class PluginStore(GuiPlugin):
 
         self._canvas = tk.Canvas(canvas_frame, bg=s['bg'],
                                  highlightthickness=0, bd=0)
-        self._scrollbar = tk.Scrollbar(canvas_frame, orient=tk.VERTICAL,
-                                       command=self._canvas.yview, width=8)
+        self._scrollbar = tk.Scrollbar(canvas_frame, orient=tk.VERTICAL, command=self._canvas.yview,
+                                       width=12, relief=tk.FLAT,
+                                       borderwidth=0, bg=s['scroll_bar'], troughcolor=s['scroll_frame'])
         self._scrollable_frame = tk.Frame(self._canvas, bg=s['bg'])
 
         self._scrollable_frame.bind(
