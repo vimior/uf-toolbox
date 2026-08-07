@@ -135,7 +135,7 @@ class SettingsUI(AppState, tk.Tk):
         row2.pack(fill=tk.X, pady=(2, 8))
         w['row2'] = row2
 
-        plugin_var = tk.StringVar(value=self.plugin_path)
+        plugin_var = tk.StringVar(value=self.config.get('plugin_path', 'plugins'))
         self._orig_plugin = self.plugin_path
         plugin_entry = tk.Entry(row2, textvariable=plugin_var, bg=t['input_bg'],
                                 fg=t['fg'], insertbackground=t['fg'],

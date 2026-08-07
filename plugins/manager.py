@@ -68,10 +68,10 @@ class PluginManager:
                      '_cls', 'app', '_inst', '_pkg_dir', '_module_name',
                      '_class_name', '_mgr', '_shown',
                      '_name_raw', '_name_zh', '_name_en', '_src_mtime', '_key',
-                     '_namespace')
+                     '_namespace', '_builtin')
 
         def __init__(self, cls, app, mgr, pkg_dir=None, module_name=None,
-                     class_name=None, metadata=None, key=None):
+                     class_name=None, metadata=None, key=None, builtin=False):
             self.app = app
             self._mgr = mgr
             self._cls = cls
@@ -80,6 +80,7 @@ class PluginManager:
             self._module_name = module_name
             self._class_name = class_name
             self._shown = False
+            self._builtin = builtin
             self._name_raw = None
             self._name_zh = None
             self._name_en = None
@@ -236,6 +237,12 @@ class PluginManager:
                 sys.path.remove(self._pkg_dir)
             # Reset so next click re-imports (hot-reload)
             self._cls = None
+            # Third-party plugins only: drop sys.modules entries so the module
+            # (and its globals) can be garbage-collected. Built-in plugins are
+            # imported directly by app code — clearing them would risk a second
+            # module instance (e.g. plugin_guide is also imported by menu.py).
+            if not self._builtin:
+                self._mgr._clear_module_cache(self._module_name)
 
         def stop(self):
             """Destroy the plugin instance. Does NOT clear _cls.
@@ -269,6 +276,17 @@ class PluginManager:
                 self._shown = False
                 NamespaceManager.remove(self.namespace)
 
+        def close(self):
+            """Destroy the plugin window (unified close semantics).
+
+            Third-party plugins are fully unloaded — class dropped and module
+            removed from sys.modules — so their memory is released; built-in
+            plugins keep the class for a fast restart."""
+            if self._builtin:
+                self.stop()
+            else:
+                self.unload()
+
         def restart(self, parent):
             """Force destroy + recreate the plugin window (dev-time hot-reload)."""
             self.stop()
@@ -289,6 +307,12 @@ class PluginManager:
 
         def _ensure_loaded(self):
             """Import plugin module and resolve class if not already loaded."""
+            if self._cls is not None and self._pkg_dir is not None:
+                # Hot-reload: re-import if any source file changed since load.
+                # load() skips mtime updates for alive plugins, so changes made
+                # while running are picked up here after stop().
+                if self._mgr._pkg_src_mtime(self._pkg_dir) != self._src_mtime:
+                    self._cls = None
             if self._cls is not None:
                 return True
             cls = self._mgr._import_class(
@@ -298,6 +322,7 @@ class PluginManager:
                     f'Plugin {self._module_name} could not be loaded')
                 return False
             self._cls = cls
+            self._src_mtime = self._mgr._pkg_src_mtime(self._pkg_dir)
             # Sync metadata from loaded class (overrides AST-parsed values)
             self._name_raw = cls.name
             self._name_zh = getattr(cls, 'name_zh', None)
@@ -392,7 +417,7 @@ class PluginManager:
                 handle = self
                 if self.reload:
                     def _on_close():
-                        handle.stop()
+                        handle.close()
                     self._inst.protocol('WM_DELETE_WINDOW', _on_close)
                 else:
                     def _on_close():
@@ -448,9 +473,13 @@ class PluginManager:
         return win, menu_changed
 
     def stop_plugin(self, handle):
-        """Stop (destroy) *handle*."""
+        """Stop (destroy) *handle*.
+
+        Third-party plugins are fully unloaded (class + module dropped) so
+        their memory is released; built-in plugins keep the class for a fast
+        restart."""
         if handle.alive:
-            handle.stop()
+            handle.close()
 
     def show_plugin(self, handle):
         """Show a hidden GUI plugin window (no-op for services)."""
@@ -469,7 +498,7 @@ class PluginManager:
         *refresh*: if True, re-scan plugin directories before querying.
         """
         if refresh:
-            self.load()
+            self.load(self._plugin_path)
         if target is not None:
             h = self._resolve_one(target)
             if h is None:
@@ -672,14 +701,49 @@ class PluginManager:
         for node in ast.iter_child_nodes(tree):
             if isinstance(node, ast.ClassDef) and node.name == class_name:
                 for item in node.body:
+                    # Plain assign (targets list) or annotated assign (single
+                    # target, e.g. `name: str = 'xx'`)
                     if isinstance(item, ast.Assign):
-                        for target in item.targets:
-                            if isinstance(target, ast.Name) and target.id in PluginManager.META_KEYS:
-                                if isinstance(item.value, ast.Constant):
-                                    metadata[target.id] = item.value.value
+                        targets = item.targets
+                    elif isinstance(item, ast.AnnAssign):
+                        targets = [item.target] if item.target is not None else []
+                    else:
+                        continue
+                    for target in targets:
+                        if isinstance(target, ast.Name) and target.id in PluginManager.META_KEYS:
+                            if isinstance(item.value, ast.Constant):
+                                metadata[target.id] = item.value.value
         return module_name, class_name, metadata
 
     # -- Lazy import helper --
+
+    @staticmethod
+    def _pkg_src_mtime(pkg_dir):
+        """Latest mtime of any .py file under *pkg_dir* (recursive).
+
+        Used for change detection across the whole plugin package — editing a
+        helper submodule (e.g. _cron_utils.py) is treated like editing the
+        main module.
+        """
+        latest = 0.0
+        for root, _dirs, files in os.walk(pkg_dir):
+            for f in files:
+                if f.endswith('.py'):
+                    try:
+                        m = os.path.getmtime(os.path.join(root, f))
+                    except OSError:
+                        continue
+                    if m > latest:
+                        latest = m
+        return latest
+
+    @staticmethod
+    def _clear_module_cache(module_name):
+        """Remove a plugin module and its submodules from sys.modules."""
+        prefix = f'plugins.{module_name}'
+        for key in list(sys.modules):
+            if key == prefix or key.startswith(prefix + '.'):
+                del sys.modules[key]
 
     def _import_class(self, pkg_dir, module_name, class_name):
         """Import a plugin module and return its GuiPlugin subclass, or None."""
@@ -689,9 +753,7 @@ class PluginManager:
 
         prefix = f'plugins.{module_name}'
         # Clear stale modules
-        for key in list(sys.modules):
-            if key == prefix or key.startswith(prefix + '.'):
-                del sys.modules[key]
+        self._clear_module_cache(module_name)
 
         try:
             spec = importlib.util.spec_from_file_location(
@@ -717,47 +779,29 @@ class PluginManager:
 
     # -- main entry point --
 
-    @staticmethod
-    def _resolve_plugin_dirs(path=None):
-        """Return a list of plugin directories to scan.
-
-        *path* is the optional custom plugin path from app config.
-        """
-        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        dirs = [os.path.join(base, 'plugins')]
-
-        exe_ext = os.path.splitext(sys.argv[0])[1].lower()
-        if exe_ext not in ('.py', '.pyw'):
-            # packaged
-            exe_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
-            p = os.path.join(exe_dir, 'plugins')
-            if os.path.isdir(p) and p not in dirs:
-                dirs.append(p)
-                if exe_dir not in sys.path:
-                    sys.path.insert(0, exe_dir)
-            if path and path != 'plugins':
-                p = os.path.join(exe_dir, path)
-                if os.path.isdir(p) and p not in dirs:
-                    dirs.append(p)
-                    root = os.path.dirname(p)
-                    if root not in sys.path:
-                        sys.path.insert(0, root)
-        else:
-            # dev
-            dirs.append(os.path.join(base, 'dist', 'plugins'))
-            if path and path != 'plugins':
-                p = os.path.join(base, 'dist', path)
-                if os.path.isdir(p) and p not in dirs:
-                    dirs.append(p)
-        return dirs
-
     def load(self, path=None):
         """Discover and register plugins from plugin directories."""
-        plugin_dirs = self._resolve_plugin_dirs(path)
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        plugin_dirs = [os.path.join(base, 'plugins')]   # built-in (always exists)
+        if path:
+            plugin_dirs.append(path)                    # third-party (absolute)
+        # plugin_dirs[0] is always the built-in directory; plugin_dirs[1] is
+        # third-party. Only third-party handles get their modules dropped
+        # from sys.modules on unload.
+        builtin_dir = plugin_dirs[0]
+        # Ensure the third-party dir exists so users can drop plugins in
+        # without creating it manually (a fresh empty dir is skipped by
+        # iter_modules).
+        if len(plugin_dirs) > 1 and plugin_dirs[1]:
+            try:
+                os.makedirs(plugin_dirs[1], exist_ok=True)
+            except OSError:
+                pass
         on_disk = set()
         for plugin_dir in plugin_dirs:
-            if not os.path.isdir(plugin_dir):
+            if not plugin_dir or not os.path.isdir(plugin_dir):
                 continue
+            is_builtin = (plugin_dir == builtin_dir)
             for _finder, name, ispkg in pkgutil.iter_modules([plugin_dir]):
                 if not ispkg or name.startswith('_'):
                     continue
@@ -771,35 +815,18 @@ class PluginManager:
 
                 pkg_dir = os.path.join(plugin_dir, name)
 
-                # If already loaded (but not alive), reload if module was imported
-                if name in self.plugins and self.plugins[name]._cls is not None:
-                    mod_name, cls_name, meta = self._parse_metadata(pkg_dir)
-                    if not mod_name:
-                        continue
-                    cls = self._import_class(pkg_dir, mod_name, cls_name)
-                    if cls is None:
-                        continue
-                    # Update the handle with new class, keep mutable state
-                    old_h = self.plugins[name]
-                    saved = old_h.start_hidden, old_h._shown
-                    old_h.unload()
-                    self.plugins[name] = self.Handle(
-                        cls, self._ctrl_app, self, pkg_dir=pkg_dir, module_name=mod_name,
-                        class_name=cls_name, key=name)
-                    self.plugins[name].start_hidden, self.plugins[name]._shown = saved
-                    continue
-
-                # (Re)discover lazily — refresh metadata from source if changed
+                # Already registered — skip unless the source has changed.
+                # Source changes are detected here (mtime) but NOT re-imported:
+                # the module is only (re)imported when the plugin is actually
+                # started, via _ensure_loaded. Menu clicks stay cheap.
                 if name in self.plugins:
                     h = self.plugins[name]
-                    module_file = os.path.join(pkg_dir, f'{h._module_name}.py')
-                    try:
-                        cur_mtime = os.path.getmtime(module_file)
-                    except OSError:
-                        cur_mtime = 0
+                    cur_mtime = self._pkg_src_mtime(pkg_dir)
                     if cur_mtime == h._src_mtime:
                         continue  # unchanged, skip re-parse
                     h._src_mtime = cur_mtime
+                    if h._cls is not None:
+                        h._cls = None  # re-import on next start(), not now
                     mod_name, cls_name, meta = self._parse_metadata(pkg_dir)
                     if mod_name and cls_name:
                         h._name_raw = meta.get('name') or mod_name or 'Unnamed'
@@ -814,13 +841,9 @@ class PluginManager:
 
                 h = self.Handle(
                     None, self._ctrl_app, self, pkg_dir=pkg_dir, module_name=mod_name,
-                    class_name=cls_name, metadata=meta, key=name)
+                    class_name=cls_name, metadata=meta, key=name, builtin=is_builtin)
                 # Record source mtime for change detection on subsequent scans
-                module_file = os.path.join(pkg_dir, f'{mod_name}.py')
-                try:
-                    h._src_mtime = os.path.getmtime(module_file)
-                except OSError:
-                    pass
+                h._src_mtime = self._pkg_src_mtime(pkg_dir)
                 self.plugins[name] = h
 
         # Remove plugins that disappeared from disk

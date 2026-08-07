@@ -537,14 +537,14 @@ class TestLifecycle(_EagerTestBase, unittest.TestCase):
         win = make_mock_win()
         self.handle._inst = win
         self.handle._cls = _EagerGui  # ensure is_service works
-        with patch.object(PluginManager.Handle, 'stop') as mock_stop:
+        with patch.object(PluginManager.Handle, 'close') as mock_close:
             self.mgr.stop_plugin(self.handle)
-            mock_stop.assert_called_once()
+            mock_close.assert_called_once()
 
     def test_stop_plugin_noop_not_alive(self):
-        with patch.object(PluginManager.Handle, 'stop') as mock_stop:
+        with patch.object(PluginManager.Handle, 'close') as mock_close:
             self.mgr.stop_plugin(self.handle)
-            mock_stop.assert_not_called()
+            mock_close.assert_not_called()
 
     def test_show_plugin_noop_for_service(self):
         h_svc = PluginManager.Handle(_EagerService, self.app, self.mgr, key='s')

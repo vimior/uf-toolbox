@@ -9,7 +9,7 @@ import time
 import tkinter as tk
 
 from plugins.plugin import GuiPlugin
-from .repo import PluginRepo, PluginRepoError, _resolve_install_dir
+from .repo import PluginRepo, PluginRepoError
 
 if sys.platform == 'win32':
     FONT_FAMILY = 'Microsoft YaHei'
@@ -43,14 +43,14 @@ _LANG = {
         'install_done':   '安装完成',
         'install_failed': '安装失败',
         'confirm_title':  '确认安装',
-        'confirm_install': '确定要安装 "{}" 吗？',
-        'confirm_update':  '确定要将 "{}" 从 v{} 更新到 v{} 吗？',
-        'confirm_overwrite': '检测到本地已有 "{}"，确定要覆盖安装 v{} 吗？\n\n（覆盖后可在插件商店中正常更新）',
+        'confirm_install': '确定要安装 "{}" 吗 ?',
+        'confirm_update':  '确定要将 "{}" 从 v{} 更新到 v{} 吗 ?',
+        'confirm_overwrite': '检测到本地已有 "{}", 确定要覆盖安装 v{} 吗 ?\n\n(覆盖后可在插件商店中正常更新)',
         'filter_remote': '远程',
         'filter_local':  '本地',
         'delete':        '删除',
-        'delete_confirm': '确定要删除 "{}" v{} 吗？\n\n可通过插件商店重新安装恢复。',
-        'delete_confirm_orphan': '⚠️ "{}" 是本地插件，删除后无法通过插件商店恢复！\n\n确定要删除吗？',
+        'delete_confirm': '确定要删除 "{}" v{} 吗 ?\n\n可通过插件商店重新安装恢复。',
+        'delete_confirm_orphan': '⚠️ "{}" 是本地插件, 删除后无法通过插件商店恢复！\n\n确定要删除吗 ?',
         'delete_done':   '已删除',
         'local_ver':     '本地版本',
         'ok':            '确定',
@@ -140,7 +140,7 @@ _STYLE = {
 
 
 class PluginStore(GuiPlugin):
-    """插件管理器 — 浏览、安装、管理本地及远程插件。"""
+    """插件管理器 — 浏览、安装、管理本地及远程插件"""
 
     name = "Plugin Manager"
     name_zh = "插件管理器"
@@ -171,11 +171,11 @@ class PluginStore(GuiPlugin):
         self._cards = []            # 当前渲染的卡片 (frame, info, status)
         self._install_thread = None
         self._fetching = False      # 是否正在 fetch 中
-        self._loaded = False        # 是否已成功加载过（区分初始态与错误态）
+        self._loaded = False        # 是否已成功加载过 (区分初始态与错误态)
         self._last_refresh = None
         self._result_queue = queue.Queue()  # 线程结果队列
         self._poll_id = None                # after ID for polling
-        self._last_filter = 'both'          # 上次筛选状态：'both'/'remote'/'local'
+        self._last_filter = 'both'          # 上次筛选状态: 'both'/'remote'/'local'
         self._filter_changing = False       # 防止 set() 触发递归
         self._destroyed = False             # 已销毁标记
 
@@ -226,7 +226,7 @@ class PluginStore(GuiPlugin):
         # 分隔线
         tk.Frame(self, bg=s['sep'], height=1).pack(fill=tk.X, side=tk.TOP)
 
-        # 错误提示条（默认隐藏）
+        # 错误提示条 (默认隐藏)
         self._error_banner = tk.Frame(self, bg='#5c2e2e')
         self._error_banner_lbl = tk.Label(
             self._error_banner, text='', bg='#5c2e2e', fg='#ffb4b4',
@@ -263,7 +263,7 @@ class PluginStore(GuiPlugin):
         self._scrollable_frame.bind('<MouseWheel>', _on_mousewheel)
         self._mousewheel_cb = _on_mousewheel  # 保存引用供 _bind_mousewheel 使用
 
-        # Canvas 大小变化时同步滚动内容宽度（仅在宽度实际变化时更新，避免拖动时频繁重绘）
+        # Canvas 大小变化时同步滚动内容宽度 (仅在宽度实际变化时更新，避免拖动时频繁重绘)
         self._last_canvas_width = 0
         def _on_canvas_resize(event):
             if event.width != self._last_canvas_width:
@@ -305,10 +305,10 @@ class PluginStore(GuiPlugin):
         except queue.Empty:
             pass
 
-    # ---- 队列轮询（主线程安全） ----
+    # ---- 队列轮询 (主线程安全)  ----
 
     def _start_polling(self):
-        """启动主线程轮询，每 100ms 检查结果队列。"""
+        """启动主线程轮询，每 100ms 检查结果队列"""
         if self._poll_id is not None:
             return
 
@@ -334,10 +334,10 @@ class PluginStore(GuiPlugin):
         self._poll_id = self.after(100, _poll)
 
     def _handle_queue_msg(self, msg):
-        """主线程处理队列消息。"""
+        """主线程处理队列消息"""
         msg_type = msg.get('type')
         if msg_type == 'local_done':
-            # 本地扫描先行完成 → 先渲染本地插件（不阻塞远程 fetch）
+            # 本地扫描先行完成 → 先渲染本地插件 (不阻塞远程 fetch)
             self._on_local_done(msg.get('installed'))
         elif msg_type == 'fetch_done':
             self._on_fetch_done(msg.get('data'))
@@ -347,10 +347,10 @@ class PluginStore(GuiPlugin):
     # ---- 数据加载 ----
 
     def _fetch_plugin_list(self):
-        """在线程中获取远程插件列表和本地扫描。
+        """在线程中获取远程插件列表和本地扫描
 
-        本地扫描先行（不依赖网络），到达后立即渲染本地插件；
-        远程 fetch 在同一线程随后执行（超时/失败不阻塞本地显示）。
+        本地扫描先行 (不依赖网络), 到达后立即渲染本地插件;
+        远程 fetch 在同一线程随后执行 (超时/失败不阻塞本地显示)
         """
         if self._fetching:
             return
@@ -359,11 +359,11 @@ class PluginStore(GuiPlugin):
         self._fetch_error = None
         self._start_polling()
 
-        # 从配置读取远程 URL（主线程安全）
+        # 从配置读取远程 URL (主线程安全)
         repo_url = self.app.repo_url
 
         def _run():
-            # 1. 本地扫描（快、无网络），先行渲染
+            # 1. 本地扫描 (快, 无网络), 先行渲染
             try:
                 installed = PluginRepo.scan_installed(self.app)
             except Exception as e:
@@ -374,7 +374,7 @@ class PluginStore(GuiPlugin):
                 'installed': installed,
             })
 
-            # 2. 远程获取（失败不影响已显示的本地列表）
+            # 2. 远程获取 (失败不影响已显示的本地列表)
             data = None
             try:
                 data = PluginRepo.fetch_index(repo_url or None)
@@ -393,18 +393,18 @@ class PluginStore(GuiPlugin):
             pass
 
     def _on_local_done(self, installed):
-        """主线程回调：本地扫描完成 → 先渲染本地插件。
+        """主线程回调: 本地扫描完成 → 先渲染本地插件
 
-        此时远程列表未知，本地插件统一按"已安装"显示，
-        不判定 orphan（等 fetch_done 后完整渲染再判定）。
+        此时远程列表未知, 本地插件统一按"已安装"显示,
+        不判定 orphan (等 fetch_done 后完整渲染再判定)
         """
         self._installed = installed
         self._render_list(local_only=True)
 
     def _on_fetch_done(self, data):
-        """主线程回调：远程 fetch 完成 → 合并远程 + 本地数据完整渲染。
+        """主线程回调: 远程 fetch 完成 → 合并远程 + 本地数据完整渲染
 
-        远程获取失败时保留已显示的本地插件，并在顶栏提示错误。
+        远程获取失败时保留已显示的本地插件, 并在顶栏提示错误
         """
         self._fetching = False
 
@@ -416,7 +416,7 @@ class PluginStore(GuiPlugin):
             self._update_time_label()
             self._fetch_error = None
         else:
-            # 远程失败 → 清空远程数据，保留本地
+            # 远程失败 → 清空远程数据, 保留本地
             self._remote_plugins = []
             self._base_url = ''
         self._update_error_banner()
@@ -426,7 +426,7 @@ class PluginStore(GuiPlugin):
     # ---- 渲染 ----
 
     def _update_error_banner(self):
-        """顶栏错误提示：远程获取失败时显示，成功时隐藏。"""
+        """顶栏错误提示: 远程获取失败时显示, 成功时隐藏"""
         if self._fetch_error:
             self._error_banner_lbl.config(
                 text=f"⚠ {self._lbl['load_failed']}: {self._fetch_error}")
@@ -435,7 +435,7 @@ class PluginStore(GuiPlugin):
             self._error_banner.pack_forget()
 
     def _show_loading(self):
-        """显示加载中状态。"""
+        """显示加载中状态"""
         self._clear_canvas()
         s = self._s
         lbl = tk.Label(self._scrollable_frame, text=self._lbl['loading'],
@@ -444,13 +444,13 @@ class PluginStore(GuiPlugin):
         self._bind_mousewheel(self._scrollable_frame)
 
     def _render_list(self, local_only=False):
-        """渲染插件卡片列表。
+        """渲染插件卡片列表
 
-        先构建合并列表（每条包含 remote_info / local_info / status），
-        再按复选框筛选渲染。
+        先构建合并列表 (每条包含 remote_info / local_info / status)
+        再按复选框筛选渲染
 
-        *local_only*: 远程列表尚未拿到时只渲染本地插件，
-        此时不做 orphan 判定（统一按"已安装"显示）。
+        *local_only*: 远程列表尚未拿到时只渲染本地插件,
+        此时不做 orphan 判定 (统一按"已安装"显示)
         """
         self._clear_canvas()
         s = self._s
@@ -463,7 +463,7 @@ class PluginStore(GuiPlugin):
         seen = set()         # 已处理的 namespace
 
         if local_only:
-            # 远程未知：本地插件统一按"已安装"显示
+            # 远程未知: 本地插件统一按"已安装"显示
             for ns, local_info in installed_map.items():
                 pi = {
                     'name': ns,
@@ -483,7 +483,7 @@ class PluginStore(GuiPlugin):
                 merged.append((pi, status, local_info, 'remote'))
                 seen.add(ns)
 
-            # 本地 orphan（不在远程中的）
+            # 本地 orphan (不在远程中的)
             for ns, local_info in installed_map.items():
                 if ns not in seen:
                     pi = {
@@ -499,11 +499,11 @@ class PluginStore(GuiPlugin):
         # ---- 按复选框筛选 ----
         total = 0
         for pi, status, local_info, source in merged:
-            # 远程源：show_remote 不勾则跳过，除非本地也有安装且 show_local 勾了
+            # 远程源: show_remote 不勾则跳过, 除非本地也有安装且 show_local 勾了
             if source == 'remote' and not show_remote:
                 if not (local_info and show_local):
                     continue
-            # 本地源：show_local 不勾则跳过
+            # 本地源: show_local 不勾则跳过
             if source == 'local' and not show_local:
                 continue
 
@@ -530,7 +530,7 @@ class PluginStore(GuiPlugin):
                         highlightthickness=1, highlightbackground=s['sep'],
                         padx=12, pady=10)
 
-        # 第一行：名称 + 版本 + 状态按钮
+        # 第一行: 名称 + 版本 + 状态按钮
         row1 = tk.Frame(card, bg=s['card_bg'])
         row1.pack(fill=tk.X)
 
@@ -545,10 +545,10 @@ class PluginStore(GuiPlugin):
                                fg=s['hint'], font=(FONT_FAMILY, 9))
             ver_lbl.pack(side=tk.LEFT, padx=(4, 0))
 
-        # 状态 / 操作按钮（右侧）
+        # 状态 / 操作按钮 (右侧)
         self._create_status_widget(row1, card, plugin_info, status, local_info)
 
-        # 第二行：作者 + 大小
+        # 第二行: 作者 + 大小
         row2 = tk.Frame(card, bg=s['card_bg'])
         row2.pack(fill=tk.X, pady=(4, 0))
 
@@ -566,7 +566,7 @@ class PluginStore(GuiPlugin):
                                 fg=s['hint'], font=(FONT_FAMILY, 8))
             meta_lbl.pack(side=tk.LEFT)
 
-        # 第三行：描述
+        # 第三行: 描述
         desc = plugin_info.get('description', '')
         if desc:
             # 截断过长的描述
@@ -580,7 +580,7 @@ class PluginStore(GuiPlugin):
         return card
 
     def _create_status_widget(self, row1, card, plugin_info, status, local_info):
-        """在卡片右侧创建状态标签或操作按钮。"""
+        """在卡片右侧创建状态标签或操作按钮"""
         s = self._s
         lbl = self._lbl
 
@@ -599,7 +599,7 @@ class PluginStore(GuiPlugin):
                      lambda e, b=btn, c=s['accent']: b.config(bg=c))
 
         elif status == 'local':
-            # 本地版本 + 远程存在 → 橙标 + 安装按钮（提示覆盖）
+            # 本地版本 + 远程存在 → 橙标 + 安装按钮 (提示覆盖)
             tag = tk.Label(row1, text=lbl['local_ver'],
                            bg=s['card_bg'], fg=s['warn'],
                            font=(FONT_FAMILY, 9),
@@ -651,7 +651,7 @@ class PluginStore(GuiPlugin):
                            font=(FONT_FAMILY, 9),
                            padx=10, pady=3)
             tag.pack(side=tk.RIGHT)
-            # 删除按钮（孤儿插件，无法恢复）
+            # 删除按钮 (孤儿插件, 无法恢复)
             self._add_delete_btn(row1, plugin_info, local_info, is_orphan=True)
 
         else:  # 'current'
@@ -664,7 +664,7 @@ class PluginStore(GuiPlugin):
             # 删除按钮
             self._add_delete_btn(row1, plugin_info, local_info, is_orphan=False)
 
-    # ---- 自定义对话框（居中于插件窗口，替代系统 messagebox） ----
+    # ---- 自定义对话框 (居中于插件窗口，替代系统 messagebox) ----
 
     def _confirm(self, title, message, ok_text=None):
         """自定义确认对话框，居中于插件窗口。返回 True/False。"""
@@ -673,7 +673,7 @@ class PluginStore(GuiPlugin):
         result = {'ok': False}
 
         dlg = tk.Toplevel(self)
-        dlg.withdraw()  # 隐藏直到定位完成，避免左上角闪烁
+        dlg.withdraw()  # 隐藏直到定位完成, 避免左上角闪烁
         dlg.title(title)
         dlg.resizable(False, False)
         dlg.transient(self)
@@ -729,7 +729,7 @@ class PluginStore(GuiPlugin):
         return result['ok']
 
     def _notice(self, kind, title, message):
-        """自定义提示对话框（success/error/info），居中于插件窗口。"""
+        """自定义提示对话框 (success/error/info), 居中于插件窗口"""
         s = self._s
         lbl = self._lbl
         icons = {'success': '✓', 'error': '✕', 'info': 'ℹ'}
@@ -781,7 +781,7 @@ class PluginStore(GuiPlugin):
     # ---- 删除 ----
 
     def _add_delete_btn(self, row, plugin_info, local_info, is_orphan):
-        """添加小型 [删除] 按钮。"""
+        """添加小型 [删除] 按钮"""
         s = self._s
         lbl = self._lbl
         namespace = plugin_info.get('namespace', '')
@@ -802,7 +802,7 @@ class PluginStore(GuiPlugin):
                  lambda e, b=btn, c=s['hint']: b.config(fg=c))
 
     def _on_delete_click(self, namespace, plugin_info, local_info, is_orphan):
-        """删除确认对话框。"""
+        """删除确认对话框"""
         lbl = self._lbl
         name = plugin_info.get('name', namespace)
         ver = local_info.get('version', '') if local_info else ''
@@ -817,9 +817,8 @@ class PluginStore(GuiPlugin):
         self._do_delete(namespace)
 
     def _do_delete(self, namespace):
-        """执行删除：移除插件目录，刷新列表和菜单。"""
-        install_dir = _resolve_install_dir(self.app)
-        plugin_dir = os.path.join(install_dir, namespace)
+        """执行删除: 移除插件目录, 刷新列表和菜单"""
+        plugin_dir = os.path.join(self.app.plugin_path, namespace)
         try:
             if os.path.isdir(plugin_dir):
                 shutil.rmtree(plugin_dir)
@@ -827,12 +826,12 @@ class PluginStore(GuiPlugin):
             self._notice('error', self._lbl['delete'], f"删除失败: {e}")
             return
 
-        # 立即从本地安装映射移除并刷新界面。
-        # 不能依赖 _fetch_plugin_list()：fetch 进行中会被 _fetching 跳过，
-        # 且 fetch_done 会用旧映射重渲染导致删除"复活"。
+        # 立即从本地安装映射移除并刷新界面
+        # 不能依赖 _fetch_plugin_list(): fetch 进行中会被 _fetching 跳过,
+        # 且 fetch_done 会用旧映射重渲染导致删除"复活"
         self._installed.pop(namespace, None)
         if self._fetching:
-            # fetch 未完成：局部刷新本地列表，fetch_done 到达后会自动完整重渲染
+            # fetch 未完成: 局部刷新本地列表, fetch_done 到达后会自动完整重渲染
             self._render_list(local_only=True)
         else:
             self._fetch_plugin_list()
@@ -840,7 +839,7 @@ class PluginStore(GuiPlugin):
     # ---- 覆盖安装 ----
 
     def _on_overwrite_click(self, plugin_info):
-        """覆盖安装确认（本地插件 + 远程存在）。"""
+        """覆盖安装确认 (本地插件 + 远程存在)"""
         lbl = self._lbl
         name = plugin_info.get('name', '?')
         ver = plugin_info.get('version', '')
@@ -854,7 +853,7 @@ class PluginStore(GuiPlugin):
     # ---- 筛选 ----
 
     def _on_filter_change(self):
-        """复选框变化 — 最少一个勾选，取消最后一个时自动切换到另一个。"""
+        """复选框变化 — 最少一个勾选, 取消最后一个时自动切换到另一个"""
         if self._filter_changing:
             return
         self._filter_changing = True
@@ -883,19 +882,19 @@ class PluginStore(GuiPlugin):
             self._filter_changing = False
 
     def _clear_canvas(self):
-        """清空画布和卡片列表。"""
+        """清空画布和卡片列表"""
         for child in self._scrollable_frame.winfo_children():
             child.destroy()
         self._cards.clear()
 
     def _bind_mousewheel(self, widget):
-        """递归绑定鼠标滚轮事件到 widget 及其所有子控件。"""
+        """递归绑定鼠标滚轮事件到 widget 及其所有子控件"""
         widget.bind('<MouseWheel>', self._mousewheel_cb)
         for child in widget.winfo_children():
             self._bind_mousewheel(child)
 
     def _update_time_label(self):
-        """更新底栏刷新时间。"""
+        """更新底栏刷新时间"""
         if self._last_refresh:
             ts = time.strftime('%H:%M:%S', time.localtime(self._last_refresh))
             self._time_lbl.config(
@@ -906,11 +905,11 @@ class PluginStore(GuiPlugin):
     # ---- 操作 ----
 
     def _on_refresh(self):
-        """点击刷新按钮。"""
+        """点击刷新按钮"""
         self._fetch_plugin_list()
 
     def _on_install_click(self, plugin_info):
-        """点击安装按钮 → 确认后开始下载。"""
+        """点击安装按钮 → 确认后开始下载"""
         name = plugin_info.get('name', '?')
         lbl = self._lbl
 
@@ -921,7 +920,7 @@ class PluginStore(GuiPlugin):
         self._do_install(plugin_info)
 
     def _on_update_click(self, plugin_info, installed_ver, remote_ver):
-        """点击更新按钮 → 确认后开始下载。"""
+        """点击更新按钮 → 确认后开始下载"""
         name = plugin_info.get('name', '?')
         lbl = self._lbl
 
@@ -933,8 +932,8 @@ class PluginStore(GuiPlugin):
         self._do_install(plugin_info)
 
     def _do_install(self, plugin_info):
-        """启动后台安装线程。"""
-        install_dir = _resolve_install_dir(self.app)
+        """启动后台安装线程"""
+        install_dir = self.app.plugin_path
         namespace = plugin_info.get('namespace', '')
         url = plugin_info.get('url', '')
         version = plugin_info.get('version', '')
@@ -964,7 +963,7 @@ class PluginStore(GuiPlugin):
         self._install_thread.start()
 
     def _set_card_progress(self, namespace):
-        """将指定 plugin 的卡片切换到进度显示。"""
+        """将指定 plugin 的卡片切换到进度显示"""
         if not self.winfo_exists():
             return
         for card, pi, status in self._cards:
@@ -990,7 +989,7 @@ class PluginStore(GuiPlugin):
             break
 
     def _on_install_done(self, namespace, error=None):
-        """安装完成回调 — 刷新列表和菜单。"""
+        """安装完成回调 — 刷新列表和菜单"""
         if not self.winfo_exists():
             return
         if error:

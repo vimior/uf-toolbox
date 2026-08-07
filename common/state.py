@@ -3,6 +3,7 @@
 import json
 import locale
 import os
+import sys
 import tkinter as tk
 from tkinter import ttk
 
@@ -14,6 +15,26 @@ from .infra.utils import _resolve_name
 
 _CONFIG_DIR = os.path.join(os.path.expanduser('~'), '.uf_toolbox')
 _CONFIG_PATH = os.path.join(_CONFIG_DIR, 'config.json')
+
+def _resolve_plugin_dir(cfg_plugin_path):
+    """Real third-party plugin directory for the current deployment."""
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    packaged = os.path.splitext(sys.argv[0])[1].lower() not in ('.py', '.pyw')
+    if cfg_plugin_path and cfg_plugin_path != 'plugins':
+        if os.path.isabs(cfg_plugin_path):
+            return cfg_plugin_path
+        rel_base = os.path.dirname(os.path.abspath(sys.argv[0])) if packaged \
+            else os.path.join(base, 'dist')
+        return os.path.join(rel_base, cfg_plugin_path)
+    # not configured — nearest-available default
+    if packaged:
+        exe_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+        portable = os.path.join(exe_dir, 'plugins')
+        return portable if os.path.isdir(portable) \
+            else os.path.join(_CONFIG_DIR, 'plugins')
+    dev_default = os.path.join(base, 'dist', 'plugins')
+    return dev_default if os.path.isdir(dev_default) \
+        else os.path.join(_CONFIG_DIR, 'plugins')
 
 
 class AppState:
@@ -172,7 +193,8 @@ class AppState:
 
     @property
     def plugin_path(self):
-        return self._config.get('plugin_path', 'plugins')
+        """Real third-party plugin directory (absolute)."""
+        return _resolve_plugin_dir(self._config.get('plugin_path'))
 
     @property
     def repo_url(self):
