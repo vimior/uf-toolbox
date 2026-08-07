@@ -11,6 +11,7 @@ DARK_THEME = {
     'menu_hover_fg': '#ffffff',
     'accent': '#2f5f8a',
     'input_bg': '#363636',
+    'text_bg': '#363636',
     'border': '#2b2b2b',
     'btn_hover_bg': '#4a4a4a',
     'separator': '#3c3c3c',

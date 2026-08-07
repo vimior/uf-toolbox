@@ -53,31 +53,14 @@ class PluginGuide(GuiPlugin):
         self.resizable(True, True)
         self.configure(bg=s['bg'])
 
-        # ---- header ----
-        hdr = tk.Frame(self, bg=s['bar'], height=28)
-        hdr.pack(fill=tk.X)
-        hdr.pack_propagate(False)
-        title = f"  {self.name_en if lang_name == 'en' else self.name_zh}"
-        tk.Label(hdr, text=title, bg=s['bar'], fg=s['bar_fg'],
-                 font=("Microsoft YaHei", 9, "bold")).pack(
-            side=tk.LEFT, padx=14, pady=4)
-
         # ---- body ----
         outer = tk.Frame(self, bg=s['bg'])
         outer.pack(fill=tk.BOTH, expand=True, padx=(16, 4), pady=(12, 8))
 
-        scrollbar = tk.Scrollbar(outer, orient=tk.VERTICAL,
-                                 width=12, relief=tk.FLAT, borderwidth=0,
-                                 bg=s['scroll_bar'], troughcolor=s['scroll_frame'])
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        self._txt = tk.Text(outer, wrap=tk.WORD, font=("Consolas", 10),
-                            bg=s['frame'], fg=s['fg'], relief=tk.FLAT,
-                            padx=18, pady=14, borderwidth=0,
-                            highlightthickness=0, insertbackground=s['fg'],
-                            tabs=("1.5c",),
-                            yscrollcommand=scrollbar.set)
-        scrollbar.config(command=self._txt.yview)
+        self._txt = self.components.ScrollableText(
+            outer, wrap=tk.WORD, font=("Consolas", 10),
+            bg=s['frame'], fg=s['fg'], padx=18, pady=14,
+            insertbackground=s['fg'], tabs=("1.5c",))
         self._txt.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # ---- tags ----

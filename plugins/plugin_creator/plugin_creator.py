@@ -209,33 +209,12 @@ class PluginCreator(GuiPlugin):
                                 fg=s['hint'], font=("Consolas", 8))
         self._status.pack(side=tk.RIGHT, padx=8, pady=4)
 
-        # ---- form body (scrollable via mousewheel, no visible scrollbar) ----
-        canvas = tk.Canvas(self, bg=s['bg'], highlightthickness=0, bd=0)
-        self._form = tk.Frame(canvas, bg=s['bg'])
-        self._form.bind(
-            '<Configure>',
-            lambda e: canvas.configure(scrollregion=canvas.bbox('all'))
-        )
-        canvas.create_window((0, 0), window=self._form, anchor=tk.NW,
-                             tags="self._form")
-        canvas.bind('<Configure>', lambda e: canvas.itemconfig(
-            'self._form', width=e.width), add='+')
+        # ---- form body (scrollable via mousewheel + scrollbar) ----
+        body = tk.Frame(self, bg=s['bg'])
+        body.pack(fill=tk.BOTH, expand=True)
+        canvas = self.components.ScrollableCanvas(body, bg=s['bg'], scrollbars='y')
+        self._form = canvas.inner
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(6, 0), pady=(4, 0))
-
-        # Mousewheel scrolling — bound to canvas + inner frame
-        def _on_mousewheel(event):
-            canvas.yview_scroll(-1 * int(event.delta / 120), "units")
-
-        def _bind_mw(_e):
-            canvas.bind_all("<MouseWheel>", _on_mousewheel)
-
-        def _unbind_mw(_e):
-            canvas.unbind_all("<MouseWheel>")
-
-        canvas.bind("<Enter>", _bind_mw)
-        canvas.bind("<Leave>", _unbind_mw)
-        self._form.bind("<Enter>", _bind_mw)
-        self._form.bind("<Leave>", _unbind_mw)
 
         # ---- field: package name ----
         self._pkg_var = tk.StringVar()
@@ -478,8 +457,8 @@ class PluginCreator(GuiPlugin):
         ).pack(side=tk.RIGHT)
 
         # ---- create button ----
-        self._btn_frame = tk.Frame(self._form, bg=s['bg'])
-        self._btn_frame.pack(fill=tk.X, padx=12, pady=(12, 12))
+        self._btn_frame = tk.Frame(self, bg=s['bg'])
+        self._btn_frame.pack(fill=tk.X, side=tk.BOTTOM, padx=12, pady=(12, 12))
 
         self._create_btn = tk.Button(
             self._btn_frame, text=l['create_btn'],
@@ -552,7 +531,6 @@ class PluginCreator(GuiPlugin):
     def _update_sections_visibility(self):
         """Rebuild the form — forget all, then repack visible sections in order."""
         is_gui = self._type_var.get() == 'gui'
-        anchor = self._btn_frame  # always packed, always valid as before= target
 
         # 1. Forget every dynamic widget first
         for w in (self._size_sep, self._size_header, self._size_fields,
@@ -568,45 +546,37 @@ class PluginCreator(GuiPlugin):
 
         if not is_gui:
             # Service: only auto-start section
-            self._autostart_sep.pack(fill=tk.X, padx=12, pady=(14, 6),
-                                     before=anchor)
-            self._autostart_header.pack(fill=tk.X, padx=12, pady=(0, 2),
-                                        before=anchor)
+            self._autostart_sep.pack(fill=tk.X, padx=12, pady=(14, 6))
+            self._autostart_header.pack(fill=tk.X, padx=12, pady=(0, 2))
             return
 
         # GUI: repack visible sections in vertical order
         # -- window size --
-        self._size_sep.pack(fill=tk.X, padx=12, pady=(14, 6), before=anchor)
-        self._size_header.pack(fill=tk.X, padx=12, pady=(0, 2), before=anchor)
+        self._size_sep.pack(fill=tk.X, padx=12, pady=(14, 6))
+        self._size_header.pack(fill=tk.X, padx=12, pady=(0, 2))
         if not self._fixed_size_var.get():
-            self._size_fields.pack(fill=tk.X, padx=12, pady=(0, 6),
-                                   before=anchor)
+            self._size_fields.pack(fill=tk.X, padx=12, pady=(0, 6))
 
         # -- window position --
-        self._pos_sep.pack(fill=tk.X, padx=12, pady=(14, 6), before=anchor)
-        self._pos_header.pack(fill=tk.X, padx=12, pady=(0, 2), before=anchor)
+        self._pos_sep.pack(fill=tk.X, padx=12, pady=(14, 6))
+        self._pos_header.pack(fill=tk.X, padx=12, pady=(0, 2))
         if not self._fixed_pos_var.get():
-            self._pos_fields.pack(fill=tk.X, padx=12, pady=(0, 6),
-                                  before=anchor)
+            self._pos_fields.pack(fill=tk.X, padx=12, pady=(0, 6))
 
         # -- lifecycle --
-        self._lifecycle_sep.pack(fill=tk.X, padx=12, pady=(14, 6),
-                                 before=anchor)
-        self._lifecycle_header.pack(fill=tk.X, padx=12, pady=(0, 2),
-                                    before=anchor)
+        self._lifecycle_sep.pack(fill=tk.X, padx=12, pady=(14, 6))
+        self._lifecycle_header.pack(fill=tk.X, padx=12, pady=(0, 2))
 
         # -- auto-start --
-        self._autostart_sep.pack(fill=tk.X, padx=12, pady=(14, 6),
-                                 before=anchor)
-        self._autostart_header.pack(fill=tk.X, padx=12, pady=(0, 2),
-                                    before=anchor)
+        self._autostart_sep.pack(fill=tk.X, padx=12, pady=(14, 6))
+        self._autostart_header.pack(fill=tk.X, padx=12, pady=(0, 2))
         if self._auto_start_var.get():
             self._start_hidden_frame.pack(
-                fill=tk.X, padx=12, pady=(0, 4), before=anchor)
+                fill=tk.X, padx=12, pady=(0, 4))
 
         # -- use_app_icon --
-        self._useapp_sep.pack(fill=tk.X, padx=12, pady=(14, 6), before=anchor)
-        self._useapp_header.pack(fill=tk.X, padx=12, pady=(0, 2), before=anchor)
+        self._useapp_sep.pack(fill=tk.X, padx=12, pady=(14, 6))
+        self._useapp_header.pack(fill=tk.X, padx=12, pady=(0, 2))
 
     def _on_create(self):
         l = self._l

@@ -38,6 +38,11 @@ class GuiPlugin(tk.Toplevel):
         self.services = self.app.services
         super().__init__(parent)
 
+    @property
+    def components(self):
+        """Theme-aware component library (app.components), falling back to tk."""
+        return getattr(self.app, 'components', tk)
+
     def on_show(self):
         """Called when the window becomes visible — first open or reopened after hide."""
         pass
@@ -82,6 +87,11 @@ class ServicePlugin:
         self.root = app._app  # the root Tk window (for popups, toasts, etc.)
         self.store = self.app.store
         self.services = self.app.services
+
+    @property
+    def components(self):
+        """Theme-aware component library (app.components), falling back to tk."""
+        return getattr(self.app, 'components', tk)
 
     def on_start(self):
         """Called when the service starts — first start or restart."""

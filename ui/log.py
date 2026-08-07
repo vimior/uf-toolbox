@@ -62,26 +62,16 @@ class LogUI(AppState, tk.Tk):
         self._log_win = win
 
         outer = tk.Frame(win, bg=t['bg'])
-        outer.pack(fill=tk.BOTH, expand=True, padx=(8, 0), pady=(8, 4))
-
-        scrollbar = tk.Scrollbar(outer, orient=tk.VERTICAL,
-                                 width=12, relief=tk.FLAT,
-                                 borderwidth=0, bg=t['scroll_bar'], troughcolor=t['scroll_frame'])
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        outer.pack(fill=tk.BOTH, expand=True, padx=8, pady=(8, 4))
 
         self._log_border_frame = border = tk.Frame(
             outer, bg=t['border'], padx=1, pady=1,
             bd=0, highlightthickness=0)
         border.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        self._log_text = tk.Text(
-            border, wrap=tk.WORD,
-            bg='#1e1e1e', fg='#d4d4d4', insertbackground='white',
-            font=('Consolas', 9), relief=tk.FLAT,
-            state=tk.DISABLED, padx=6, pady=4,
-            highlightbackground='#1e1e1e', highlightcolor='#1e1e1e',
-            yscrollcommand=scrollbar.set)
-        scrollbar.config(command=self._log_text.yview)
+        self._log_text = self.components.ScrollableText(
+            border, wrap=tk.WORD, state=tk.DISABLED,
+            bg='#1e1e1e', fg='#d4d4d4', insertbackground='white')
         self._log_text.pack(fill=tk.BOTH, expand=True)
 
         if self._log_buffer:

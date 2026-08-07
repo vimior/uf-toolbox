@@ -11,6 +11,7 @@ LIGHT_THEME = {
     'menu_hover_fg': '#ffffff',
     'accent': '#4a90d9',
     'input_bg': '#eaeaea',
+    'text_bg': '#ffffff',
     'border': '#f5f6fa',
     'btn_hover_bg': '#ffffff',
     'separator': '#d0d0d0',

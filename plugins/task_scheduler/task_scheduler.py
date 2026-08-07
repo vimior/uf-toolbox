@@ -281,32 +281,10 @@ class TaskScheduler(GuiPlugin):
         scroll_frame = tk.Frame(self, bg=s['bg'])
         scroll_frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=(0, 4))
 
-        self._canvas = tk.Canvas(scroll_frame, bg=s['bg'], highlightthickness=0)
-        self._scrollbar = tk.Scrollbar(scroll_frame, orient=tk.VERTICAL, command=self._canvas.yview,
-                                       width=12, relief=tk.FLAT, borderwidth=0,
-                                       bg=s['scroll_bar'], troughcolor=s['scroll_frame'])
-        self._canvas.configure(yscrollcommand=self._scrollbar.set)
-        self._scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self._canvas = self.components.ScrollableCanvas(
+            scroll_frame, bg=s['bg'], scrollbars='y')
         self._canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        self._inner = tk.Frame(self._canvas, bg=s['bg'])
-        self._canvas.create_window((0, 0), window=self._inner, anchor='nw',
-                                   tags=('inner',))
-        self._canvas.bind('<Configure>',
-                          lambda e: self._canvas.itemconfig('inner', width=e.width),
-                          '+')
-
-        def _on_inner_configure(_):
-            bbox = self._canvas.bbox('all')
-            if bbox:
-                x1, y1, x2, y2 = bbox
-                pad = 5
-                self._canvas.configure(scrollregion=(x1, y1, x2, y2 + pad))
-        self._inner.bind('<Configure>', _on_inner_configure)
-        # Bind on the panel window so MouseWheel works even over child widgets
-        self.bind('<MouseWheel>',
-                  lambda e: self._canvas.yview_scroll(
-                      int(-e.delta / 120), 'units'))
+        self._inner = self._canvas.inner
 
         self._empty = tk.Label(self._inner, text=l['no_tasks'],
                                font=('Consolas', 10), bg=s['bg'], fg=s['hint'])
@@ -898,24 +876,9 @@ class TaskScheduler(GuiPlugin):
                   font=('Consolas', 9, 'bold')).pack(side=tk.RIGHT, padx=4)
 
         # scrollable checkbox area
-        canvas = tk.Canvas(dlg, bg=self._s['bg'], highlightthickness=0)
-        scrollbar = tk.Scrollbar(dlg, orient=tk.VERTICAL, command=canvas.yview,
-                                 width=12, relief=tk.FLAT, borderwidth=0,
-                                 bg=self._s['scroll_bar'], troughcolor=self._s['scroll_frame'])
-        inner = tk.Frame(canvas, bg=self._s['bg'])
-        canvas.create_window((0, 0), window=inner, anchor='nw', tags=('inner',))
-        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas = self.components.ScrollableCanvas(dlg, bg=self._s['bg'], scrollbars='y')
+        inner = canvas.inner
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(12, 0))
-        canvas.bind('<Configure>', lambda e: canvas.itemconfig('inner', width=e.width))
-        inner.bind('<Configure>', lambda e: (
-            canvas.configure(scrollregion=canvas.bbox('all')),
-            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-            if canvas.bbox('all')[3] > canvas.winfo_height()
-            else scrollbar.pack_forget()))
-        canvas.bind('<Enter>', lambda e: canvas.bind_all(
-            '<MouseWheel>', lambda ev: canvas.yview_scroll(
-                int(-ev.delta / 120), 'units')))
-        canvas.bind('<Leave>', lambda e: canvas.unbind_all('<MouseWheel>'))
 
         # task checkboxes inside scrollable area
         check_vars = {}
@@ -1579,40 +1542,26 @@ class TaskScheduler(GuiPlugin):
 
         # ---- kv_frame (scrollable, show/hide with before=opt to keep position) ----
         kv_frame = tk.Frame(dlg, bg=s['bg'])
-        kv_canvas = tk.Canvas(kv_frame, bg=s['bg'], highlightthickness=0, height=0)
-        kv_scroll = tk.Scrollbar(kv_frame, orient=tk.VERTICAL, command=kv_canvas.yview,
-                                 width=12, relief=tk.FLAT, borderwidth=0,
-                                 bg=s['scroll_bar'], troughcolor=s['scroll_frame'])
-        kv_inner = tk.Frame(kv_canvas, bg=s['bg'])
-        kv_canvas.create_window((0, 0), window=kv_inner, anchor='nw', tags=('kv_inner',))
-        kv_canvas.configure(yscrollcommand=kv_scroll.set)
+        kv_canvas = self.components.ScrollableCanvas(
+            kv_frame, bg=s['bg'], scrollbars='y', height=0)
+        kv_inner = kv_canvas.inner
         kv_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        kv_canvas.bind('<Configure>', lambda e: (
-            kv_canvas.itemconfig('kv_inner', width=e.width)), '+')
-        kv_canvas.bind('<Enter>', lambda e: kv_canvas.bind_all(
-            '<MouseWheel>', lambda ev: kv_canvas.yview_scroll(
-                int(-ev.delta / 120), 'units')))
-        kv_canvas.bind('<Leave>', lambda e: kv_canvas.unbind_all('<MouseWheel>'))
         kv_rows = []  # list of (key_var, val_var, row_frame)
         saved_kwargs = item.get('kwargs', {})
         _KV_MAX_VISIBLE = 5
         _KV_ROW_H = 26
 
         def _sync_kv_scroll():
+            # 限高：最多显示 _KV_MAX_VISIBLE 行，超出滚动（scrollregion 与
+            # 滚动条显隐由 ScrollableCanvas 自动处理）
             kv_canvas.update_idletasks()
             bbox = kv_canvas.bbox('all')
             if bbox:
                 _, _, _, h = bbox
                 visible = min(len(kv_rows), _KV_MAX_VISIBLE) * _KV_ROW_H + 2
-                canvas_h = min(h, visible)
-                kv_canvas.configure(height=canvas_h, scrollregion=(0, 0, bbox[2], h))
-                if h > visible:
-                    kv_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-                else:
-                    kv_scroll.pack_forget()
+                kv_canvas.configure(height=min(h, visible))
             else:
-                kv_canvas.configure(height=0, scrollregion=(0, 0, 0, 0))
-                kv_scroll.pack_forget()
+                kv_canvas.configure(height=0)
 
         def _sync_kv_frame():
             if kv_rows:

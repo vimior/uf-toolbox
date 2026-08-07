@@ -12,6 +12,7 @@ from i18n import ZH, EN
 from .common import logger
 from .infra import Infrastructure
 from .infra.utils import _resolve_name
+from .components import Components
 
 _CONFIG_DIR = os.path.join(os.path.expanduser('~'), '.uf_toolbox')
 _CONFIG_PATH = os.path.join(_CONFIG_DIR, 'config.json')
@@ -70,6 +71,11 @@ class AppState:
     @property
     def config_dir(self):
         return _CONFIG_DIR
+
+    @property
+    def components(self):
+        """Theme-aware component library (app.components / plugin self.components)."""
+        return self._components
 
     # ---- event bus / store / services -------------------------------
 
@@ -140,6 +146,7 @@ class AppState:
     def init_state(self):
         """Initialize all state. Called once from main.py.__init__."""
         self._infra = Infrastructure(logger=logger)
+        self._components = Components(self)
 
         self._config = self._load_config()
         theme_name = self._config.get('theme', 'dark')

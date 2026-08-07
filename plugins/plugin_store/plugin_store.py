@@ -237,39 +237,10 @@ class PluginStore(GuiPlugin):
         canvas_frame = tk.Frame(self, bg=s['bg'])
         canvas_frame.pack(fill=tk.BOTH, expand=True, side=tk.TOP)
 
-        self._canvas = tk.Canvas(canvas_frame, bg=s['bg'],
-                                 highlightthickness=0, bd=0)
-        self._scrollbar = tk.Scrollbar(canvas_frame, orient=tk.VERTICAL, command=self._canvas.yview,
-                                       width=12, relief=tk.FLAT,
-                                       borderwidth=0, bg=s['scroll_bar'], troughcolor=s['scroll_frame'])
-        self._scrollable_frame = tk.Frame(self._canvas, bg=s['bg'])
-
-        self._scrollable_frame.bind(
-            '<Configure>',
-            lambda e: self._canvas.configure(
-                scrollregion=self._canvas.bbox('all')))
-
-        self._canvas_window = self._canvas.create_window(
-            (0, 0), window=self._scrollable_frame, anchor='nw')
-
-        self._canvas.configure(yscrollcommand=self._scrollbar.set)
-        self._scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self._canvas = self.components.ScrollableCanvas(
+            canvas_frame, bg=s['bg'], scrollbars='y')
         self._canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        # 鼠标滚轮
-        def _on_mousewheel(event):
-            self._canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
-        self._canvas.bind('<MouseWheel>', _on_mousewheel)
-        self._scrollable_frame.bind('<MouseWheel>', _on_mousewheel)
-        self._mousewheel_cb = _on_mousewheel  # 保存引用供 _bind_mousewheel 使用
-
-        # Canvas 大小变化时同步滚动内容宽度 (仅在宽度实际变化时更新，避免拖动时频繁重绘)
-        self._last_canvas_width = 0
-        def _on_canvas_resize(event):
-            if event.width != self._last_canvas_width:
-                self._last_canvas_width = event.width
-                self._canvas.itemconfig(self._canvas_window, width=event.width)
-        self._canvas.bind('<Configure>', _on_canvas_resize)
+        self._scrollable_frame = self._canvas.inner
 
         # ---- 底栏 ----
         bottom = tk.Frame(self, bg=s['bar_bg'], height=28)
@@ -441,7 +412,6 @@ class PluginStore(GuiPlugin):
         lbl = tk.Label(self._scrollable_frame, text=self._lbl['loading'],
                        bg=s['bg'], fg=s['hint'], font=(FONT_FAMILY, 11))
         lbl.pack(pady=40)
-        self._bind_mousewheel(self._scrollable_frame)
 
     def _render_list(self, local_only=False):
         """渲染插件卡片列表
@@ -520,7 +490,6 @@ class PluginStore(GuiPlugin):
         else:
             tk.Frame(self._scrollable_frame, height=8, bg=s['bg']).pack()
 
-        self._bind_mousewheel(self._scrollable_frame)
 
     def _create_card(self, plugin_info, status, local_info):
         """创建单个插件卡片 Frame。"""
@@ -886,12 +855,6 @@ class PluginStore(GuiPlugin):
         for child in self._scrollable_frame.winfo_children():
             child.destroy()
         self._cards.clear()
-
-    def _bind_mousewheel(self, widget):
-        """递归绑定鼠标滚轮事件到 widget 及其所有子控件"""
-        widget.bind('<MouseWheel>', self._mousewheel_cb)
-        for child in widget.winfo_children():
-            self._bind_mousewheel(child)
 
     def _update_time_label(self):
         """更新底栏刷新时间"""

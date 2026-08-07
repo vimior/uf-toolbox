@@ -112,12 +112,8 @@ class PluginInspector(GuiPlugin):
             frm = tk.Frame(content, bg=s['bg'])
             frm.pack(fill=tk.BOTH, expand=True)
             frm.pack_forget()
-            txt = tk.Text(frm, wrap=tk.NONE, state=tk.DISABLED,
-                          font=("Consolas", 9),
-                          bg=s['text_bg'], fg=s['fg'],
-                          insertbackground=s['fg'],
-                          relief=tk.FLAT, borderwidth=0,
-                          padx=10, pady=6)
+            txt = self.components.ScrollableText(
+                frm, wrap=tk.NONE, state=tk.DISABLED, scrollbars='both')
             txt.pack(fill=tk.BOTH, expand=True)
 
             def _scroll(event, t=txt):
