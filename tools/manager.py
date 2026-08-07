@@ -33,7 +33,10 @@ class ToolManager:
         tools_by_id = {}
         all_tools_no_id = []
         all_groups = []
-        dirs = self._resolve_tool_dirs(path)
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        dirs = [os.path.join(base, 'tools')]    # built-in (always exists)
+        if path:
+            dirs.append(path)                   # external (absolute)
         for tools_dir in dirs:
             if not os.path.isdir(tools_dir):
                 continue
@@ -143,36 +146,6 @@ class ToolManager:
                             sg, d.setdefault('groups', []))
                     return
         dst_list.append(src)
-
-    @staticmethod
-    def _resolve_tool_dirs(path=None):
-        """Return a list of tool directories to scan.
-
-        *path* is the optional custom tool path from app config.
-        """
-        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        dirs = [os.path.join(base, 'tools')]
-
-        # External tools alongside the exe (packaged: argv[0] is .exe / no extension)
-        exe_ext = os.path.splitext(sys.argv[0])[1].lower()
-        if exe_ext not in ('.py', '.pyw'):
-            # packaged
-            exe_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
-            p = os.path.join(exe_dir, 'tools')
-            if os.path.isdir(p) and p not in dirs:
-                dirs.append(p)
-            if path and path != 'tools':
-                p = os.path.join(exe_dir, path)
-                if os.path.isdir(p) and p not in dirs:
-                    dirs.append(p)
-        else:
-            # dev
-            dirs.append(os.path.join(base, 'dist', 'tools'))
-            if path and path != 'tools':
-                p = os.path.join(base, 'dist', path)
-                if p != dirs[1]:
-                    dirs.append(p)
-        return dirs
 
     @staticmethod
     def _resolve_name(entry, lang):

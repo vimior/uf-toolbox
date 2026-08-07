@@ -17,7 +17,11 @@ _CONFIG_DIR = os.path.join(os.path.expanduser('~'), '.uf_toolbox')
 _CONFIG_PATH = os.path.join(_CONFIG_DIR, 'config.json')
 
 def _resolve_plugin_dir(cfg_plugin_path):
-    """Real third-party plugin directory for the current deployment."""
+    """Real third-party plugin directory (absolute) — nearest-available.
+
+    Plugins are installed content managed by the app, so the default falls
+    back to the user config dir (~/.uf_toolbox/plugins).
+    """
     base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     packaged = os.path.splitext(sys.argv[0])[1].lower() not in ('.py', '.pyw')
     if cfg_plugin_path and cfg_plugin_path != 'plugins':
@@ -35,6 +39,29 @@ def _resolve_plugin_dir(cfg_plugin_path):
     dev_default = os.path.join(base, 'dist', 'plugins')
     return dev_default if os.path.isdir(dev_default) \
         else os.path.join(_CONFIG_DIR, 'plugins')
+
+
+def _resolve_tool_dir(cfg_tool_path):
+    """Real external tool directory (absolute), or None (built-in only).
+
+    tools.json is hand-edited beside the exe / in dist — no config-dir
+    fallback, so relative paths inside it keep their original base.
+    """
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    packaged = os.path.splitext(sys.argv[0])[1].lower() not in ('.py', '.pyw')
+    if cfg_tool_path and cfg_tool_path != 'tools':
+        if os.path.isabs(cfg_tool_path):
+            return cfg_tool_path
+        rel_base = os.path.dirname(os.path.abspath(sys.argv[0])) if packaged \
+            else os.path.join(base, 'dist')
+        return os.path.join(rel_base, cfg_tool_path)
+    # not configured — beside the exe / dist when present, else built-in only
+    if packaged:
+        exe_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+        portable = os.path.join(exe_dir, 'tools')
+        return portable if os.path.isdir(portable) else None
+    dev_default = os.path.join(base, 'dist', 'tools')
+    return dev_default if os.path.isdir(dev_default) else None
 
 
 class AppState:
@@ -189,7 +216,8 @@ class AppState:
 
     @property
     def tool_path(self):
-        return self._config.get('tool_path', 'tools')
+        """Real external tool directory (absolute), or None (built-in only)."""
+        return _resolve_tool_dir(self._config.get('tool_path'))
 
     @property
     def plugin_path(self):
