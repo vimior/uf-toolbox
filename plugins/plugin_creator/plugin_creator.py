@@ -608,26 +608,6 @@ class PluginCreator(GuiPlugin):
         self._useapp_sep.pack(fill=tk.X, padx=12, pady=(14, 6), before=anchor)
         self._useapp_header.pack(fill=tk.X, padx=12, pady=(0, 2), before=anchor)
 
-    @staticmethod
-    def _resolve_plugin_dir(path=None):
-        """Return the absolute path to the plugins directory."""
-        exe_ext = os.path.splitext(sys.argv[0])[1].lower()
-        if exe_ext not in ('.py', '.pyw'):
-            # packaged
-            exe_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
-            p = os.path.join(exe_dir, 'plugins')
-            if path and path != 'plugins':
-                p = os.path.join(exe_dir, path)
-            return p
-        else:
-            # dev
-            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            p = os.path.join(base, 'dist', 'plugins')
-            if path and path != 'plugins':
-                p = os.path.join(base, 'dist', path)
-            return p
-
     def _on_create(self):
         l = self._l
 
@@ -662,8 +642,7 @@ class PluginCreator(GuiPlugin):
             return
 
         # Resolve target directory
-        plugins_dir = self._resolve_plugin_dir(getattr(self.app, 'plugin_path', 'plugins'))
-        target_dir = os.path.join(plugins_dir, pkg)
+        target_dir = os.path.join(self.app.plugin_path, pkg)
 
         # Check if already exists
         if os.path.exists(target_dir):
