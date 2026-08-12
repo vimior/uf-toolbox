@@ -77,7 +77,7 @@ DARK_THEME = {
     'Listbox': {
         'bg': '#121314',
         'fg': '#bbbebf',
-        'selectbackground': '#2d5a8a',
+        'selectbackground': '#297aa0',
         'selectforeground': '#ffffff',
         'relief': 'flat',
         'bd': 0,
@@ -148,7 +148,13 @@ DARK_THEME = {
         'fieldbackground': '#121314',
         'background': '#121314',
         'foreground': '#bbbebf',
-        'selectbackground': '#2d5a8a',
+        'selectbackground': '#297aa0',
         'arrowcolor': '#bbbebf',
+        # 边框: border=0 为无边框 (布局 -border), lightcolor/darkcolor
+        # 控制边框颜色 (style borderwidth 对 Combobox 无效)
+        'border': 0,
+        'borderwidth': 1,
+        'lightcolor': '#222222',
+        'darkcolor': '#222222',
     },
 }

@@ -150,5 +150,11 @@ LIGHT_THEME = {
         'foreground': '#333333',
         'selectbackground': '#4a90d9',
         'arrowcolor': '#333333',
+        # 边框: border=0 为无边框 (布局 -border), lightcolor/darkcolor
+        # 控制边框颜色 (style borderwidth 对 Combobox 无效)
+        'border': 0,
+        'borderwidth': 1,
+        'lightcolor': '#555555',
+        'darkcolor': '#555555',
     },
 }

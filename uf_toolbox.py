@@ -54,6 +54,18 @@ class UFToolBox(MenuUI, LogUI, SettingsUI, AboutUI, tk.Tk):
         # Trigger initial auto-hide check 5s after startup
         self.after(5000, self._check_auto_hide)
 
+        self.option_add('*TCombobox*Listbox.highlightThickness', 0)
+        self.option_add('*TCombobox*Listbox.borderWidth', 0)
+        self.option_add('*TCombobox*Listbox.relief', 'flat')
+        self.option_add('*Popdown.relief', 'flat')
+        self.option_add('*Popdown.borderWidth', 0)
+        t = self.theme
+        c = t['Combobox']
+        self.option_add('*TCombobox*Listbox.background', c['fieldbackground'])
+        self.option_add('*TCombobox*Listbox.foreground', c['foreground'])
+        self.option_add('*TCombobox*Listbox.selectBackground', c['selectbackground'])
+        self.option_add('*TCombobox*Listbox.selectForeground', t['accent_fg'])
+
     def init(self):
         super().init()
         self.on('window:set-geometry', self._set_window_geometry)

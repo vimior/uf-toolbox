@@ -84,9 +84,15 @@ class Components:
             return style_name
         self._combo_theme = self._app.current_theme_name
         style = self._app.ttk_style
-        # 命名样式必须自带 layout (继承 TCombobox 的布局)
-        style.layout(style_name, style.layout('TCombobox'))
+        # 命名样式必须自带 layout (继承 TCombobox 的布局);
+        # 边框宽度由布局 field 的 -border 控制: style 的 borderwidth 对
+        # Combobox 无效 (Tk 硬编码 1px), 只有布局选项真正影响渲染
+        layout = style.layout('TCombobox')
         c = self._app.theme['Combobox']
+        for elem, opts in layout:
+            if elem == 'Combobox.field':
+                opts['border'] = c.get('border', 0)
+        style.layout(style_name, layout)
         style.configure(
             style_name,
             fieldbackground=c['fieldbackground'],
@@ -94,6 +100,11 @@ class Components:
             foreground=c['foreground'],
             selectbackground=c['selectbackground'],
             arrowcolor=c['arrowcolor'],
+            # 细边框 + 暗色 (lightcolor/darkcolor 控制边框颜色);
+            # .get 回退保证旧配置/第三方主题不传新字段时仍可用
+            borderwidth=c.get('borderwidth', 1),
+            lightcolor=c.get('lightcolor', self._app.theme['border']),
+            darkcolor=c.get('darkcolor', self._app.theme['border']),
         )
         return style_name
 
