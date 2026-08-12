@@ -30,30 +30,6 @@ _LANG = {
     },
 }
 
-_STYLE = {
-    'dark': {
-        'bg':        '#2b2b2b',
-        'bar':       '#333333',
-        'text_bg':   '#363636',
-        'fg':        '#e0e0e0',
-        'hint':      '#888888',
-        'hover':     '#4a4a4a',
-        'accent':    '#2d5a8a',
-        'accent_fg': '#ffffff',
-    },
-    'light': {
-        'bg':        '#f5f5f5',
-        'bar':       '#e0e0e0',
-        'text_bg':   '#ffffff',
-        'fg':        '#333333',
-        'hint':      '#999999',
-        'hover':     '#d0d0d0',
-        'accent':    '#2d5a8a',
-        'accent_fg': '#ffffff',
-    },
-}
-
-
 class PluginInspector(GuiPlugin):
     name = "Plugin Inspector"
     name_zh = "插件审查器"
@@ -66,28 +42,26 @@ class PluginInspector(GuiPlugin):
     def __init__(self, parent, app):
         super().__init__(parent, app)
         lang_name = self.app.current_lang_name
-        theme_name = self.app.current_theme_name
         self._lbl = _LANG.get(lang_name, _LANG['en'])
-        self._s = _STYLE.get(theme_name, _STYLE['dark'])
+        self._s = self.app.theme
         s = self._s
 
         self.title(self.name_zh if lang_name == 'zh' else self.name_en)
         self.geometry("688x520")
         self.resizable(True, True)
-        self.configure(bg=s['bg'])
 
         # ---- tab bar ----
         self._tabs = {}
         self._active_tab = None
-        tab_bar = tk.Frame(self, bg=s['bg'], height=30)
-        tab_bar.pack(fill=tk.X, side=tk.TOP, padx=6, pady=(4, 0))
+        tab_bar = self.components.Frame(self, bg=s['bar'], height=32)
+        tab_bar.pack(fill=tk.X, side=tk.TOP)
         tab_bar.pack_propagate(False)
 
         for key in ("events", "store", "services", "perf"):
             label = self._lbl[key]
-            btn = tk.Label(tab_bar, text=f" {label} ", font=("Microsoft YaHei", 10),
-                           bg=s['bg'], fg=s['fg'], padx=14, pady=3,
-                           cursor="hand2", relief=tk.FLAT)
+            btn = self.components.Label(
+                tab_bar, text=f" {label} ", font=self.components.font(10),
+                padx=14, pady=3)
             btn.pack(side=tk.LEFT)
             btn.bind("<Button-1>", lambda _, k=key: self._switch_tab(k))
             btn.bind("<Enter>", lambda _, b=btn: b.config(bg=s['hover']))
@@ -96,65 +70,64 @@ class PluginInspector(GuiPlugin):
                      b.config(bg=s['accent'] if self._active_tab == k else s['bg']))
             self._tabs[key] = btn
 
-        self._status = tk.Label(tab_bar, text="", bg=s['bg'],
-                                fg=s['hint'], font=("Consolas", 8))
+        self._status = self.components.Label(tab_bar, text="", bg=s['bar'],
+                                             fg=s['hint'], font=self.components.mono_font(8))
         self._status.pack(side=tk.RIGHT, padx=8, pady=4)
 
-        tk.Frame(self, bg=s['accent'], height=2).pack(fill=tk.X, side=tk.TOP, padx=6)
+        self.components.Frame(self, bg=s['accent'], height=2).pack(
+            fill=tk.X, side=tk.TOP)
 
         # ---- content ----
-        content = tk.Frame(self, bg=s['bg'])
-        content.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0, 2))
+        content = self.components.Frame(self)
+        content.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 4))
 
         self._frames = {}
         self._texts = {}
         for key in ("events", "store", "services", "perf"):
-            frm = tk.Frame(content, bg=s['bg'])
+            frm = self.components.Frame(content)
             frm.pack(fill=tk.BOTH, expand=True)
             frm.pack_forget()
             txt = self.components.ScrollableText(
                 frm, wrap=tk.NONE, state=tk.DISABLED, scrollbars='both')
             txt.pack(fill=tk.BOTH, expand=True)
-
-            def _scroll(event, t=txt):
-                t.yview_scroll(int(-1 * (event.delta / 120)), "units")
-            txt.bind("<MouseWheel>", _scroll)
+            # 滚轮由 ScrollableText 内置（Enter/Leave 全局绑定）
 
             self._frames[key] = frm
             self._texts[key] = txt
 
         # ---- footer ----
-        bar = tk.Frame(self, bg=s['bar'], height=32)
+        # bar 贴窗口边缘；bar 内按钮自带右 8 边距（与上方内容区右缘对齐）
+        bar = self.components.Frame(self, bg=s['bar'], height=32)
         bar.pack(fill=tk.X, side=tk.BOTTOM)
         bar.pack_propagate(False)
 
         lbl = self._lbl
         self._filter_var = tk.BooleanVar(value=False)
-        self._filter_cb = tk.Checkbutton(bar, text=lbl['all_events'],
-                       variable=self._filter_var, command=self._refresh,
-                       bg=s['bar'], fg=s['fg'], font=("Microsoft YaHei", 8),
-                       selectcolor=s['bar'], relief=tk.FLAT,
-                       activebackground=s['bar'], activeforeground=s['fg'])
+        self._filter_cb = self.components.Checkbutton(
+            bar, text=lbl['all_events'],
+            variable=self._filter_var, command=self._refresh,
+            bg=s['bar'], selectcolor=s['bar'],
+            font=self.components.font(8))
 
         self._auto_refresh_var = tk.BooleanVar(value=False)
         self._auto_refresh_job = None
-        self._auto_refresh_cb = tk.Checkbutton(bar, text=lbl['auto_refresh'],
-                       variable=self._auto_refresh_var, command=self._toggle_auto_refresh,
-                       bg=s['bar'], fg=s['fg'], font=("Microsoft YaHei", 8),
-                       selectcolor=s['bar'], relief=tk.FLAT,
-                       activebackground=s['bar'], activeforeground=s['fg'])
+        self._auto_refresh_cb = self.components.Checkbutton(
+            bar, text=lbl['auto_refresh'],
+            variable=self._auto_refresh_var, command=self._toggle_auto_refresh,
+            bg=s['bar'], selectcolor=s['bar'],
+            font=self.components.font(8))
         self._auto_refresh_cb.pack(side=tk.LEFT, padx=2, pady=4)
 
         self._interval_var = tk.StringVar(value='2s')
-        self._interval_btn = tk.Menubutton(
-            bar, bg=s['bar'], fg=s['fg'], font=("Consolas", 9),
+        self._interval_btn = self.components.Menubutton(
+            bar, bg=s['bar'], fg=s['fg'], font=self.components.mono_font(9),
             relief=tk.FLAT, padx=6, pady=1, borderwidth=0,
             activebackground=s['hover'], activeforeground=s['fg'],
             cursor='hand2')
         self._interval_btn.pack(side=tk.LEFT, padx=2, pady=4)
-        menu = tk.Menu(self._interval_btn, tearoff=0, bg=s['text_bg'], fg=s['fg'],
-                       font=("Consolas", 9),
-                       activebackground=s['accent'], activeforeground=s['accent_fg'])
+        menu = self.components.Menu(
+            self._interval_btn,
+            activebackground=s['accent'], activeforeground=s['accent_fg'])
         for val in _REFRESH_INTERVALS:
             menu.add_radiobutton(label=val, variable=self._interval_var, value=val,
                                 command=self._on_interval_changed)
@@ -163,21 +136,13 @@ class PluginInspector(GuiPlugin):
         self._interval_var.trace_add('write',
             lambda *_: self._interval_btn.configure(text=f"{self._interval_var.get()} ▾"))
 
-        tk.Button(bar, text=lbl['refresh'], command=self._refresh,
-                  bg=s['accent'], fg=s['accent_fg'],
-                  font=("Microsoft YaHei", 9, "bold"),
-                  relief=tk.FLAT, padx=14, borderwidth=0,
-                  activebackground='#3a6fa8', activeforeground='#ffffff'
-                  ).pack(side=tk.RIGHT, padx=4, pady=4)
+        self.components.Button(
+            bar, text=lbl['refresh'],
+            command=self._refresh).pack(side=tk.RIGHT, padx=(6, 8), pady=4)
 
-        self._perf_reset_btn = tk.Button(bar, text=lbl['perf_reset'],
-                  command=self._perf_reset,
-                  bg=s['bar'], fg=s['fg'],
-                  font=("Microsoft YaHei", 8),
-                  relief=tk.FLAT, padx=10, borderwidth=0,
-                  activebackground=s['hover'], activeforeground=s['fg']
-                  )
-        self._perf_reset_btn.pack(side=tk.RIGHT, padx=2, pady=4)
+        self._perf_reset_btn = self.components.Button(
+            bar, text=lbl['perf_reset'], command=self._perf_reset)
+        self._perf_reset_btn.pack(side=tk.RIGHT, padx=6, pady=4)
         self._perf_reset_btn.pack_forget()  # hidden by default, shown on perf tab
 
         self._switch_tab("events")

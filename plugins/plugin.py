@@ -3,8 +3,10 @@
 import tkinter as tk
 from dataclasses import dataclass
 
+from common.components.theme_toplevel import AppToplevel
 
-class GuiPlugin(tk.Toplevel):
+
+class GuiPlugin(AppToplevel):
     """GUI plugin base class — the plugin instance IS its window.
 
     Inherit from this for plugins that open a window.
@@ -36,7 +38,7 @@ class GuiPlugin(tk.Toplevel):
         self.app = app
         self.store = self.app.store
         self.services = self.app.services
-        super().__init__(parent)
+        super().__init__(parent, app=app)
 
     @property
     def components(self):

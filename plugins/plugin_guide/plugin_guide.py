@@ -5,24 +5,19 @@ import re
 import tkinter as tk
 from plugins.plugin import GuiPlugin
 
-STYLE = {
+#: 文档语法渲染色（内容语义，非控件主题，不进共享主题）
+_DOC_COLORS = {
     'dark': {
-        'bg': '#1e1e1e',       'frame': '#252525',
-        'fg': '#cccccc',       'h1': '#ffffff',
-        'h2': '#e0e0e0',       'code_bg': '#1a1a1a',
-        'code_fg': '#ce9178',  'link': '#569cd6',
-        'th': '#9cdcfe',       'bar': '#333333',
-        'bar_fg': '#ffffff',   'hr': '#444444',
-        'scroll_frame': '#252525', 'scroll_bar': '#333333',
+        'h1': '#ffffff',       'h2': '#e0e0e0',
+        'code_bg': '#1a1a1a',  'code_fg': '#ce9178',
+        'link': '#569cd6',     'th': '#9cdcfe',
+        'hr': '#444444',
     },
     'light': {
-        'bg': '#ffffff',       'frame': '#f5f5f5',
-        'fg': '#333333',       'h1': '#222222',
-        'h2': '#444444',       'code_bg': '#f0f0f0',
-        'code_fg': '#a31515',  'link': '#0066cc',
-        'th': '#0066cc',       'bar': '#e0e0e0',
-        'bar_fg': '#333333',   'hr': '#cccccc',
-        'scroll_frame': '#f5f5f5', 'scroll_bar': '#e0e0e0',
+        'h1': '#222222',       'h2': '#444444',
+        'code_bg': '#f0f0f0',  'code_fg': '#a31515',
+        'link': '#0066cc',     'th': '#0066cc',
+        'hr': '#cccccc',
     },
 }
 
@@ -46,65 +41,49 @@ class PluginGuide(GuiPlugin):
         super().__init__(parent, app)
         lang_name = self.app.current_lang_name
         theme_name = self.app.current_theme_name
-        s = STYLE.get(theme_name, STYLE['dark'])
+        s = self.app.theme
+        dc = _DOC_COLORS.get(theme_name, _DOC_COLORS['dark'])
 
         self.title(self.name_zh if lang_name == 'zh' else self.name_en)
         self.geometry("820x600")
         self.resizable(True, True)
-        self.configure(bg=s['bg'])
 
         # ---- body ----
-        outer = tk.Frame(self, bg=s['bg'])
-        outer.pack(fill=tk.BOTH, expand=True, padx=(16, 4), pady=(12, 8))
+        # 文本区（card 色，与窗口背景分层），边距与日志窗口一致（顶 8 底 6）
+        outer = self.components.Frame(self)
+        outer.pack(fill=tk.BOTH, expand=True, padx=8, pady=(8, 6))
 
         self._txt = self.components.ScrollableText(
-            outer, wrap=tk.WORD, font=("Consolas", 10),
-            bg=s['frame'], fg=s['fg'], padx=18, pady=14,
-            insertbackground=s['fg'], tabs=("1.5c",))
+            outer, wrap=tk.WORD, font=self.components.mono_font(10),
+            bg=s['card'], padx=18, tabs=("1.5c",),
+            auto_hide=False)  # 文档总超出，滚动条常驻避免布局抖动
         self._txt.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # ---- tags ----
-        self._txt.tag_configure("h1", font=("Consolas", 16, "bold"),
-                                foreground=s['h1'], spacing3=4)
-        self._txt.tag_configure("h2", font=("Consolas", 13, "bold"),
-                                foreground=s['h2'], spacing3=3)
-        self._txt.tag_configure("h3", font=("Consolas", 11, "bold"),
-                                foreground=s['h2'], spacing3=2)
-        self._txt.tag_configure("b", font=("Consolas", 10, "bold"))
-        self._txt.tag_configure("i", font=("Consolas", 10, "italic"))
-        self._txt.tag_configure("code", font=("Consolas", 10),
-                                background=s['code_bg'], foreground=s['code_fg'])
-        self._txt.tag_configure("code_block", font=("Consolas", 9),
-                                background=s['code_bg'], lmargin1=12,
+        self._txt.tag_configure("h1", font=self.components.mono_font(16, "bold"),
+                                foreground=dc['h1'], spacing3=4)
+        self._txt.tag_configure("h2", font=self.components.mono_font(13, "bold"),
+                                foreground=dc['h2'], spacing3=3)
+        self._txt.tag_configure("h3", font=self.components.mono_font(11, "bold"),
+                                foreground=dc['h2'], spacing3=2)
+        self._txt.tag_configure("b", font=self.components.mono_font(10, "bold"))
+        self._txt.tag_configure("i", font=self.components.mono_font(10, "italic"))
+        self._txt.tag_configure("code", font=self.components.mono_font(10),
+                                background=dc['code_bg'], foreground=dc['code_fg'])
+        self._txt.tag_configure("code_block", font=self.components.mono_font(9),
+                                background=dc['code_bg'], lmargin1=12,
                                 lmargin2=12, rmargin=12, spacing1=3, spacing3=3)
-        self._txt.tag_configure("hr", foreground=s['hr'],
-                                font=("Consolas", 1), spacing1=8, spacing3=8)
+        self._txt.tag_configure("hr", foreground=dc['hr'],
+                                font=self.components.mono_font(1), spacing1=8, spacing3=8)
         self._txt.tag_configure("list", lmargin1=24, lmargin2=32)
-        self._txt.tag_configure("th", font=("Consolas", 10, "bold"),
-                                foreground=s['th'])
-        self._txt.tag_configure("link", foreground=s['link'], underline=True)
+        self._txt.tag_configure("th", font=self.components.mono_font(10, "bold"),
+                                foreground=dc['th'])
+        self._txt.tag_configure("link", foreground=dc['link'], underline=True)
 
         # ---- load & render ----
+        # 滚轮由 ScrollableText 内置（Enter/Leave 全局绑定）
         self._render_markdown(self._load_doc(lang_name))
         self._txt.configure(state=tk.DISABLED)
-
-        # ---- mousewheel ----
-        def _scroll(event):
-            self._txt.yview_scroll(int(-1 * (event.delta / 120)), "units")
-        _bound = [False]
-
-        def _enter(e):
-            if not _bound[0]:
-                self._txt.bind_all("<MouseWheel>", _scroll)
-                _bound[0] = True
-
-        def _leave(e):
-            if _bound[0]:
-                self._txt.unbind_all("<MouseWheel>")
-                _bound[0] = False
-
-        self._txt.bind("<Enter>", _enter, add="+")
-        self._txt.bind("<Leave>", _leave, add="+")
 
     # ---- renderer ----
 

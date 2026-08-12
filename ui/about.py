@@ -20,21 +20,18 @@ class AboutUI(AppState, tk.Tk):
             self._about_win.lift()
             self._about_win.focus_force()
             return
-        t, l = self.theme, self.lang
-        win = tk.Toplevel(self)
+        l = self.lang
+        win = self.components.Toplevel(self)
         win.title(l['menu_about'])
-        win.configure(bg=t['bg'])
         win.resizable(False, False)
         win.transient(self)
-        self.emit('window:set-icon', win)
-        # win.withdraw()
-        frm = tk.Frame(win, bg=t['bg'], padx=30, pady=20)
-        frm.pack()
-        tk.Label(frm, text=l['about_text'].format(__version__), bg=t['bg'], fg=t['fg'],
-                 font=(FONT_FAMILY, 10), justify=tk.CENTER).pack()
+        frm = self.components.Frame(win)
+        frm.pack(padx=8, pady=(8, 4))
+        self.components.Label(
+            frm, text=l['about_text'].format(__version__),
+            justify=tk.CENTER, font=self.components.font(10)).pack()
         win.update_idletasks()
         self.emit('window:set-geometry', win, w=260, h=150)
-        # win.deiconify()
         self._about_win = win
         win.bind('<Destroy>', lambda _: setattr(self, '_about_win', None))
 

@@ -9,7 +9,8 @@ from plugins.manager import PluginManager
 from tools.manager import ToolManager
 from plugins.plugin_guide.plugin_guide import PluginGuide
 
-MENU_ACTIVEBORDERWIDTH = 3
+#: 折叠为细条时的强调发光色（注意力状态色，刻意固定）
+_COLLAPSE_GLOW = '#ff6600'
 
 _icon_cache = {}
 
@@ -63,7 +64,7 @@ class MenuUI(AppState, tk.Tk):
         self._topmost_var = tk.BooleanVar(value=self.always_on_top)
         self._auto_hide_var = tk.BooleanVar(value=self.auto_hide_enabled)
 
-        self._navbar = bar = tk.Frame(self, bg=t['navbar_bg'], height=48)
+        self._navbar = bar = self.components.Frame(self, bg=t['nav_bg'], height=48)
         bar.pack(fill=tk.X, side=tk.TOP)
         bar.pack_propagate(False)
 
@@ -74,18 +75,19 @@ class MenuUI(AppState, tk.Tk):
         icon_img = _load_icon('uf_toolbox.ico', size=32) or _load_icon('uf_toolbox.png', size=44)
         if icon_img is not None:
             self._brand_icon = icon_img
-            brand_frame = tk.Frame(bar, bg=t['navbar_bg'], width=52, height=48)
+            brand_frame = self.components.Frame(bar, bg=t['nav_bg'], width=52, height=48)
             brand_frame.pack(side=tk.LEFT, fill=tk.Y)
             brand_frame.pack_propagate(False)
-            self._brand_icon_lbl = tk.Label(brand_frame, image=icon_img, bg=t['navbar_bg'])
+            self._brand_icon_lbl = self.components.Label(brand_frame, image=icon_img, bg=t['nav_bg'])
             self._brand_icon_lbl.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
             self._brand_lbl = brand_frame
         else:
-            brand = tk.Label(bar, text='  UF Toolbox', bg=t['navbar_bg'], fg=t['fg'],
-                             font=(FONT_FAMILY, 10, 'bold'), padx=16)
+            brand = self.components.Label(
+                bar, text='  UF Toolbox', bg=t['nav_bg'], fg=t['fg'],
+                font=(FONT_FAMILY, 10, 'bold'), padx=16)
             brand.pack(side=tk.LEFT, fill=tk.Y)
             self._brand_lbl = brand
-        tk.Frame(bar, bg=t['nav_sep'], width=1).pack(side=tk.LEFT, fill=tk.Y)
+        self.components.Separator(bar, width=1).pack(side=tk.LEFT, fill=tk.Y)
 
         self._add_nav_item(bar, 'settings', l['menu_settings'],
                            self._build_settings_menu, t, first=True)
@@ -100,7 +102,7 @@ class MenuUI(AppState, tk.Tk):
                            on_click=self._on_plugins_menu_open)
 
         # Separator right after plugins, packed LEFT so it hugs the button
-        self._exit_sep = tk.Frame(bar, bg=t['nav_sep'], width=1)
+        self._exit_sep = self.components.Separator(bar, width=1)
         self._exit_sep.pack(side=tk.LEFT, fill=tk.Y)
 
         # Exit icon — swaps image on hover
@@ -109,14 +111,14 @@ class MenuUI(AppState, tk.Tk):
         if x_img is not None:
             self._exit_icon = x_img
             self._exit_icon_hover = x_hover
-            btn = tk.Label(bar, image=x_img, bg=t['navbar_bg'], padx=10,
-                           cursor='hand2', borderwidth=0, highlightthickness=0)
+            btn = self.components.Label(bar, image=x_img, bg=t['nav_bg'],
+                                        padx=10)
             btn.bind('<Enter>', lambda e, b=btn: b.config(image=x_hover))
             btn.bind('<Leave>', lambda e, b=btn: b.config(image=x_img))
         else:
-            btn = tk.Label(bar, text='  ✕  ', bg=t['navbar_bg'], fg=t['fg'],
-                           font=(FONT_FAMILY, 10, 'bold'), padx=16,
-                           cursor='hand2', borderwidth=0, highlightthickness=0)
+            btn = self.components.Label(
+                bar, text='  ✕  ', bg=t['nav_bg'], fg=t['fg'],
+                font=(FONT_FAMILY, 10, 'bold'), padx=16)
         btn.pack(side=tk.RIGHT, fill=tk.Y)
         btn.bind('<Button-1>', lambda e: self.destroy())
         self._exit_btn = btn
@@ -124,7 +126,7 @@ class MenuUI(AppState, tk.Tk):
         # Make the navbar (and its non-clickable children) a drag handle.
         self._enable_drag(bar)
 
-        self._nav_sep = tk.Frame(self, height=2, bg=t['separator2'])
+        self._nav_sep = self.components.Separator(self)
         self._nav_sep.pack(fill=tk.X, side=tk.TOP)
         self._first_focus_out = True
         self.bind('<FocusOut>', self._on_focus_out)
@@ -137,57 +139,54 @@ class MenuUI(AppState, tk.Tk):
     def apply_theme(self, name):
         t = self.theme
         self.configure(bg=t['bg'])
-        self._navbar.config(bg=t['navbar_bg'])
-        self._nav_sep.config(bg=t['separator2'])
-        self._exit_sep.config(bg=t['nav_sep'])
-        self._brand_lbl.config(bg=t['navbar_bg'])
+        self._navbar.config(bg=t['nav_bg'])
+        self._nav_sep.config(bg=t['sep'])
+        self._exit_sep.config(bg=t['sep'])
+        self._brand_lbl.config(bg=t['nav_bg'])
         if hasattr(self, '_brand_icon_lbl'):
-            self._brand_icon_lbl.config(bg=t['navbar_bg'])
+            self._brand_icon_lbl.config(bg=t['nav_bg'])
         if isinstance(self._brand_lbl, tk.Label):
             self._brand_lbl.config(fg=t['fg'])
         if hasattr(self, '_exit_icon_hover'):
-            self._exit_btn.config(image=self._exit_icon, bg=t['navbar_bg'])
+            self._exit_btn.config(image=self._exit_icon, bg=t['nav_bg'])
             self._exit_btn.unbind('<Enter>')
             self._exit_btn.unbind('<Leave>')
             self._exit_btn.bind('<Enter>', lambda e, b=self._exit_btn: b.config(image=self._exit_icon_hover))
             self._exit_btn.bind('<Leave>', lambda e, b=self._exit_btn: b.config(image=self._exit_icon))
         for key, widget in self._nav_items.items():
             if key.endswith('_sep'):
-                widget.config(bg=t['nav_sep'])
+                widget.config(bg=t['sep'])
             else:
-                widget.config(bg=t['navbar_bg'], fg=t['fg'])
+                widget.config(bg=t['nav_bg'], fg=t['fg'])
                 widget.unbind('<Enter>')
                 widget.unbind('<Leave>')
                 widget.bind('<Enter>', lambda e, b=widget, h=t['nav_hover_bg']: b.config(bg=h))
-                widget.bind('<Leave>', lambda e, b=widget, bg=t['navbar_bg'], c=t['fg']: b.config(bg=bg, fg=c))
+                widget.bind('<Leave>', lambda e, b=widget, bg=t['nav_bg'], c=t['fg']: b.config(bg=bg, fg=c))
+        m = t['Menu']
         for menu in self._nav_menus.values():
-            menu.config(bg=t['menu_bg'], fg=t['fg'],
-                        activebackground=t['menu_hover_bg'], activeforeground=t['menu_hover_fg'])
+            menu.config(bg=m['bg'], fg=m['fg'],
+                        activebackground=m['activebackground'],
+                        activeforeground=m['activeforeground'])
 
     def _add_nav_item(self, bar, key, text, menu_builder, t,
                        on_click=None, first=False):
         if not first:
-            frm = tk.Frame(bar, bg=t['nav_sep'], width=1)
+            frm = self.components.Separator(bar, width=1)
             frm.pack(side=tk.LEFT, fill=tk.Y)
             self._nav_items[f'{key}_sep'] = frm
 
-        btn = tk.Label(bar, text=f'  {text}  ', bg=t['navbar_bg'], fg=t['fg'],
-                       font=(FONT_FAMILY, 12), padx=16,
-                       cursor='hand2', borderwidth=0, highlightthickness=0)
+        btn = self.components.Label(
+            bar, text=f'  {text}  ', bg=t['nav_bg'], fg=t['fg'],
+            font=(FONT_FAMILY, 12), padx=16)
         btn.pack(side=tk.LEFT, fill=tk.Y)
 
         btn.bind('<Enter>', lambda e, b=btn, h=t['nav_hover_bg']: b.config(bg=h))
-        btn.bind('<Leave>', lambda e, b=btn, bg=t['navbar_bg'], c=t['fg']:
+        btn.bind('<Leave>', lambda e, b=btn, bg=t['nav_bg'], c=t['fg']:
                  b.config(bg=bg, fg=c))
 
         self._nav_items[key] = btn
 
-        menu = tk.Menu(self, tearoff=0, font=(FONT_FAMILY, 12),
-                       bg=t['menu_bg'], fg=t['fg'],
-                       activebackground=t['menu_hover_bg'],
-                       activeforeground=t['menu_hover_fg'],
-                       borderwidth=1, relief=tk.FLAT,
-                       activeborderwidth=MENU_ACTIVEBORDERWIDTH)
+        menu = self.components.Menu(self)
         menu.configure(postcommand=lambda m=menu, k=key: self._on_menu_open(m, k))
         menu_builder(menu)
         self._nav_menus[key] = menu
@@ -202,15 +201,15 @@ class MenuUI(AppState, tk.Tk):
 
     def _add_nav_action(self, bar, key, text, action, t):
         """Create a navbar button that fires *action* directly (no dropdown)."""
-        frm = tk.Frame(bar, bg=t['nav_sep'], width=1)
+        frm = self.components.Separator(bar, width=1)
         frm.pack(side=tk.LEFT, fill=tk.Y)
         self._nav_items[f'{key}_sep'] = frm
-        btn = tk.Label(bar, text=f'  {text}  ', bg=t['navbar_bg'], fg=t['fg'],
-                       font=(FONT_FAMILY, 12), padx=16,
-                       cursor='hand2', borderwidth=0, highlightthickness=0)
+        btn = self.components.Label(
+            bar, text=f'  {text}  ', bg=t['nav_bg'], fg=t['fg'],
+            font=(FONT_FAMILY, 12), padx=16)
         btn.pack(side=tk.LEFT, fill=tk.Y)
         btn.bind('<Enter>', lambda e, b=btn, h=t['nav_hover_bg']: b.config(bg=h))
-        btn.bind('<Leave>', lambda e, b=btn, bg=t['navbar_bg'], c=t['fg']:
+        btn.bind('<Leave>', lambda e, b=btn, bg=t['nav_bg'], c=t['fg']:
                  b.config(bg=bg, fg=c))
         btn.bind('<Button-1>', lambda e, a=action: a())
         self._nav_items[key] = btn
@@ -293,12 +292,7 @@ class MenuUI(AppState, tk.Tk):
 
     def _build_appearance_submenu(self, parent):
         l = self.lang
-        t = self.theme
-        sub = tk.Menu(parent, tearoff=0, font=(FONT_FAMILY, 11),
-                      bg=t['menu_bg'], fg=t['fg'],
-                      activebackground=t['menu_hover_bg'],
-                      activeforeground=t['menu_hover_fg'],
-                      activeborderwidth=MENU_ACTIVEBORDERWIDTH)
+        sub = self.components.Menu(parent)
         sub.add_radiobutton(label=l['menu_theme_light'],
                             variable=self._theme_var, value='light',
                             command=lambda: self.set_theme('light'))
@@ -309,12 +303,7 @@ class MenuUI(AppState, tk.Tk):
 
     def _build_language_submenu(self, parent):
         l = self.lang
-        t = self.theme
-        sub = tk.Menu(parent, tearoff=0, font=(FONT_FAMILY, 11),
-                      bg=t['menu_bg'], fg=t['fg'],
-                      activebackground=t['menu_hover_bg'],
-                      activeforeground=t['menu_hover_fg'],
-                      activeborderwidth=MENU_ACTIVEBORDERWIDTH)
+        sub = self.components.Menu(parent)
         sub.add_radiobutton(label=l['menu_lang_zh'],
                             variable=self._lang_var, value='zh',
                             command=lambda: self.set_lang('zh'))
@@ -362,13 +351,8 @@ class MenuUI(AppState, tk.Tk):
                             self.after(200, lambda: self.lift() or self.focus_force()))
 
         def _build_group(parent_menu, groups):
-            t = self.theme
             for g in groups:
-                sub = tk.Menu(parent_menu, tearoff=0, font=(FONT_FAMILY, 11),
-                      bg=t['menu_bg'], fg=t['fg'],
-                              activebackground=t['menu_hover_bg'],
-                              activeforeground=t['menu_hover_fg'],
-                              activeborderwidth=MENU_ACTIVEBORDERWIDTH)
+                sub = self.components.Menu(parent_menu)
                 for tool in g.get('tools', []):
                     sub.add_command(label=tool['name'], command=_cmd(tool))
                 _build_group(sub, g.get('groups', []))
@@ -391,7 +375,6 @@ class MenuUI(AppState, tk.Tk):
                                            doc='tool-guide.md',
                                            title_zh='工具指南',
                                            title_en='Tool Guide')
-        self.emit('window:set-icon', self._tool_guide_win)
         self.emit('window:set-geometry', self._tool_guide_win,
             x=(self.winfo_x() + self.winfo_width() + 4
                 if self._tool_guide_win.fixed_position else None),
@@ -413,7 +396,7 @@ class MenuUI(AppState, tk.Tk):
             self._plugins_menu.add_command(
                 label=self.lang.get('menu_no_plugins', '(No Plugins)'))
             return
-        l, t = self.lang, self.theme
+        l = self.lang
         for p in sorted(self._pm.plugins.values(),
                         key=lambda x: x.priority, reverse=True):
             is_open = p.alive
@@ -428,22 +411,14 @@ class MenuUI(AppState, tk.Tk):
                     command=lambda plugin=p: self._show_plugin_window(plugin))
             elif is_service:
                 # ServicePlugin running: submenu with Stop
-                sub = tk.Menu(self._plugins_menu, tearoff=0, font=(FONT_FAMILY, 11),
-                              bg=t['menu_bg'], fg=t['fg'],
-                              activebackground=t['menu_hover_bg'],
-                              activeforeground=t['menu_hover_fg'],
-                              activeborderwidth=MENU_ACTIVEBORDERWIDTH)
+                sub = self.components.Menu(self._plugins_menu)
                 sub.add_command(
                     label=l.get('menu_service_stop', 'Stop'),
                     command=lambda plugin=p: self._close_plugin_window(plugin))
                 self._plugins_menu.add_cascade(label=f'{dot}{name}', menu=sub)
             else:
                 # GUI running: submenu — Show / Hide (if visible) / Destroy
-                sub = tk.Menu(self._plugins_menu, tearoff=0, font=(FONT_FAMILY, 11),
-                              bg=t['menu_bg'], fg=t['fg'],
-                              activebackground=t['menu_hover_bg'],
-                              activeforeground=t['menu_hover_fg'],
-                              activeborderwidth=MENU_ACTIVEBORDERWIDTH)
+                sub = self.components.Menu(self._plugins_menu)
                 sub.add_command(
                     label=l.get('menu_plugin_show', 'Show'),
                     command=lambda plugin=p: self._pm.show_plugin(plugin))
@@ -601,7 +576,7 @@ class MenuUI(AppState, tk.Tk):
         # Hide navbar, show a glowing accent line
         self._navbar.pack_forget()
         self._nav_sep.pack_forget()
-        self.configure(bg='#ff6600')
+        self.configure(bg=_COLLAPSE_GLOW)
         self.bind('<Enter>', self._on_collapsed_enter)
 
     def _on_collapsed_enter(self, event):

@@ -100,6 +100,9 @@ class TestGuiPluginInit(unittest.TestCase):
 
     def setUp(self):
         self.mock_tk_init = patch('tkinter.Toplevel.__init__').start()
+        # AppToplevel.__init__ 有 withdraw/after 等真实 Tk 调用, 一并跳过
+        self.mock_app_top = patch(
+            'plugins.plugin.AppToplevel.__init__', return_value=None).start()
         self.addCleanup(patch.stopall)
 
     def test_store_set_from_module(self):
@@ -123,6 +126,8 @@ class TestGuiPluginLifecycle(unittest.TestCase):
 
     def setUp(self):
         self.mock_tk_init = patch('tkinter.Toplevel.__init__').start()
+        self.mock_app_top = patch(
+            'plugins.plugin.AppToplevel.__init__', return_value=None).start()
         self.addCleanup(patch.stopall)
 
     def test_on_show_noop(self):
@@ -160,6 +165,8 @@ class TestCustomPlugin(unittest.TestCase):
 
     def setUp(self):
         self.mock_tk_init = patch('tkinter.Toplevel.__init__').start()
+        self.mock_app_top = patch(
+            'plugins.plugin.AppToplevel.__init__', return_value=None).start()
         self.addCleanup(patch.stopall)
 
     def test_custom_gui_plugin_attrs(self):

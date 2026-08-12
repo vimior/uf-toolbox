@@ -164,6 +164,7 @@ def main():
 
         root = tk.Tk()
         root.withdraw()
+        # 此处 app 尚未创建, 无 components 可用, 保留原生 messagebox
         messagebox.showinfo('UF Toolbox', msg)
         root.destroy()
         sys.exit(1)

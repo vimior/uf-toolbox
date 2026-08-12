@@ -67,6 +67,7 @@ class _NotifyBase(tk.Toplevel):
         self.update_idletasks()  # force the geometry to take effect
         self.withdraw()
         self._owner = owner
+        self._components = getattr(owner, 'components', tk)
         self._timeout = self._i(timeout)
         self._timer_id = None
         self._show_time = self._parse_show_time(show_time)
@@ -139,7 +140,7 @@ class _NotifyBase(tk.Toplevel):
         if hasattr(self, '_time_label'):
             self._time_label.configure(bg=self._bg,
                                         fg=self._time_fg or self._fg,
-                                        font=('Consolas', self._time_font_size))
+                                        font=self._components.mono_font(self._time_font_size))
 
     def _apply_text(self, text):
         if hasattr(self, '_label'):
@@ -198,16 +199,16 @@ class _Toast(_NotifyBase):
 
         # build content
         wraplen = max(200, _w - 40) if _w else 340
-        self._frame = tk.Frame(self, bg=self._bg, padx=16, pady=10)
+        self._frame = self._components.Frame(self, bg=self._bg, padx=16, pady=10)
         self._frame.pack(fill=tk.BOTH, expand=True)
 
-        self._label = tk.Label(self._frame, text=text, font=(FONT_FAMILY, self._font_size),
+        self._label = self._components.Label(self._frame, text=text, font=(FONT_FAMILY, self._font_size),
                                bg=self._bg, fg=self._fg, wraplength=wraplen,
                                anchor='center', justify=tk.CENTER)
         self._label.pack(fill=tk.BOTH, expand=True)
 
-        self._time_label = tk.Label(self._frame, text='',
-                                     font=('Consolas', self._time_font_size),
+        self._time_label = self._components.Label(self._frame, text='',
+                                     font=self._components.mono_font(self._time_font_size),
                                      bg=self._bg, fg=self._fg)
         self._refresh_time_label()
 
@@ -293,16 +294,16 @@ class _Popup(_NotifyBase):
         _w = self._i(width, 360) or 360
         _h = self._i(height, 200) or 200
 
-        self._frame = tk.Frame(self, bg=self._bg)
+        self._frame = self._components.Frame(self, bg=self._bg)
         self._frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
 
-        self._label = tk.Label(self._frame, text=text, font=(FONT_FAMILY, self._font_size),
+        self._label = self._components.Label(self._frame, text=text, font=(FONT_FAMILY, self._font_size),
                                bg=self._bg, fg=self._fg, wraplength=_w - 40,
                                anchor='center', justify=tk.CENTER)
         self._label.pack(fill=tk.BOTH, expand=True)
 
-        self._time_label = tk.Label(self._frame, text='',
-                                     font=('Consolas', self._time_font_size),
+        self._time_label = self._components.Label(self._frame, text='',
+                                     font=self._components.mono_font(self._time_font_size),
                                      bg=self._bg, fg=self._fg)
         self._refresh_time_label()
 
@@ -346,16 +347,16 @@ class _Banner(_NotifyBase):
         _bw = self._i(width)
         bw = _bw if _bw > 0 else sw
 
-        self._frame = tk.Frame(self, bg=self._bg, padx=20, pady=8)
+        self._frame = self._components.Frame(self, bg=self._bg, padx=20, pady=8)
         self._frame.pack(fill=tk.BOTH, expand=True)
-        self._label = tk.Label(self._frame, text=text,
+        self._label = self._components.Label(self._frame, text=text,
                                font=(FONT_FAMILY, self._font_size),
                                bg=self._bg, fg=self._fg,
                                anchor='center', justify=tk.CENTER)
         self._label.pack(fill=tk.BOTH, expand=True)
 
-        self._time_label = tk.Label(self._frame, text='',
-                                     font=('Consolas', self._time_font_size),
+        self._time_label = self._components.Label(self._frame, text='',
+                                     font=self._components.mono_font(self._time_font_size),
                                      bg=self._bg, fg=self._fg)
         self._refresh_time_label()
 
@@ -417,7 +418,7 @@ class _Canvas(_NotifyBase):
         self._fw = dw if width is None else (self._i(width, dw) or dw)
         self._fh = dh if height is None else (self._i(height, dh) or dh)
 
-        self._canvas = tk.Canvas(self, width=self._fw, height=self._fh,
+        self._canvas = self._components.Canvas(self, width=self._fw, height=self._fh,
                                  bg=self._bg, highlightthickness=0)
         self._canvas.pack()
         self._draw()
@@ -472,7 +473,7 @@ class _Canvas(_NotifyBase):
         if self._show_time:
             c.create_text(w / 2, h - 25,
                           text=time.strftime('%Y-%m-%d %H:%M:%S'),
-                          font=('Consolas', self._time_font_size),
+                          font=self._components.mono_font(self._time_font_size),
                           fill=self._time_fg or self._fg)
 
     # -- flower --

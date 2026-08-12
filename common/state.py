@@ -263,6 +263,9 @@ class AppState:
             self._current_theme_name = name
             self._config['theme'] = name
             self._save_config()
+            # 重配 ttk 'combo' 命名样式 — 主题切换后所有 components.Combobox
+            # 实例 (含已创建的, 如主窗口方向下拉框) 立即跟随新主题
+            self._components.refresh_combo_style()
 
     def set_lang(self, name=None):
         if name is not None:

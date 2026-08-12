@@ -395,6 +395,7 @@ class TasksService(ServicePlugin):
                 t['failed'] = False
                 if t['type'] == 'once':
                     t['fired'] = True
+                    t['enabled'] = False
             t['firing'] = False
             t.setdefault('history', []).append({
                 'at': time.time(),

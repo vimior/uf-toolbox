@@ -7,7 +7,7 @@ Communicates via services: tasks@list, tasks@get, tasks@create_*, etc.
 import json
 import time
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog
 
 from plugins.plugin import GuiPlugin
 from plugins.plugin_guide.plugin_guide import PluginGuide
@@ -39,7 +39,7 @@ _LANG = {
         'col_id':          'ID',
         'col_type':        '类型',
         'col_last':        '上次执行',
-        'col_status':      '状态',
+        'col_operator':    '操作',
         'status_active':   '活跃',
         'status_dead':     '失效',
         'status_off':      '停用',
@@ -86,7 +86,7 @@ _LANG = {
         'col_id':          'ID',
         'col_type':        'Type',
         'col_last':        'Last Run',
-        'col_status':      'Status',
+        'col_operator':    'Operator',
         'status_active':   'active',
         'status_dead':     'dead',
         'status_off':      'off',
@@ -124,67 +124,37 @@ _LANG = {
 }
 
 # ---------------------------------------------------------------------------
-# theme
-# ---------------------------------------------------------------------------
-
-_STYLE = {
-    'dark': {
-        'bg':        '#2b2b2b',
-        'bar':       '#333333',
-        'card':      '#363636',
-        'fg':        '#e0e0e0',
-        'hint':      '#888888',
-        'hover':     '#4a4a4a',
-        'accent':    '#2d5a8a',
-        'accent_fg': '#ffffff',
-        'dead':      '#d94a4a',
-        'sep':       '#3c3c3c',
-        'scroll_frame': '#252525',
-        'scroll_bar':   '#333333',
-    },
-    'light': {
-        'bg':        '#f5f5f5',
-        'bar':       '#e0e0e0',
-        'card':      '#ffffff',
-        'fg':        '#333333',
-        'hint':      '#999999',
-        'hover':     '#d0d0d0',
-        'accent':    '#2d5a8a',
-        'accent_fg': '#ffffff',
-        'dead':      '#c0392b',
-        'sep':       '#d0d0d0',
-        'scroll_frame': '#f5f5f5',
-        'scroll_bar':   '#e0e0e0',
-    },
-}
-
-
-# ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
 
-def _make_time_picker(parent, initial=''):
-    f = tk.Frame(parent, bg=parent['bg'])
+def _make_time_picker(parent, initial='', components=None, theme=None):
+    """Build an HH:MM:SS picker.
+
+    *components* = app 组件库 (主题感知), *theme* = 当前主题字典.
+    """
+    comp = components if components is not None else tk
+    hint = theme.get('hint', '#888') if theme else '#888'
+    f = comp.Frame(parent)
     parts = initial.split(':') if initial else ['', '']
     h = parts[0] if len(parts) > 0 and parts[0].isdigit() else '00'
     m = parts[1] if len(parts) > 1 and parts[1].isdigit() else '00'
-    s = parts[2] if len(parts) > 2 and parts[2].isdigit() else '00'
+    sec = parts[2] if len(parts) > 2 and parts[2].isdigit() else '00'
     hours = [f'{i:02d}' for i in range(24)]
     mins = [f'{i:02d}' for i in range(60)]
     secs = [f'{i:02d}' for i in range(60)]
     h_var = tk.StringVar(value=h)
-    ttk.Combobox(f, textvariable=h_var, values=hours,
-                 font=('Consolas', 9), width=3, state='readonly').pack(side=tk.LEFT)
-    tk.Label(f, text=':', font=('Consolas', 9), bg=parent['bg'],
-             fg='#888').pack(side=tk.LEFT)
+    comp.Combobox(f, textvariable=h_var, values=hours,
+                  font=comp.mono_font(9), width=3, state='readonly').pack(side=tk.LEFT)
+    comp.Label(f, text=':', font=comp.mono_font(9),
+               fg=hint).pack(side=tk.LEFT)
     m_var = tk.StringVar(value=m)
-    ttk.Combobox(f, textvariable=m_var, values=mins,
-                 font=('Consolas', 9), width=3, state='readonly').pack(side=tk.LEFT)
-    tk.Label(f, text=':', font=('Consolas', 9), bg=parent['bg'],
-             fg='#888').pack(side=tk.LEFT)
-    s_var = tk.StringVar(value=s)
-    ttk.Combobox(f, textvariable=s_var, values=secs,
-                 font=('Consolas', 9), width=3, state='readonly').pack(side=tk.LEFT)
+    comp.Combobox(f, textvariable=m_var, values=mins,
+                  font=comp.mono_font(9), width=3, state='readonly').pack(side=tk.LEFT)
+    comp.Label(f, text=':', font=comp.mono_font(9),
+               fg=hint).pack(side=tk.LEFT)
+    s_var = tk.StringVar(value=sec)
+    comp.Combobox(f, textvariable=s_var, values=secs,
+                  font=comp.mono_font(9), width=3, state='readonly').pack(side=tk.LEFT)
     f.pack(side=tk.LEFT, padx=4)
     return lambda: f'{h_var.get()}:{m_var.get()}:{s_var.get()}'
 
@@ -209,16 +179,14 @@ class TaskScheduler(GuiPlugin):
         super().__init__(parent, app)
 
         lang_name = self.app.current_lang_name
-        theme_name = self.app.current_theme_name
         self._l = _LANG.get(lang_name, _LANG['en'])
-        self._s = _STYLE.get(theme_name, _STYLE['dark'])
+        self._s = self.app.theme
         s = self._s
         l = self._l
 
         self.title(l['title'])
         self.resizable(True, True)
         self.minsize(666, 520)
-        self.configure(bg=s['bg'])
 
         self._rows = {}
         self._expanded = set()
@@ -230,22 +198,20 @@ class TaskScheduler(GuiPlugin):
         self._form_win = None
 
         # ---- toolbar ----
-        bar = tk.Frame(self, bg=s['bar'], height=34)
+        bar = self.components.Frame(self, bg=s['bar'], height=32)
         bar.pack(fill=tk.X, side=tk.TOP)
         bar.pack_propagate(False)
 
-        self._status_lbl = tk.Label(bar, text='', font=('Consolas', 10),
-                                     bg=s['bar'], fg=s['hint'])
-        self._status_lbl.pack(side=tk.LEFT, padx=10, pady=6)
+        self._status_lbl = self.components.Label(bar, text='',
+                                                 font=self.components.mono_font(8),
+                                                 bg=s['bar'], fg=s['hint'])
+        self._status_lbl.pack(side=tk.LEFT, padx=10, pady=4)
 
-        self._pause_btn = tk.Label(bar, text=l['pause_all'],
-                                    bg=s['bar'], fg=s['fg'],
-                                    font=('Consolas', 10),
-                                    cursor='hand2', padx=8)
+        self._pause_btn = self.components.Button(
+            bar, text=l['pause_all'], font=self.components.mono_font(10))
         self._pause_btn.bind('<Button-1>', lambda e: self._toggle_global_pause())
-        self._pause_btn.bind('<Enter>', lambda e: self._pause_btn.config(bg=s['hover']))
-        self._pause_btn.bind('<Leave>', lambda e: self._pause_btn.config(bg=s['bar']))
-        self._pause_btn.pack(side=tk.RIGHT, padx=2, pady=5)
+        # 右 8 与下方内容区右缘对齐
+        self._pause_btn.pack(side=tk.RIGHT, padx=(2, 8), pady=4)
 
         for text, cmd in [
             (l['import_tasks'], self._import_tasks),
@@ -253,41 +219,46 @@ class TaskScheduler(GuiPlugin):
             (l['add_task'], self._show_form),
             ('?', self._show_help),
         ]:
-            lbl = tk.Label(bar, text=text, bg=s['bar'], fg=s['fg'],
-                           font=('Consolas', 10), cursor='hand2', padx=8)
+            lbl = self.components.Button(
+                bar, text=text,
+                font=self.components.mono_font(10))
             lbl.bind('<Button-1>', lambda e, c=cmd: c())
-            lbl.bind('<Enter>', lambda e, b=lbl: b.config(bg=s['hover']))
-            lbl.bind('<Leave>', lambda e, b=lbl: b.config(bg=s['bar']))
-            lbl.pack(side=tk.RIGHT, padx=2, pady=5)
+            lbl.pack(side=tk.RIGHT, padx=2, pady=4)
 
         # ---- table header ----
-        hdr = tk.Frame(self, bg=s['bar'])
-        hdr.pack(fill=tk.X, side=tk.TOP, padx=4, pady=(2, 0))
-        hdr_lbls = [l['col_id'], l['col_type'], l['col_last'], l['col_status']]
-        hdr_widths = (45, 6, None, 6)
+        hdr = self.components.Frame(self, bg=s['bar'])
+        hdr.pack(fill=tk.X, side=tk.TOP, padx=8, pady=(8, 0))
+        hdr_lbls = [l['col_id'], l['col_type'], l['col_last'], l['col_operator']]
+        hdr_widths = (40, 10, None, 12)
         for label, w in zip(hdr_lbls, hdr_widths):
             kw = {'width': w} if w else {}
-            tk.Label(hdr, text=label, font=('Consolas', 10, 'bold'),
-                     bg=s['bar'], fg=s['hint'], anchor='w',
-                     **kw).pack(side=tk.LEFT, padx=1,
-                                fill=tk.X if w is None else tk.NONE,
-                                expand=w is None)
-        tk.Label(hdr, text='', font=('Consolas', 1),
-                 bg=s['bar'], width=12).pack(side=tk.RIGHT)
+            lbl = self.components.Label(hdr, text=label,
+                                        font=self.components.mono_font(10, 'bold'),
+                                        bg=s['bar'], fg=s['hint'], anchor='w',
+                                        **kw)
+            lbl.pack(side=tk.LEFT, padx=1,
+                     fill=tk.X if w is None else tk.NONE,
+                     expand=w is None)
+            if label == l['col_operator']:
+                self._hdr_ops_lbl = lbl
+        # 滚动条区域占位（与行内操作区右缘对齐）
+        self.components.Frame(hdr, bg=s['bar'], width=12).pack(
+            side=tk.RIGHT, fill=tk.Y)
 
-        tk.Frame(self, bg=s['hint'], height=1).pack(fill=tk.X, padx=4)
+        self.components.Frame(self, bg=s['hint'], height=1).pack(fill=tk.X, padx=8)
 
         # ---- scrollable content ----
-        scroll_frame = tk.Frame(self, bg=s['bg'])
-        scroll_frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=(0, 4))
+        scroll_frame = self.components.Frame(self)
+        # 底部 5 + 行 pady 1 = 6，与日志窗口按钮距底边框一致
+        scroll_frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 5))
 
-        self._canvas = self.components.ScrollableCanvas(
-            scroll_frame, bg=s['bg'], scrollbars='y')
+        self._canvas = self.components.ScrollableCanvas(scroll_frame)
         self._canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self._inner = self._canvas.inner
 
-        self._empty = tk.Label(self._inner, text=l['no_tasks'],
-                               font=('Consolas', 10), bg=s['bg'], fg=s['hint'])
+        self._empty = self.components.Label(self._inner, text=l['no_tasks'],
+                                            font=self.components.mono_font(10),
+                                            fg=s['hint'])
         self._empty.pack(pady=30)
 
         # ---- start refresh loop ----
@@ -369,7 +340,7 @@ class TaskScheduler(GuiPlugin):
             'off':    self._l['status_off'],
             'done':   self._l['status_done'],
         }
-        return f'── {labels.get(key, key)} ({count}) ' + '─' * 30
+        return '─' * 30 + f' {labels.get(key, key)} ({count}) ' + '─' * 30
 
     def _rebuild_ui(self):
         for w in self._inner.winfo_children():
@@ -400,14 +371,15 @@ class TaskScheduler(GuiPlugin):
             if not items:
                 continue
             if not first:
-                sep = tk.Frame(self._inner, bg=s['hint'], height=1)
-                sep.pack(fill=tk.X, padx=8, pady=(6, 2))
+                sep = self.components.Frame(self._inner, bg=s['hint'], height=1)
+                sep.pack(fill=tk.X, padx=0, pady=(6, 2))
                 self._group_seps[f'_sep_{key}'] = sep
             first = False
-            glbl = tk.Label(self._inner, text=self._group_title(key, len(items)),
-                           font=('Consolas', 9, 'bold'),
-                           bg=s['bg'], fg=s['hint'], anchor='w')
-            glbl.pack(fill=tk.X, padx=8, pady=(2, 1))
+            glbl = self.components.Label(self._inner,
+                                        text=self._group_title(key, len(items)),
+                                        font=self.components.mono_font(9, 'bold'),
+                                        fg=s['hint'], anchor='w')
+            glbl.pack(fill=tk.X, padx=0, pady=(2, 1))
             self._group_labels[key] = glbl
 
             for tid, task in sorted(items, key=lambda x: x[0]):
@@ -418,12 +390,14 @@ class TaskScheduler(GuiPlugin):
         s = self._s
         for key in self._GROUP_ORDER:
             if key not in self._group_labels:
-                glbl = tk.Label(self._inner, font=('Consolas', 9, 'bold'),
-                                bg=s['bg'], fg=s['hint'], anchor='w')
+                glbl = self.components.Label(self._inner,
+                                             font=self.components.mono_font(9, 'bold'),
+                                             fg=s['hint'], anchor='w')
                 self._group_labels[key] = glbl
             sep_key = f'_sep_{key}'
             if sep_key not in self._group_seps:
-                self._group_seps[sep_key] = tk.Frame(self._inner, bg=s['hint'], height=1)
+                self._group_seps[sep_key] = self.components.Frame(
+                    self._inner, bg=s['hint'], height=1)
 
     def _update_all_group_labels(self):
         """Refresh group label counts and hide empty groups."""
@@ -440,105 +414,27 @@ class TaskScheduler(GuiPlugin):
                         sep.pack_forget()
 
     def _insert_new_rows(self, added):
-        """Insert newly created rows at the correct sorted positions,
-        handling empty→non-empty group transitions.  No full repack."""
+        """Insert newly created rows, then repack everything in group order.
+
+        Rows are already created with pack=False; a full repack places each
+        row and its group header at the correct sorted position.  (Incremental
+        after= placement proved unreliable when several rows relocate at once:
+        a row could be packed after another row that had not relocated yet,
+        leaving it stranded outside its group.)
+        """
         self._ensure_groups()
-
-        # Group the new tids
-        new_by_group = {k: [] for k in self._GROUP_ORDER}
-        for tid in added:
-            new_by_group[self._rows[tid]['group']].append(tid)
-
-        for key in self._GROUP_ORDER:
-            new_tids = sorted(new_by_group[key])
-            if not new_tids:
-                continue
-
-            # All tids currently in this group (new + existing) sorted
-            all_tids = sorted(
-                [t for t, rd in self._rows.items() if rd['group'] == key])
-
-            # Ensure group label + separator are packed for non-empty group
-            glbl = self._group_labels[key]
-            glbl.config(text=self._group_title(key, len(all_tids)))
-            if not glbl.winfo_ismapped():
-                # Group was empty — need to pack separator (except first group)
-                self._ensure_groups()
-                sep = self._group_seps.get(f'_sep_{key}')
-                # Find if any earlier group has items
-                has_earlier = any(
-                    new_by_group.get(k) or
-                    [t for t, rd in self._rows.items()
-                     if rd['group'] == k and t not in added]
-                    for k in self._GROUP_ORDER[:self._GROUP_ORDER.index(key)]
-                )
-                if has_earlier and sep:
-                    sep.pack(fill=tk.X, padx=8, pady=(6, 2))
-                glbl.pack(fill=tk.X, padx=8, pady=(2, 1))
-
-            for tid in new_tids:
-                idx = all_tids.index(tid)
-                row_widget = self._rows[tid]['row']
-                detail = self._detail_frames.get(tid)
-
-                if idx == 0:
-                    row_widget.pack(after=glbl, fill=tk.X, padx=4, pady=1)
-                else:
-                    prev_tid = all_tids[idx - 1]
-                    prev_detail = self._detail_frames.get(prev_tid)
-                    after_widget = (prev_detail['frame'] if prev_detail
-                                    else self._rows[prev_tid]['row'])
-                    row_widget.pack(after=after_widget, fill=tk.X, padx=4, pady=1)
-
-                if detail:
-                    detail['frame'].pack(after=row_widget, fill=tk.X,
-                                         padx=4, pady=(0, 2))
-
-        self._update_all_group_labels()
+        self._repack_rows()
 
     def _relocate_row(self, tid):
-        """Move an existing row to its correct position (after group change)."""
-        group = self._rows[tid]['group']
-        row_widget = self._rows[tid]['row']
-        detail = self._detail_frames.get(tid)
+        """Move an existing row to its correct position (after group change).
 
-        row_widget.pack_forget()
-        if detail:
-            detail['frame'].pack_forget()
-
+        Row's ``group`` is already updated by the caller; a full repack
+        places it (and any other rows in the same pass) at the correct
+        sorted position.  See ``_insert_new_rows`` for why incremental
+        after= placement was abandoned.
+        """
         self._ensure_groups()
-        group_tids = sorted(
-            [t for t, rd in self._rows.items() if rd['group'] == group])
-        idx = group_tids.index(tid)
-        glbl = self._group_labels[group]
-
-        # Ensure group label + separator are packed
-        if not glbl.winfo_ismapped():
-            has_earlier = any(
-                [t for t, rd in self._rows.items()
-                 if rd['group'] == k and t != tid]
-                for k in self._GROUP_ORDER[:self._GROUP_ORDER.index(group)]
-            )
-            if has_earlier:
-                sep = self._group_seps.get(f'_sep_{group}')
-                if sep:
-                    sep.pack(fill=tk.X, padx=8, pady=(6, 2))
-            glbl.pack(fill=tk.X, padx=8, pady=(2, 1))
-
-        if idx == 0:
-            row_widget.pack(after=glbl, fill=tk.X, padx=4, pady=1)
-        else:
-            prev_tid = group_tids[idx - 1]
-            prev_detail = self._detail_frames.get(prev_tid)
-            after_widget = (prev_detail['frame'] if prev_detail
-                            else self._rows[prev_tid]['row'])
-            row_widget.pack(after=after_widget, fill=tk.X, padx=4, pady=1)
-
-        if detail:
-            detail['frame'].pack(after=row_widget, fill=tk.X,
-                                 padx=4, pady=(0, 2))
-
-        self._update_all_group_labels()
+        self._repack_rows()
 
     def _repack_rows(self):
         """Repack rows, details, separators, labels without destroying widgets."""
@@ -558,18 +454,18 @@ class TaskScheduler(GuiPlugin):
                 continue
             if not first:
                 self._group_seps[f'_sep_{key}'].pack(
-                    fill=tk.X, padx=8, pady=(6, 2))
+                    fill=tk.X, padx=0, pady=(6, 2))
             first = False
 
             self._group_labels[key].config(
                 text=self._group_title(key, len(items)))
-            self._group_labels[key].pack(fill=tk.X, padx=8, pady=(2, 1))
+            self._group_labels[key].pack(fill=tk.X, padx=(0, 8), pady=(2, 1))
 
             for tid in sorted(items):
-                self._rows[tid]['row'].pack(fill=tk.X, padx=4, pady=1)
+                self._rows[tid]['row'].pack(fill=tk.X, padx=(0, 8), pady=1)
                 detail = self._detail_frames.get(tid)
                 if detail:
-                    detail['frame'].pack(fill=tk.X, padx=4, pady=(0, 2))
+                    detail['frame'].pack(fill=tk.X, padx=(0, 8), pady=(0, 2))
 
         if any(grouped.values()):
             self._empty.pack_forget()
@@ -580,12 +476,12 @@ class TaskScheduler(GuiPlugin):
         disabled = not task.get('enabled', True)
         is_done = self._is_done(task)
 
-        row = tk.Frame(self._inner, bg=s['card'])
+        row = self.components.Card(self._inner)
         if pack:
-            row.pack(fill=tk.X, padx=4, pady=1)
+            row.pack(fill=tk.X, padx=(0, 8), pady=1)
 
         if self._is_failed(task):
-            fg = s['dead']
+            fg = s['danger']
         elif disabled or is_done:
             fg = s['hint']
         elif task.get('firing'):
@@ -595,30 +491,37 @@ class TaskScheduler(GuiPlugin):
 
         last_str = '-' if not task.get('last_run') else \
                    time.strftime('%m-%d %H:%M:%S', time.localtime(task['last_run']))
-        vals = [tid, task['type'], last_str, self._status_text(task)]
+        # vals = [tid, task['type'], last_str, self._status_text(task)]
+        vals = [tid, task['type'], last_str]
 
         row.bind('<Button-1>', lambda e, t=tid: self._toggle_expand(t))
         lbls = []
-        widths = (45, 6, None, 6)
+        widths = (40, 10, None, 10)
         for v, w in zip(vals, widths):
             kw = {'width': w} if w else {}
-            lbl = tk.Label(row, text=str(v)[:30], font=('Consolas', 10),
-                           bg=s['card'], fg=fg, anchor='w', **kw)
+            lbl = self.components.Label(row, text=str(v)[:30],
+                                        font=self.components.mono_font(10),
+                                        bg=s['card'], fg=fg, anchor='w', **kw)
             lbl.pack(side=tk.LEFT, padx=1, fill=tk.X if w is None else tk.NONE,
                      expand=w is None)
             lbl.bind('<Button-1>', lambda e, t=tid: self._toggle_expand(t))
             lbls.append(lbl)
 
-        # edit
-        def _edit_cmd(t=tid):
-            self._show_form(t)
-        tk.Button(row, text='✎', command=_edit_cmd,
-                  font=('Consolas', 10), width=2,
-                  bg=s['card'], fg=s['fg'], relief=tk.FLAT, padx=0,
-                  activebackground=s['card'], activeforeground=s['accent'],
-                  bd=0, cursor='hand2').pack(side=tk.RIGHT, padx=3)
+        # 操作区：与表头"操作"列同宽同位置（左缘右缘完全对齐）；
+        # 背景与按钮同色（card），按钮连成一块无视觉缝隙。
+        # 按钮从左排：× 删除、⏸ 暂停、✎ 编辑
+        ops = self.components.Frame(row, bg=s['card'],
+                                    width=self._hdr_ops_lbl.winfo_reqwidth())
+        ops.pack(side=tk.RIGHT, fill=tk.Y)
+        ops.pack_propagate(False)
 
-        # pause / play — always a Label with click bind (even when done)
+        # cancel（先 pack → 最左）
+        self.components.Button(
+            ops, text='×', command=lambda t=tid: self._do_cancel(t),
+            font=self.components.mono_font(10), width=2, padx=4,
+            bg=s['card'], fg=s['danger']).pack(side=tk.LEFT, padx=3)
+
+        # pause / play
         if is_done:
             pause_text = '✓'
             pause_fg = s['hint']
@@ -628,21 +531,21 @@ class TaskScheduler(GuiPlugin):
         else:
             pause_text = '⏸'
             pause_fg = s['fg']
-        pause_btn = tk.Label(row, text=pause_text,
-                             font=('Consolas', 10), width=2,
-                             bg=s['card'], fg=pause_fg,
-                             cursor='hand2')
-        pause_btn.bind('<Button-1>',
-                       lambda e, t=tid: self._do_toggle(t))
-        pause_btn.pack(side=tk.RIGHT, padx=3)
+        pause_btn = self.components.Button(
+            ops, text=pause_text, font=self.components.mono_font(10),
+            bg=s['card'], fg=pause_fg, width=2, padx=4,
+            command=lambda t=tid: self._do_toggle(t))
+        # pause_btn.bind('<Button-1>',
+        #                lambda e, t=tid: self._do_toggle(t))
+        pause_btn.pack(side=tk.LEFT, padx=3)
 
-        # cancel
-        tk.Button(row, text='×',
-                  command=lambda t=tid: self._do_cancel(t),
-                  font=('Consolas', 10), width=2,
-                  bg=s['card'], fg=s['dead'], relief=tk.FLAT, padx=0,
-                  activebackground=s['card'], activeforeground='#ff6666',
-                  bd=0, cursor='hand2').pack(side=tk.RIGHT, padx=3)
+        # edit（最后 pack → 最右）
+        def _edit_cmd(t=tid):
+            self._show_form(t)
+        self.components.Button(
+            ops, text='✎', command=_edit_cmd,
+            font=self.components.mono_font(10),
+            bg=s['card'], width=2, padx=4).pack(side=tk.LEFT, padx=3)
 
         self._rows[tid] = {'labels': lbls, 'pause_btn': pause_btn,
                            'row': row, 'fg': fg, 'group': self._task_group(task)}
@@ -677,7 +580,7 @@ class TaskScheduler(GuiPlugin):
         is_done = self._is_done(task)
 
         if self._is_failed(task):
-            fg = s['dead']
+            fg = s['danger']
         elif disabled or is_done:
             fg = s['hint']
         elif task.get('firing'):
@@ -772,13 +675,11 @@ class TaskScheduler(GuiPlugin):
             for t in self._all_tasks().values():
                 if t.get('enabled'):
                     self._srv('pause', t['id'])
-            self._pause_btn.config(text=self._l['resume_all'])
         else:
             for t in self._all_tasks().values():
-                if not t.get('enabled') and not t.get('failed'):
+                if not t.get('enabled') and not self._is_failed(t):
                     self._srv('resume', t['id'])
-            self._pause_btn.config(text=self._l['pause_all'])
-        self._sync_display()
+        self._sync_display()  # 按钮文本由 _sync_pause_btn 统一同步
 
     # ===================================================================
     #  import / export
@@ -808,18 +709,17 @@ class TaskScheduler(GuiPlugin):
     def _export_tasks(self):
         tasks = self._all_tasks()
         if not tasks:
-            messagebox.showinfo(self._l['export_tasks'], self._l['no_tasks'])
+            self.components.showinfo(self, self._l['export_tasks'],
+                                     self._l['no_tasks'])
             return
 
-        dlg = tk.Toplevel(self)
+        dlg = self.components.Toplevel(self)
         dlg.title(self._l['export_tasks'])
-        dlg.configure(bg=self._s['bg'])
         dlg.transient(self)
         dlg.resizable(False, True)
         dlg.minsize(280, 200)
         dlg.geometry('+{}+{}'.format(self.winfo_rootx() + 60,
                                       self.winfo_rooty() + 60))
-        self.app.emit('app@window:set-icon', dlg)
 
         def _do_export():
             export_list = []
@@ -858,25 +758,22 @@ class TaskScheduler(GuiPlugin):
                                   f, ensure_ascii=False, indent=2)
                     dlg.destroy()
                 except Exception as e:
-                    messagebox.showerror('Error', str(e))
+                    self.components.showerror(self, 'Error', str(e))
 
         # top bar: select-all + save button
-        top_bar = tk.Frame(dlg, bg=self._s['bg'])
+        top_bar = self.components.Frame(dlg)
         top_bar.pack(fill=tk.X, padx=10, pady=(8, 4))
         select_all_var = tk.BooleanVar(value=True)
-        cb_all = tk.Checkbutton(top_bar, text='全选', variable=select_all_var,
-                                font=('Consolas', 10), bg=self._s['bg'],
-                                fg=self._s['fg'], selectcolor=self._s['card'],
-                                activebackground=self._s['bg'],
-                                activeforeground=self._s['fg'])
+        cb_all = self.components.Checkbutton(
+            top_bar, text='全选', variable=select_all_var,
+            font=self.components.mono_font(10), selectcolor=self._s['card'])
         cb_all.pack(side=tk.LEFT)
-        tk.Button(top_bar, text='保存', command=_do_export,
-                  bg=self._s['accent'], fg=self._s['accent_fg'],
-                  relief=tk.FLAT, padx=16,
-                  font=('Consolas', 9, 'bold')).pack(side=tk.RIGHT, padx=4)
+        self.components.Button(
+            top_bar, text='保存', command=_do_export,
+            font=self.components.mono_font(9, 'bold')).pack(side=tk.RIGHT, padx=4)
 
         # scrollable checkbox area
-        canvas = self.components.ScrollableCanvas(dlg, bg=self._s['bg'], scrollbars='y')
+        canvas = self.components.ScrollableCanvas(dlg)
         inner = canvas.inner
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(12, 0))
 
@@ -885,13 +782,11 @@ class TaskScheduler(GuiPlugin):
         for tid, t in sorted(tasks.items()):
             var = tk.BooleanVar(value=True)
             check_vars[tid] = var
-            cb = tk.Checkbutton(inner, text=f'{tid}  ({t["type"]})',
-                                variable=var, font=('Consolas', 9),
-                                bg=self._s['bg'], fg=self._s['fg'],
-                                selectcolor=self._s['card'],
-                                activebackground=self._s['bg'],
-                                activeforeground=self._s['fg'])
-            cb.pack(anchor='w', padx=8, pady=1)
+            cb = self.components.Checkbutton(
+                inner, text=f'{tid}  ({t["type"]})',
+                variable=var, font=self.components.mono_font(9),
+                selectcolor=self._s['card'])
+            cb.pack(anchor='w', padx=0, pady=1)
 
         def _toggle_all():
             v = select_all_var.get()
@@ -909,7 +804,7 @@ class TaskScheduler(GuiPlugin):
             with open(path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
         except Exception as e:
-            messagebox.showerror('Error', str(e))
+            self.components.showerror(self, 'Error', str(e))
             return
 
         items = data.get('tasks', data) if isinstance(data, dict) else data
@@ -993,8 +888,8 @@ class TaskScheduler(GuiPlugin):
                 traceback.print_exc()
 
         self._sync_display(rebuild=True)
-        messagebox.showinfo(
-            self._l['import_tasks'],
+        self.components.showinfo(
+            self, self._l['import_tasks'],
             f'导入 {added} 个任务，跳过 {skipped} 个')
 
     def _sync_display(self, rebuild=False):
@@ -1005,6 +900,7 @@ class TaskScheduler(GuiPlugin):
         """
         if rebuild:
             self._rebuild_ui()
+            self._sync_pause_btn()
             return
 
         tasks = self._all_tasks()
@@ -1049,6 +945,25 @@ class TaskScheduler(GuiPlugin):
         else:
             self._empty.pack(pady=30)
 
+        # 6. Sync pause-all / resume-all button text
+        self._sync_pause_btn(tasks)
+
+    def _sync_pause_btn(self, tasks=None):
+        """按任务状态刷新 全部暂停/全部恢复 按钮文本。
+
+        存在可恢复(非 enabled 且未 failed)任务 → 全部恢复; 否则全部暂停。
+        failed 任务(含启发式)不参与批量恢复。手动暂停/恢复单个任务后由
+        tick 或下一次 _sync_display 兜底同步。
+        """
+        if tasks is None:
+            tasks = self._all_tasks()
+        has_resumable = any(
+            not t.get('enabled') and not self._is_failed(t)
+            for t in tasks.values())
+        self._pause_btn.config(
+            text=self._l['resume_all'] if has_resumable
+            else self._l['pause_all'])
+
     # ===================================================================
     #  detail panel
     # ===================================================================
@@ -1073,37 +988,38 @@ class TaskScheduler(GuiPlugin):
         row = row_data['row']
 
         s = self._s
-        df = tk.Frame(self._inner, bg=s['card'])
-        df.pack(fill=tk.X, padx=4, pady=(0, 2), after=row)
+        df = self.components.Card(self._inner)
+        df.pack(fill=tk.X, padx=(0, 8), pady=(0, 2), after=row)
 
         # line 1: Target header + created
-        header = tk.Frame(df, bg=s['bg'])
+        header = self.components.Frame(df)
         header.pack(fill=tk.X, padx=12, pady=(4, 0))
-        target_lbl = tk.Label(header, text='Target:', font=('Consolas', 8, 'bold'),
-                              bg=s['bg'], fg=s['fg'], anchor='w')
+        target_lbl = self.components.Label(header, text='Target:',
+                                           font=self.components.mono_font(8, 'bold'),
+                                           anchor='w')
         target_lbl.pack(side=tk.LEFT)
-        created_lbl = tk.Label(header, font=('Consolas', 8), bg=s['bg'],
-                                fg=s['hint'], anchor='w')
+        created_lbl = self.components.Label(header, font=self.components.mono_font(8),
+                                            fg=s['hint'], anchor='w')
         created_lbl.pack(side=tk.RIGHT)
 
         # line 2: per-target services (always shown)
-        targets_frame = tk.Frame(df, bg=s['bg'])
+        targets_frame = self.components.Frame(df)
         targets_lbls = []
 
         # line 3: per-target results (only after execution)
-        results_frame = tk.Frame(df, bg=s['bg'])
+        results_frame = self.components.Frame(df)
         results_lbls = []
 
         # line 3: stats
-        stats_frame = tk.Frame(df, bg=s['bg'])
-        stats_lbl = tk.Label(stats_frame, font=('Consolas', 8), bg=s['bg'],
-                              fg=s['hint'], anchor='w')
+        stats_frame = self.components.Frame(df)
+        stats_lbl = self.components.Label(stats_frame, font=self.components.mono_font(8),
+                                          fg=s['hint'], anchor='w')
         stats_lbl.pack(side=tk.LEFT)
 
         # line 4: config
-        config_frame = tk.Frame(df, bg=s['bg'])
-        config_lbl = tk.Label(config_frame, font=('Consolas', 8), bg=s['bg'],
-                               fg=s['hint'], anchor='w')
+        config_frame = self.components.Frame(df)
+        config_lbl = self.components.Label(config_frame, font=self.components.mono_font(8),
+                                           fg=s['hint'], anchor='w')
         config_lbl.pack(side=tk.LEFT)
 
         self._detail_frames[tid] = {
@@ -1147,8 +1063,9 @@ class TaskScheduler(GuiPlugin):
             if targets:
                 tframe.pack(fill=tk.X, padx=12, pady=(0, 0))
                 for t in targets:
-                    lbl = tk.Label(tframe, text=f'  {t}', font=('Consolas', 8),
-                                   bg=self._s['bg'], fg=self._s['hint'], anchor='w')
+                    lbl = self.components.Label(tframe, text=f'  {t}',
+                                                font=self.components.mono_font(8),
+                                                fg=self._s['hint'], anchor='w')
                     lbl.pack(fill=tk.X)
                     tlbls.append(lbl)
             else:
@@ -1229,10 +1146,11 @@ class TaskScheduler(GuiPlugin):
                             before=refs['stats_frame'])
                 for r in results:
                     ok = r.endswith(': ok')
-                    lbl = tk.Label(rframe, text=f'  {r}', font=('Consolas', 8),
-                                   bg=self._s['bg'],
-                                   fg=self._s['hint'] if ok else self._s['dead'],
-                                   anchor='w')
+                    lbl = self.components.Label(rframe, text=f'  {r}',
+                                                font=self.components.mono_font(8),
+                                                fg=self._s['hint'] if ok
+                                                else self._s['danger'],
+                                                anchor='w')
                     lbl.pack(fill=tk.X)
                     rlbls.append(lbl)
             else:
@@ -1255,81 +1173,78 @@ class TaskScheduler(GuiPlugin):
 
         s = self._s
         l = self._l
-        dlg = tk.Toplevel(self)
-        dlg.withdraw()  # hide until fully built and positioned
+        dlg = self.components.Toplevel(self)
         dlg.title(l['edit_task'] if editing else l['add_task_title'])
         dlg.resizable(False, True)
-        dlg.configure(bg=s['bg'])
         dlg.transient(self)
         self._form_win = dlg
         dlg.protocol('WM_DELETE_WINDOW', lambda: (self._form_win.destroy(),
                                                     setattr(self, '_form_win', None)))
-        self.app.emit('app@window:set-icon', dlg)
 
         P = {'padx': 10, 'pady': 3}
 
         # top spacer
-        tk.Frame(dlg, bg=s['bg'], height=6).pack(fill=tk.X)
+        self.components.Frame(dlg, height=6).pack(fill=tk.X)
 
         # ---- task_id ----
-        f = tk.Frame(dlg, bg=s['bg']); f.pack(fill=tk.X, **P)
-        tk.Label(f, text=l['form_task_id'], font=('Consolas', 9), bg=s['bg'],
-                 fg=s['hint'], width=12, anchor='w').pack(side=tk.LEFT)
+        f = self.components.Frame(dlg); f.pack(fill=tk.X, **P)
+        self.components.Label(f, text=l['form_task_id'], font=self.components.mono_font(9),
+                              fg=s['hint'], width=12, anchor='w').pack(side=tk.LEFT)
         id_var = tk.StringVar(value=task_id or '')
-        e = tk.Entry(f, textvariable=id_var, font=('Consolas', 9),
-                     bg=s['card'], fg=s['fg'], insertbackground=s['fg'],
-                     relief=tk.FLAT)
+        e = self.components.Entry(f, textvariable=id_var, font=self.components.mono_font(9),
+                                  bg=s['card'])
         e.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         # ---- type ----
-        f = tk.Frame(dlg, bg=s['bg']); f.pack(fill=tk.X, **P)
-        tk.Label(f, text=l['form_type'], font=('Consolas', 9), bg=s['bg'],
-                 fg=s['hint'], width=12, anchor='w').pack(side=tk.LEFT)
+        f = self.components.Frame(dlg); f.pack(fill=tk.X, **P)
+        self.components.Label(f, text=l['form_type'], font=self.components.mono_font(9),
+                              fg=s['hint'], width=12, anchor='w').pack(side=tk.LEFT)
         type_var = tk.StringVar(value=item.get('type', 'every'))
         for t in ('once', 'every', 'daily', 'weekly', 'cron'):
-            tk.Radiobutton(f, text=t, variable=type_var, value=t,
-                           font=('Consolas', 9), bg=s['bg'], fg=s['fg'],
-                           selectcolor=s['card'],
-                           activebackground=s['bg'], activeforeground=s['fg'],
-                           command=lambda: _toggle_type()).pack(side=tk.LEFT, padx=4)
+            self.components.Radiobutton(
+                f, text=t, variable=type_var, value=t,
+                font=self.components.mono_font(9), selectcolor=s['card'],
+                command=lambda: _toggle_type()).pack(side=tk.LEFT, padx=4)
 
         # ---- type-specific params ----
-        detail = tk.Frame(dlg, bg=s['bg'])
+        detail = self.components.Frame(dlg)
         detail.pack(fill=tk.X, padx=22, pady=(0, 4))
 
         # Placeholders: real definitions follow after UI widgets are created
         _toggle_type = lambda: None
         _update_cron_preview = lambda *_: None
 
-        every_f = tk.Frame(detail, bg=s['bg'])
-        tk.Label(every_f, text=l['form_interval'], font=('Consolas', 9),
-                 bg=s['bg'], fg=s['hint'], anchor='w', width=10).pack(
-            side=tk.LEFT, padx=(0, 8))
+        every_f = self.components.Frame(detail)
+        self.components.Label(every_f, text=l['form_interval'],
+                              font=self.components.mono_font(9), fg=s['hint'],
+                              anchor='w', width=10).pack(side=tk.LEFT, padx=(0, 8))
         every_var = tk.StringVar(value=str(item.get('interval', '')))
-        tk.Entry(every_f, textvariable=every_var, font=('Consolas', 9),
-                 bg=s['card'], fg=s['fg'], insertbackground=s['fg'],
-                 relief=tk.FLAT, width=8).pack(side=tk.LEFT, padx=4)
+        self.components.Entry(every_f, textvariable=every_var,
+                              font=self.components.mono_font(9), bg=s['card'],
+                              width=8).pack(side=tk.LEFT, padx=4)
 
-        every_start_f = tk.Frame(detail, bg=s['bg'])
-        tk.Label(every_start_f, text=l['form_start_time'], font=('Consolas', 9),
-                 bg=s['bg'], fg=s['hint'], anchor='w', width=10).pack(
-            side=tk.LEFT, padx=(0, 8))
+        every_start_f = self.components.Frame(detail)
+        self.components.Label(every_start_f, text=l['form_start_time'],
+                              font=self.components.mono_font(9), fg=s['hint'],
+                              anchor='w', width=10).pack(side=tk.LEFT, padx=(0, 8))
         saved_start = item.get('start_time')
         every_start_var = tk.StringVar(
             value=time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(saved_start))
             if saved_start else '')
-        tk.Entry(every_start_f, textvariable=every_start_var, font=('Consolas', 9),
-                 bg=s['card'], fg=s['fg'], insertbackground=s['fg'],
-                 relief=tk.FLAT, width=18).pack(side=tk.LEFT, padx=4)
+        self.components.Entry(every_start_f, textvariable=every_start_var,
+                              font=self.components.mono_font(9), bg=s['card'],
+                              width=18).pack(side=tk.LEFT, padx=4)
 
-        every_picker_btn = tk.Label(every_start_f, text=' 🕐', font=('Consolas', 10),
-                                    bg=s['bg'], fg=s['hint'], cursor='hand2')
+        every_picker_btn = self.components.Button(
+            every_start_f, text=' 🕐', font=self.components.mono_font(10),
+            bg=s['bg'], fg=s['hint'], padx=6)
         every_picker_btn.pack(side=tk.LEFT)
 
         # inline time picker — toggles to the right of the button
-        every_start_picker_f = tk.Frame(every_start_f, bg=s['bg'])
+        every_start_picker_f = self.components.Frame(every_start_f)
         get_every_start_time = _make_time_picker(every_start_picker_f,
-            every_start_var.get() if ':' in every_start_var.get() else '')
+            every_start_var.get() if ':' in every_start_var.get() else '',
+            self.components, self._s)
 
         def _merge_every_start():
             picked = get_every_start_time()
@@ -1343,12 +1258,13 @@ class TaskScheduler(GuiPlugin):
             else:
                 every_start_var.set(picked)
 
-        tk.Button(every_start_picker_f, text='✓',
-                  command=lambda: (_merge_every_start(),
-                                   every_start_picker_f.pack_forget(),
-                                   every_start_hint.pack(side=tk.LEFT, padx=(2, 0))),
-                  bg=s['accent'], fg=s['accent_fg'], relief=tk.FLAT, padx=8,
-                  font=('Consolas', 9, 'bold')).pack(side=tk.LEFT, padx=4)
+        self.components.Button(
+            every_start_picker_f, text='✓',
+            command=lambda: (_merge_every_start(),
+                             every_start_picker_f.pack_forget(),
+                             every_start_hint.pack(side=tk.LEFT, padx=(2, 0))),
+            bg=s['accent'], fg=s['accent_fg'],
+            font=self.components.mono_font(9, 'bold')).pack(side=tk.LEFT, padx=4)
 
         def _toggle_every_start_picker():
             if every_start_picker_f.winfo_ismapped():
@@ -1360,27 +1276,31 @@ class TaskScheduler(GuiPlugin):
 
         every_picker_btn.bind('<Button-1>', lambda e: _toggle_every_start_picker())
 
-        every_start_hint = tk.Label(every_start_f, text=l['form_start_time_hint'],
-                                    font=('Consolas', 7), bg=s['bg'], fg=s['hint'])
+        every_start_hint = self.components.Label(every_start_f,
+                                                 text=l['form_start_time_hint'],
+                                                 font=self.components.mono_font(7),
+                                                 fg=s['hint'])
         every_start_hint.pack(side=tk.LEFT, padx=(2, 0))
 
-        once_f = tk.Frame(detail, bg=s['bg'])
-        tk.Label(once_f, text=l['form_delay'], font=('Consolas', 9),
-                 bg=s['bg'], fg=s['hint'], anchor='w', width=10).pack(
-            side=tk.LEFT, padx=(0, 8))
+        once_f = self.components.Frame(detail)
+        self.components.Label(once_f, text=l['form_delay'],
+                              font=self.components.mono_font(9), fg=s['hint'],
+                              anchor='w', width=10).pack(side=tk.LEFT, padx=(0, 8))
         once_delay_var = tk.StringVar(value=str(item.get('delay', '')))
-        tk.Entry(once_f, textvariable=once_delay_var, font=('Consolas', 9),
-                 bg=s['card'], fg=s['fg'], insertbackground=s['fg'],
-                 relief=tk.FLAT, width=18).pack(side=tk.LEFT, padx=4)
+        self.components.Entry(once_f, textvariable=once_delay_var,
+                              font=self.components.mono_font(9), bg=s['card'],
+                              width=18).pack(side=tk.LEFT, padx=4)
 
-        picker_btn = tk.Label(once_f, text=' 🕐', font=('Consolas', 10),
-                              bg=s['bg'], fg=s['hint'], cursor='hand2')
+        picker_btn = self.components.Button(
+            once_f, text=' 🕐', font=self.components.mono_font(10),
+            bg=s['bg'], fg=s['hint'], padx=6)
         picker_btn.pack(side=tk.LEFT)
 
         # inline time picker — toggles to the right of the button
-        once_time_f = tk.Frame(once_f, bg=s['bg'])
+        once_time_f = self.components.Frame(once_f)
         get_once_time = _make_time_picker(once_time_f,
-            once_delay_var.get() if ':' in once_delay_var.get() else '')
+            once_delay_var.get() if ':' in once_delay_var.get() else '',
+            self.components, self._s)
 
         def _merge_time():
             picked = get_once_time()
@@ -1394,10 +1314,11 @@ class TaskScheduler(GuiPlugin):
             else:
                 once_delay_var.set(picked)
 
-        tk.Button(once_time_f, text='✓',
-                  command=lambda: (_merge_time(), once_time_f.pack_forget()),
-                  bg=s['accent'], fg=s['accent_fg'], relief=tk.FLAT, padx=8,
-                  font=('Consolas', 9, 'bold')).pack(side=tk.LEFT, padx=4)
+        self.components.Button(
+            once_time_f, text='✓',
+            command=lambda: (_merge_time(), once_time_f.pack_forget()),
+            bg=s['accent'], fg=s['accent_fg'],
+            font=self.components.mono_font(9, 'bold')).pack(side=tk.LEFT, padx=4)
 
         def _toggle_time_picker():
             if once_time_f.winfo_ismapped():
@@ -1407,51 +1328,54 @@ class TaskScheduler(GuiPlugin):
 
         picker_btn.bind('<Button-1>', lambda e: _toggle_time_picker())
 
-        once_hint = tk.Label(once_f, text=l['form_delay_hint'], font=('Consolas', 7),
-                             bg=s['bg'], fg=s['hint'], anchor='w')
+        once_hint = self.components.Label(once_f, text=l['form_delay_hint'],
+                                          font=self.components.mono_font(7),
+                                          fg=s['hint'], anchor='w')
         once_hint.pack(fill=tk.X, padx=(4, 0), pady=(1, 2))
 
-        daily_f = tk.Frame(detail, bg=s['bg'])
-        tk.Label(daily_f, text=l['form_time'], font=('Consolas', 9),
-                 bg=s['bg'], fg=s['hint'], anchor='w', width=10).pack(
-            side=tk.LEFT, padx=(0, 8))
-        daily_time = _make_time_picker(daily_f, item.get('time_str', ''))
+        daily_f = self.components.Frame(detail)
+        self.components.Label(daily_f, text=l['form_time'],
+                              font=self.components.mono_font(9), fg=s['hint'],
+                              anchor='w', width=10).pack(side=tk.LEFT, padx=(0, 8))
+        daily_time = _make_time_picker(daily_f, item.get('time_str', ''),
+                                       self.components, self._s)
 
-        weekly_f = tk.Frame(detail, bg=s['bg'])
+        weekly_f = self.components.Frame(detail)
         # row 1: days
-        weekly_days_f = tk.Frame(weekly_f, bg=s['bg'])
-        tk.Label(weekly_days_f, text=l['form_days'], font=('Consolas', 9),
-                 bg=s['bg'], fg=s['hint'], anchor='w', width=10).pack(
-            side=tk.LEFT, padx=(0, 8))
+        weekly_days_f = self.components.Frame(weekly_f)
+        self.components.Label(weekly_days_f, text=l['form_days'],
+                              font=self.components.mono_font(9), fg=s['hint'],
+                              anchor='w', width=10).pack(side=tk.LEFT, padx=(0, 8))
         day_vars = {}
         saved_days = set(item.get('days') or [])
         for i, name in enumerate(_WEEKDAY_NAMES):
             day_vars[i] = tk.BooleanVar(value=i in saved_days)
-            tk.Checkbutton(weekly_days_f, text=name, variable=day_vars[i],
-                           font=('Consolas', 8), bg=s['bg'], fg=s['fg'],
-                           selectcolor=s['card'],
-                           activebackground=s['bg'],
-                           activeforeground=s['fg']).pack(side=tk.LEFT, padx=2)
+            self.components.Checkbutton(
+                weekly_days_f, text=name, variable=day_vars[i],
+                font=self.components.mono_font(8), selectcolor=s['card']).pack(
+                side=tk.LEFT, padx=2)
         weekly_days_f.pack(fill=tk.X, pady=(0, 3))
         # row 2: time
-        weekly_time_f = tk.Frame(weekly_f, bg=s['bg'])
-        tk.Label(weekly_time_f, text=l['form_time'], font=('Consolas', 9),
-                 bg=s['bg'], fg=s['hint'], anchor='w', width=10).pack(
-            side=tk.LEFT, padx=(0, 8))
-        weekly_time = _make_time_picker(weekly_time_f, item.get('time_str', ''))
+        weekly_time_f = self.components.Frame(weekly_f)
+        self.components.Label(weekly_time_f, text=l['form_time'],
+                              font=self.components.mono_font(9), fg=s['hint'],
+                              anchor='w', width=10).pack(side=tk.LEFT, padx=(0, 8))
+        weekly_time = _make_time_picker(weekly_time_f, item.get('time_str', ''),
+                                        self.components, self._s)
         weekly_time_f.pack(fill=tk.X)
 
-        cron_f = tk.Frame(detail, bg=s['bg'])
-        tk.Label(cron_f, text=l['form_cron'], font=('Consolas', 9),
-                 bg=s['bg'], fg=s['hint'], anchor='w', width=10).pack(
-            side=tk.LEFT, padx=(0, 8))
+        cron_f = self.components.Frame(detail)
+        self.components.Label(cron_f, text=l['form_cron'],
+                              font=self.components.mono_font(9), fg=s['hint'],
+                              anchor='w', width=10).pack(side=tk.LEFT, padx=(0, 8))
         cron_var = tk.StringVar(value=item.get('cron_expr', ''))
-        tk.Entry(cron_f, textvariable=cron_var, font=('Consolas', 9),
-                 bg=s['card'], fg=s['fg'], insertbackground=s['fg'],
-                 relief=tk.FLAT, width=22).pack(side=tk.LEFT, padx=4)
+        self.components.Entry(cron_f, textvariable=cron_var,
+                              font=self.components.mono_font(9), bg=s['card'],
+                              width=22).pack(side=tk.LEFT, padx=4)
 
-        cron_preview = tk.Label(cron_f, text='', font=('Consolas', 7),
-                                 bg=s['bg'], fg=s['hint'])
+        cron_preview = self.components.Label(cron_f, text='',
+                                             font=self.components.mono_font(7),
+                                             fg=s['hint'])
         cron_preview.pack(side=tk.LEFT, padx=4)
 
         _type_frames = {'every': [every_f, every_start_f], 'once': once_f,
@@ -1494,74 +1418,79 @@ class TaskScheduler(GuiPlugin):
         cron_var.trace_add('write', _update_cron_preview)
 
         # ---- target ----
-        f = tk.Frame(dlg, bg=s['bg']); f.pack(fill=tk.X, **P)
-        tk.Label(f, text=l['form_target'], font=('Consolas', 9), bg=s['bg'],
-                 fg=s['hint'], width=12, anchor='w').pack(side=tk.LEFT)
+        f = self.components.Frame(dlg); f.pack(fill=tk.X, **P)
+        self.components.Label(f, text=l['form_target'], font=self.components.mono_font(9),
+                              fg=s['hint'], width=12, anchor='w').pack(side=tk.LEFT)
         fn_var = tk.StringVar(value=item.get('fn_ref', ''))
-        tk.Entry(f, textvariable=fn_var, font=('Consolas', 9),
-                 bg=s['card'], fg=s['fg'], insertbackground=s['fg'],
-                 relief=tk.FLAT).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.components.Entry(f, textvariable=fn_var, font=self.components.mono_font(9),
+                              bg=s['card']).pack(side=tk.LEFT, fill=tk.X, expand=True)
         # hint aligned with input field
-        target_hint_f = tk.Frame(dlg, bg=s['bg'])
+        target_hint_f = self.components.Frame(dlg)
         target_hint_f.pack(fill=tk.X, padx=10, pady=(1, 2))
-        tk.Label(target_hint_f, text='', font=('Consolas', 9), bg=s['bg'],
-                 width=12).pack(side=tk.LEFT)
-        tk.Label(target_hint_f, text=l['form_target_hint'], font=('Consolas', 7),
-                 bg=s['bg'], fg=s['hint'], anchor='w', justify=tk.LEFT).pack(
+        self.components.Label(target_hint_f, text='', font=self.components.mono_font(9),
+                              width=12).pack(side=tk.LEFT)
+        self.components.Label(target_hint_f, text=l['form_target_hint'],
+                              font=self.components.mono_font(7), fg=s['hint'],
+                              anchor='w', justify=tk.LEFT).pack(
             side=tk.LEFT, fill=tk.X, expand=True)
 
         # ---- args (positional) ----
-        f = tk.Frame(dlg, bg=s['bg']); f.pack(fill=tk.X, **P)
-        tk.Label(f, text='Args', font=('Consolas', 9), bg=s['bg'],
-                 fg=s['hint'], width=12, anchor='w').pack(side=tk.LEFT)
+        f = self.components.Frame(dlg); f.pack(fill=tk.X, **P)
+        self.components.Label(f, text='Args', font=self.components.mono_font(9),
+                              fg=s['hint'], width=12, anchor='w').pack(side=tk.LEFT)
         saved_args = item.get('args', ())
         args_var = tk.StringVar(value=', '.join(saved_args) if saved_args else '')
-        tk.Entry(f, textvariable=args_var, font=('Consolas', 9),
-                 bg=s['card'], fg=s['fg'], insertbackground=s['fg'],
-                 relief=tk.FLAT).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        args_hint_f = tk.Frame(dlg, bg=s['bg'])
+        self.components.Entry(f, textvariable=args_var, font=self.components.mono_font(9),
+                              bg=s['card']).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        args_hint_f = self.components.Frame(dlg)
         args_hint_f.pack(fill=tk.X, padx=10, pady=(0, 2))
-        tk.Label(args_hint_f, text='', font=('Consolas', 9), bg=s['bg'],
-                 width=12).pack(side=tk.LEFT)
-        tk.Label(args_hint_f, text='逗号分隔，如: hello, 42', font=('Consolas', 7),
-                 bg=s['bg'], fg=s['hint'], anchor='w').pack(
-            side=tk.LEFT, fill=tk.X, expand=True)
+        self.components.Label(args_hint_f, text='', font=self.components.mono_font(9),
+                              width=12).pack(side=tk.LEFT)
+        self.components.Label(args_hint_f, text='逗号分隔，如: hello, 42',
+                              font=self.components.mono_font(7), fg=s['hint'],
+                              anchor='w').pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         # ---- kwargs (keyword) ----
-        f = tk.Frame(dlg, bg=s['bg']); f.pack(fill=tk.X, **P)
-        tk.Label(f, text='Kwargs', font=('Consolas', 9), bg=s['bg'],
-                 fg=s['hint'], width=12, anchor='w').pack(side=tk.LEFT)
-        add_kv_btn = tk.Label(f, text='＋', font=('Consolas', 10, 'bold'),
-                               bg=s['bar'], fg=s['accent'], padx=8,
-                               cursor='hand2')
+        f = self.components.Frame(dlg); f.pack(fill=tk.X, **P)
+        self.components.Label(f, text='Kwargs', font=self.components.mono_font(9),
+                              fg=s['hint'], width=12, anchor='w').pack(side=tk.LEFT)
+        add_kv_btn = self.components.Button(
+            f, text='＋', font=self.components.mono_font(10, 'bold'),
+            bg=s['bar'], fg=s['accent'], padx=6)
         add_kv_btn.pack(side=tk.RIGHT)
 
         # ---- options frame (declared & packed early so kv_frame can reference it) ----
-        opt = tk.Frame(dlg, bg=s['bg'])
+        opt = self.components.Frame(dlg)
         opt.pack(fill=tk.X, **P)
 
         # ---- kv_frame (scrollable, show/hide with before=opt to keep position) ----
-        kv_frame = tk.Frame(dlg, bg=s['bg'])
+        kv_frame = self.components.Frame(dlg)
+        # 滚动条常驻（auto_hide=False）— 限高临界区避免 pack 振荡卡死
         kv_canvas = self.components.ScrollableCanvas(
-            kv_frame, bg=s['bg'], scrollbars='y', height=0)
+            kv_frame, height=0, auto_hide=False)
         kv_inner = kv_canvas.inner
         kv_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         kv_rows = []  # list of (key_var, val_var, row_frame)
         saved_kwargs = item.get('kwargs', {})
         _KV_MAX_VISIBLE = 5
         _KV_ROW_H = 26
+        _last_kv_h = [None]  # 缓存上次高度，避免重复 configure 触发循环
 
         def _sync_kv_scroll():
             # 限高：最多显示 _KV_MAX_VISIBLE 行，超出滚动（scrollregion 与
-            # 滚动条显隐由 ScrollableCanvas 自动处理）
+            # 滚动条显隐由 ScrollableCanvas 自动处理）。
+            # 高度不变时不 configure — 防止与 Canvas <Configure> 刷新互相触发
             kv_canvas.update_idletasks()
             bbox = kv_canvas.bbox('all')
             if bbox:
                 _, _, _, h = bbox
                 visible = min(len(kv_rows), _KV_MAX_VISIBLE) * _KV_ROW_H + 2
-                kv_canvas.configure(height=min(h, visible))
+                new_h = min(h, visible)
             else:
-                kv_canvas.configure(height=0)
+                new_h = 0
+            if new_h != _last_kv_h[0]:
+                _last_kv_h[0] = new_h
+                kv_canvas.configure(height=new_h)
 
         def _sync_kv_frame():
             if kv_rows:
@@ -1572,20 +1501,21 @@ class TaskScheduler(GuiPlugin):
                 kv_frame.pack_forget()
 
         def _add_kv_row(key='', value=''):
-            row = tk.Frame(kv_inner, bg=s['bg'])
+            row = self.components.Frame(kv_inner)
             row.pack(fill=tk.X, pady=(2, 0))
             key_var = tk.StringVar(value=key)
             val_var = tk.StringVar(value=value)
-            tk.Label(row, text='', font=('Consolas', 9), bg=s['bg'],
-                     width=12).pack(side=tk.LEFT)
-            tk.Entry(row, textvariable=key_var, font=('Consolas', 9),
-                     bg=s['card'], fg=s['fg'], insertbackground=s['fg'],
-                     relief=tk.FLAT, width=12).pack(side=tk.LEFT, padx=(0, 4))
-            tk.Entry(row, textvariable=val_var, font=('Consolas', 9),
-                     bg=s['card'], fg=s['fg'], insertbackground=s['fg'],
-                     relief=tk.FLAT).pack(side=tk.LEFT, fill=tk.X, expand=True)
-            del_btn = tk.Label(row, text='✕', font=('Consolas', 9),
-                               bg=s['bg'], fg=s['dead'], padx=4, cursor='hand2')
+            self.components.Label(row, text='', font=self.components.mono_font(9),
+                                  width=12).pack(side=tk.LEFT)
+            self.components.Entry(row, textvariable=key_var,
+                                  font=self.components.mono_font(9), bg=s['card'],
+                                  width=12).pack(side=tk.LEFT, padx=(0, 4))
+            self.components.Entry(row, textvariable=val_var,
+                                  font=self.components.mono_font(9), bg=s['card']).pack(
+                side=tk.LEFT, fill=tk.X, expand=True)
+            del_btn = self.components.Button(
+                row, text='✕', font=self.components.mono_font(9),
+                bg=s['bg'], fg=s['danger'], padx=6)
             del_btn.pack(side=tk.RIGHT)
             del_btn.bind('<Button-1>', lambda e, r=row: _remove_kv_row(r))
             kv_rows.append((key_var, val_var, row))
@@ -1608,44 +1538,45 @@ class TaskScheduler(GuiPlugin):
         # ---- options ----
 
         auto_var = tk.BooleanVar(value=item.get('auto_start', True))
-        tk.Checkbutton(opt, text=l['form_auto_start'], variable=auto_var,
-                       font=('Consolas', 9), bg=s['bg'], fg=s['fg'],
-                       selectcolor=s['card'],
-                       activebackground=s['bg'],
-                       activeforeground=s['fg']).pack(side=tk.LEFT, padx=2)
+        self.components.Checkbutton(
+            opt, text=l['form_auto_start'], variable=auto_var,
+            font=self.components.mono_font(9), selectcolor=s['card']).pack(side=tk.LEFT, padx=2)
 
-        max_runs_frame = tk.Frame(opt, bg=s['bg'])
+        max_runs_frame = self.components.Frame(opt)
         max_runs_frame.pack(side=tk.LEFT)
-        tk.Label(max_runs_frame, text=f'  {l["form_max_runs"]}', font=('Consolas', 9),
-                 bg=s['bg'], fg=s['hint']).pack(side=tk.LEFT)
+        self.components.Label(max_runs_frame,
+                              text=f'  {l["form_max_runs"]}',
+                              font=self.components.mono_font(9),
+                              fg=s['hint']).pack(side=tk.LEFT)
         max_var = tk.StringVar(value=str(item.get('max_runs', '') if item.get('max_runs') else ''))
-        tk.Entry(max_runs_frame, textvariable=max_var, font=('Consolas', 9),
-                 bg=s['card'], fg=s['fg'], insertbackground=s['fg'],
-                 relief=tk.FLAT, width=5).pack(side=tk.LEFT, padx=2)
+        self.components.Entry(max_runs_frame, textvariable=max_var,
+                              font=self.components.mono_font(9), bg=s['card'],
+                              width=5).pack(side=tk.LEFT, padx=2)
 
-        timeout_lbl = tk.Label(opt, text='  Timeout(s)', font=('Consolas', 9),
-                                bg=s['bg'], fg=s['hint'])
+        timeout_lbl = self.components.Label(opt, text='  Timeout(s)',
+                                             font=self.components.mono_font(9),
+                                             fg=s['hint'])
         timeout_lbl.pack(side=tk.LEFT, padx=(10, 2))
         timeout_var = tk.StringVar(value=str(item.get('timeout', '') if item.get('timeout') else ''))
-        tk.Entry(opt, textvariable=timeout_var, font=('Consolas', 9),
-                 bg=s['card'], fg=s['fg'], insertbackground=s['fg'],
-                 relief=tk.FLAT, width=5).pack(side=tk.LEFT, padx=2)
+        self.components.Entry(opt, textvariable=timeout_var,
+                              font=self.components.mono_font(9), bg=s['card'],
+                              width=5).pack(side=tk.LEFT, padx=2)
 
         # ---- buttons ----
-        bf = tk.Frame(dlg, bg=s['bg'])
+        bf = self.components.Frame(dlg)
         bf.pack(fill=tk.X, padx=10, pady=(8, 10))
         err_var = tk.StringVar(value='')
-        tk.Label(bf, textvariable=err_var, font=('Consolas', 8, 'bold'),
-                 bg=s['bg'], fg=s['dead'], anchor='w').pack(
+        self.components.Label(bf, textvariable=err_var,
+                              font=self.components.mono_font(8, 'bold'),
+                              fg=s['danger'], anchor='w').pack(
             side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
 
-        tk.Button(bf, text=l['form_cancel'], command=dlg.destroy,
-                  bg=s['bar'], fg=s['fg'], relief=tk.FLAT, padx=12,
-                  font=('Consolas', 9)).pack(side=tk.RIGHT, padx=4)
-        tk.Button(bf, text=l['form_save'], command=lambda: _save(),
-                  bg=s['accent'], fg=s['accent_fg'], relief=tk.FLAT, padx=16,
-                  font=('Consolas', 9, 'bold'), activebackground='#3a6fa8',
-                  activeforeground='#fff').pack(side=tk.RIGHT, padx=4)
+        # 最右按钮右缘与上方内容区右缘对齐（右 padx 0）
+        self.components.Button(
+            bf, text=l['form_cancel'], command=dlg.destroy,
+            bg=s['bar']).pack(side=tk.RIGHT, padx=(4, 0))
+        self.components.Button(
+            bf, text=l['form_save'], command=lambda: _save()).pack(side=tk.RIGHT, padx=4)
 
         def _save():
             nonlocal editing
@@ -1764,7 +1695,6 @@ class TaskScheduler(GuiPlugin):
         self._help_win = PluginGuide(self, self.app, doc='task-scheduler.md',
                                      title_zh='任务调度器 帮助',
                                      title_en='Task Scheduler Help')
-        self.app.emit('app@window:set-icon', self._help_win)
 
     def on_destroy(self):
         pass

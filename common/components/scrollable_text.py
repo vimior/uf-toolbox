@@ -16,6 +16,18 @@ class ScrollableText(tk.Text):
         self._sb_updating = False
         super().__init__(master, **kwargs)
         self.bind('<Configure>', self._on_configure, add='+')
+        # 内置鼠标滚轮（Enter 时全局绑定，Leave 时解除 — 覆盖子 widget）
+        self.bind('<Enter>', self._on_mw_enter, add='+')
+        self.bind('<Leave>', self._on_mw_leave, add='+')
+
+    def _on_mousewheel(self, event):
+        self.yview_scroll(int(-event.delta / 120), 'units')
+
+    def _on_mw_enter(self, _e=None):
+        self.bind_all('<MouseWheel>', self._on_mousewheel)
+
+    def _on_mw_leave(self, _e=None):
+        self.unbind_all('<MouseWheel>')
 
     def pack(self, **kwargs):
         # 先 pack 自身，再把滚动条插到 Text 之前（before 要求参考已 pack）

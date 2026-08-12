@@ -8,10 +8,13 @@ __version__ = '1.0.0'
 
 if sys.platform == 'win32':
     FONT_FAMILY = 'Microsoft YaHei'
+    MONO_FAMILY = 'Consolas'
 elif sys.platform == 'darwin':
     FONT_FAMILY = 'PingFang SC'
+    MONO_FAMILY = 'Menlo'
 else:
     FONT_FAMILY = 'Ubuntu'
+    MONO_FAMILY = 'DejaVu Sans Mono'
 
 if sys.stdout is None:
     sys.stdout = open(os.devnull, 'w')

@@ -53,25 +53,21 @@ class LogUI(AppState, tk.Tk):
             self._log_win.focus_force()
             return
         t, l = self.theme, self.lang
-        win = tk.Toplevel(self)
-        win.geometry('+{}+{}'.format(-9999, -9999))
-        self.emit('window:set-icon', win)
+        win = self.components.Toplevel(self)
         win.title(l['log_title'])
-        win.configure(bg=t['bg'])
         win.resizable(True, True)
         self._log_win = win
 
-        outer = tk.Frame(win, bg=t['bg'])
+        outer = self.components.Frame(win)
         outer.pack(fill=tk.BOTH, expand=True, padx=8, pady=(8, 4))
 
-        self._log_border_frame = border = tk.Frame(
-            outer, bg=t['border'], padx=1, pady=1,
-            bd=0, highlightthickness=0)
+        border = self.components.Frame(
+            outer, bg=t['border'], padx=1, pady=1)
         border.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self._log_border_frame = border
 
         self._log_text = self.components.ScrollableText(
-            border, wrap=tk.WORD, state=tk.DISABLED,
-            bg='#1e1e1e', fg='#d4d4d4', insertbackground='white')
+            border, wrap=tk.WORD, state=tk.DISABLED)
         self._log_text.pack(fill=tk.BOTH, expand=True)
 
         if self._log_buffer:
@@ -84,16 +80,11 @@ class LogUI(AppState, tk.Tk):
             self._log_text.see(tk.END)
             self._log_text.configure(state=tk.DISABLED)
 
-        self._log_bottom_frame = bottom = tk.Frame(win, bg=t['bg'])
+        self._log_bottom_frame = bottom = self.components.Frame(win)
         bottom.pack(fill=tk.X, padx=8, pady=(0, 6))
-        self._log_clear_btn = tk.Button(
+        self._log_clear_btn = self.components.Button(
             bottom, text=l['log_clear'], command=self._clear_log,
-            bg=t['accent'], fg=t['btn_fg'],
-            font=(FONT_FAMILY, 9, 'bold'),
-            relief=tk.RAISED, bd=1, padx=8, pady=1, cursor='hand2',
-            activebackground=t['btn_active_bg'],
-            activeforeground=t['btn_fg']
-        )
+            font=(FONT_FAMILY, 9, 'bold'))
         self._log_clear_btn.pack(side=tk.RIGHT, fill=tk.X, expand=True)
 
         self.emit('window:set-geometry', win, h=600)
@@ -133,12 +124,14 @@ class LogUI(AppState, tk.Tk):
         t = self.theme
         self._log_win.config(bg=t['bg'])
         self._log_border_frame.config(bg=t['border'])
+        self._log_text.config(bg=t['Text']['bg'], fg=t['Text']['fg'])
         self._log_bottom_frame.config(bg=t['bg'])
         if hasattr(self, '_log_clear_btn'):
+            b = t['Button']
             self._log_clear_btn.config(
-                bg=t['accent'], fg=t['btn_fg'],
-                activebackground=t['btn_active_bg'],
-                activeforeground=t['btn_fg'])
+                bg=b['bg'], fg=b['fg'],
+                activebackground=b['activebackground'],
+                activeforeground=b['activeforeground'])
 
     def apply_lang(self, name):
         if self._log_win is None or not self._log_win.winfo_exists():
@@ -147,4 +140,3 @@ class LogUI(AppState, tk.Tk):
         self._log_win.title(l['log_title'])
         if hasattr(self, '_log_clear_btn'):
             self._log_clear_btn.config(text=l['log_clear'])
-        self.emit('window:set-geometry', self._log_win, h=600)

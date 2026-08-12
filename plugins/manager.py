@@ -374,22 +374,31 @@ class PluginManager:
                 self._inst = None
 
             # ---- create new instance ----
+            is_hidden = not is_service and (hidden or (self.auto_start and self.start_hidden))
             try:
                 NamespaceManager.check(self.namespace)
                 namespaced_app = self.app.module(self.namespace)
                 if is_service:
                     self._inst = self._cls(app=namespaced_app)
                 else:
-                    self._inst = self._cls(parent, namespaced_app)
-                    self._inst.withdraw()  # hide until positioned by _apply_window_setup
+                    # 窗口构造即隐藏 (AppToplevel 接管防闪烁), 由
+                    # _apply_window_setup 定位后显示; hidden/start_hidden
+                    # 启动时构造前设类属性 _hidden_launch 阻止自动显示
+                    # (构造时决定, 无事后取消的时序问题), finally 恢复
+                    if is_hidden:
+                        self._cls._hidden_launch = True
+                    try:
+                        self._inst = self._cls(parent, namespaced_app)
+                    finally:
+                        if is_hidden:
+                            self._cls._hidden_launch = False
                 NamespaceManager.add(self.namespace)
             except Exception as e:
                 self._mgr.logger.error(
                     f'[Plugin:{name}] init error: {e}')
                 return None
-            is_hidden = not is_service and (hidden or (self.auto_start and self.start_hidden))
             if is_hidden:
-                self._inst.withdraw()
+                # self._inst.withdraw()
                 self._shown = False
                 if self.auto_start and self.start_hidden:
                     self.start_hidden = False  # only on first auto-start
@@ -543,9 +552,9 @@ class PluginManager:
                      fixed_size=handle.fixed_size,
                      fixed_position=handle.fixed_position)
 
-        # icon
-        if handle.use_app_icon:
-            app.emit('window:set-icon', win)
+        # # icon, AppToplevel接管了
+        # if handle.use_app_icon:
+        #     app.emit('window:set-icon', win)
 
         # Show the window now that it's positioned (was withdrawn during creation)
         if handle._shown and win.winfo_exists():

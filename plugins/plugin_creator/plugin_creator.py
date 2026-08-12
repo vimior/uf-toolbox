@@ -13,31 +13,6 @@ elif sys.platform == 'darwin':
 else:
     FONT_FAMILY = 'Ubuntu'
 
-_STYLE = {
-    'dark': {
-        'bg':        '#2b2b2b',
-        'bar':       '#333333',
-        'fg':        '#e0e0e0',
-        'hint':      '#888888',
-        'input_bg':  '#363636',
-        'accent':    '#2d5a8a',
-        'accent_fg': '#ffffff',
-        'separator': '#3c3c3c',
-        'dlg_bg':    '#555555',
-    },
-    'light': {
-        'bg':        '#f5f6fa',
-        'bar':       '#e8ecf1',
-        'fg':        '#333333',
-        'hint':      '#999999',
-        'input_bg':  '#eaeaea',
-        'accent':    '#4a90d9',
-        'accent_fg': '#ffffff',
-        'separator': '#d0d0d0',
-        'dlg_bg':    '#ffffff',
-    },
-}
-
 _LANG = {
     'zh': {
         'title':           '插件创建器',
@@ -138,7 +113,8 @@ class {class_name}(GuiPlugin):
         self.geometry("{geometry_str}")
 {resizable_line}
         # TODO: Build your UI here
-        tk.Label(
+        # tk.Label(.....)
+        self.components.Label(
             self, text="Hello from {name}!",
             font=("{font_family}", 12),
         ).pack(expand=True)
@@ -186,8 +162,7 @@ class PluginCreator(GuiPlugin):
 
         # Resolve theme & language via app proxy
         lang_name = self.app.current_lang_name
-        theme_name = self.app.current_theme_name
-        self._s = _STYLE.get(theme_name, _STYLE['dark'])
+        self._s = self.app.theme
         self._l = _LANG[lang_name]
         s = self._s
         l = self._l
@@ -195,41 +170,30 @@ class PluginCreator(GuiPlugin):
         self.title(l['title'])
         self.geometry('440x640')
         self.resizable(True, True)
-        self.configure(bg=s['bg'])
-
-        # ---- header ----
-        header = tk.Frame(self, bg=s['bar'], height=32)
-        header.pack(fill=tk.X, side=tk.TOP)
-        header.pack_propagate(False)
-
-        tk.Label(header, text=f"  {l['title']}", bg=s['bar'], fg=s['fg'],
-                 font=(FONT_FAMILY, 10, "bold")).pack(side=tk.LEFT, pady=4)
-
-        self._status = tk.Label(header, text="", bg=s['bar'],
-                                fg=s['hint'], font=("Consolas", 8))
-        self._status.pack(side=tk.RIGHT, padx=8, pady=4)
 
         # ---- form body (scrollable via mousewheel + scrollbar) ----
-        body = tk.Frame(self, bg=s['bg'])
-        body.pack(fill=tk.BOTH, expand=True)
-        canvas = self.components.ScrollableCanvas(body, bg=s['bg'], scrollbars='y')
+        body = self.components.Frame(self)
+        # 右 8（滚动条距窗口边缘）+ 顶 8 底 4（与日志窗口一致）；
+        # 左 0（内容边距由表单元素 padx=8 提供）
+        body.pack(fill=tk.BOTH, expand=True, padx=(0, 8), pady=(8, 4))
+        canvas = self.components.ScrollableCanvas(body)
         self._form = canvas.inner
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(6, 0), pady=(4, 0))
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # ---- field: package name ----
         self._pkg_var = tk.StringVar()
-        self._pkg_var.trace('w', lambda *_: self._on_pkg_change())
+        self._pkg_var.trace_add('write', lambda *_: self._on_pkg_change())
         self._add_field(l['package_name'], self._pkg_var, required=True)
-        tk.Label(self._form, text=l['invalid_pkg'], bg=s['bg'], fg=s['hint'],
-                 font=(FONT_FAMILY, 8), anchor=tk.W).pack(
-            fill=tk.X, padx=12, pady=(1, 0))
+        self.components.Label(self._form, text=l['invalid_pkg'], fg=s['hint'],
+                              font=self.components.font(8), anchor=tk.W).pack(
+            fill=tk.X, padx=8, pady=(1, 0))
 
         # ---- field: class name ----
         self._cls_var = tk.StringVar()
         self._add_field(l['class_name'], self._cls_var, required=True)
-        tk.Label(self._form, text=l['invalid_cls'], bg=s['bg'], fg=s['hint'],
-                 font=(FONT_FAMILY, 8), anchor=tk.W).pack(
-            fill=tk.X, padx=12, pady=(1, 0))
+        self.components.Label(self._form, text=l['invalid_cls'], fg=s['hint'],
+                              font=self.components.font(8), anchor=tk.W).pack(
+            fill=tk.X, padx=8, pady=(1, 0))
 
         # ---- field: display name ----
         self._name_var = tk.StringVar()
@@ -250,29 +214,23 @@ class PluginCreator(GuiPlugin):
         # ---- field: priority ----
         self._prio_var = tk.StringVar(value="0")
         self._add_field(l['priority'], self._prio_var)
-        tk.Label(self._form, text=l['priority_hint'], bg=s['bg'], fg=s['hint'],
-                 font=(FONT_FAMILY, 8), anchor=tk.W).pack(
-            fill=tk.X, padx=12, pady=(1, 0))
+        self.components.Label(self._form, text=l['priority_hint'], fg=s['hint'],
+                              font=self.components.font(8), anchor=tk.W).pack(
+            fill=tk.X, padx=8, pady=(1, 0))
 
         # ---- plugin type selector ----
-        tk.Label(self._form, text=l['plugin_type'], bg=s['bg'], fg=s['fg'],
-                 font=(FONT_FAMILY, 10, "bold"), anchor=tk.W).pack(
-            fill=tk.X, padx=12, pady=(10, 2))
+        self.components.Label(self._form, text=l['plugin_type'],
+                              font=self.components.font(10, "bold"), anchor=tk.W).pack(
+            fill=tk.X, padx=8, pady=(10, 2))
 
         self._type_var = tk.StringVar(value='gui')
-        type_frame = tk.Frame(self._form, bg=s['bg'])
-        type_frame.pack(fill=tk.X, padx=12, pady=(0, 4))
+        type_frame = self.components.Frame(self._form)
+        type_frame.pack(fill=tk.X, padx=8, pady=(0, 4))
 
         for val, label_key in [('service', 'type_service'), ('gui', 'type_gui')]:
-            tk.Radiobutton(
+            self.components.Radiobutton(
                 type_frame, text=l[label_key], variable=self._type_var,
                 value=val, command=self._on_type_change,
-                bg=s['bg'], fg=s['fg'],
-                font=(FONT_FAMILY, 9),
-                selectcolor=s['input_bg'],
-                relief=tk.FLAT,
-                activebackground=s['bg'],
-                activeforeground=s['fg'],
                 anchor=tk.W,
             ).pack(side=tk.RIGHT, padx=(12, 0))
 
@@ -282,193 +240,141 @@ class PluginCreator(GuiPlugin):
         self._bool_widgets = {}
 
         # ---- window size: label + fixed_size checkbox ----
-        self._size_sep = tk.Frame(self._form, bg=s['separator'], height=1)
-        self._size_sep.pack(fill=tk.X, padx=12, pady=(14, 6))
+        self._size_sep = self.components.Separator(self._form)
+        self._size_sep.pack(fill=tk.X, padx=8, pady=(14, 6))
 
-        self._size_header = tk.Frame(self._form, bg=s['bg'])
-        self._size_header.pack(fill=tk.X, padx=12, pady=(0, 2))
+        self._size_header = self.components.Frame(self._form)
+        self._size_header.pack(fill=tk.X, padx=8, pady=(0, 2))
 
-        tk.Label(self._size_header, text=l['win_size'], bg=s['bg'], fg=s['fg'],
-                 font=(FONT_FAMILY, 10, "bold")).pack(side=tk.LEFT)
+        self.components.Label(self._size_header, text=l['win_size'],
+                              font=self.components.font(10, "bold")).pack(side=tk.LEFT)
 
         self._fixed_size_var = tk.BooleanVar(value=False)
         self._bool_vars['fixed_size'] = self._fixed_size_var
-        tk.Checkbutton(
+        self.components.Checkbutton(
             self._size_header, text=l['fixed_size'], variable=self._fixed_size_var,
             command=self._on_fixed_size_change,
-            bg=s['bg'], fg=s['fg'],
-            font=(FONT_FAMILY, 8),
-            selectcolor=s['input_bg'],
-            relief=tk.FLAT,
-            activebackground=s['bg'],
-            activeforeground=s['fg'],
+            font=self.components.font(8),
         ).pack(side=tk.RIGHT)
 
         # size fields (expand with indent when fixed_size unchecked)
-        self._size_fields = tk.Frame(self._form, bg=s['bg'])
-        self._size_inner = tk.Frame(self._size_fields, bg=s['bg'])
+        self._size_fields = self.components.Frame(self._form)
+        self._size_inner = self.components.Frame(self._size_fields)
         self._size_inner.pack(side=tk.RIGHT)
-        tk.Label(self._size_inner, text=l['width'], bg=s['bg'], fg=s['fg'],
-                 font=(FONT_FAMILY, 9)).pack(side=tk.LEFT, padx=(0, 4))
+        self.components.Label(self._size_inner, text=l['width']).pack(side=tk.LEFT, padx=(0, 4))
         self._win_w_var = tk.StringVar(value="400")
-        tk.Entry(self._size_inner, textvariable=self._win_w_var, width=6,
-                 bg=s['input_bg'], fg=s['fg'], insertbackground=s['fg'],
-                 font=(FONT_FAMILY, 10), relief=tk.FLAT, bd=0,
-                 highlightthickness=1,
-                 highlightbackground=s['separator']).pack(
-            side=tk.LEFT, padx=(0, 12), ipady=3)
-        tk.Label(self._size_inner, text=l['height'], bg=s['bg'], fg=s['fg'],
-                 font=(FONT_FAMILY, 9)).pack(side=tk.LEFT, padx=(0, 4))
+        self.components.Entry(self._size_inner, textvariable=self._win_w_var,
+                              width=6, font=self.components.font(10)).pack(
+            side=tk.LEFT, padx=(0, 8), ipady=3)
+        self.components.Label(self._size_inner, text=l['height']).pack(side=tk.LEFT, padx=(0, 4))
         self._win_h_var = tk.StringVar(value="300")
-        tk.Entry(self._size_inner, textvariable=self._win_h_var, width=6,
-                 bg=s['input_bg'], fg=s['fg'], insertbackground=s['fg'],
-                 font=(FONT_FAMILY, 10), relief=tk.FLAT, bd=0,
-                 highlightthickness=1,
-                 highlightbackground=s['separator']).pack(
+        self.components.Entry(self._size_inner, textvariable=self._win_h_var,
+                              width=6, font=self.components.font(10)).pack(
             side=tk.LEFT, ipady=3)
         # ---- window position: label + fixed_position checkbox ----
-        self._pos_sep = tk.Frame(self._form, bg=s['separator'], height=1)
-        self._pos_sep.pack(fill=tk.X, padx=12, pady=(14, 6))
+        self._pos_sep = self.components.Separator(self._form)
+        self._pos_sep.pack(fill=tk.X, padx=8, pady=(14, 6))
 
-        self._pos_header = tk.Frame(self._form, bg=s['bg'])
-        self._pos_header.pack(fill=tk.X, padx=12, pady=(0, 2))
+        self._pos_header = self.components.Frame(self._form)
+        self._pos_header.pack(fill=tk.X, padx=8, pady=(0, 2))
 
-        tk.Label(self._pos_header, text=l['win_pos'], bg=s['bg'], fg=s['fg'],
-                 font=(FONT_FAMILY, 10, "bold")).pack(side=tk.LEFT)
+        self.components.Label(self._pos_header, text=l['win_pos'],
+                              font=self.components.font(10, "bold")).pack(side=tk.LEFT)
 
         self._fixed_pos_var = tk.BooleanVar(value=True)
         self._bool_vars['fixed_position'] = self._fixed_pos_var
-        tk.Checkbutton(
+        self.components.Checkbutton(
             self._pos_header, text=l['fixed_position'], variable=self._fixed_pos_var,
             command=self._on_fixed_pos_change,
-            bg=s['bg'], fg=s['fg'],
-            font=(FONT_FAMILY, 8),
-            selectcolor=s['input_bg'],
-            relief=tk.FLAT,
-            activebackground=s['bg'],
-            activeforeground=s['fg'],
+            font=self.components.font(8),
         ).pack(side=tk.RIGHT)
 
         # position fields (expand with indent when fixed_position unchecked)
-        self._pos_fields = tk.Frame(self._form, bg=s['bg'])
-        self._pos_inner = tk.Frame(self._pos_fields, bg=s['bg'])
+        self._pos_fields = self.components.Frame(self._form)
+        self._pos_inner = self.components.Frame(self._pos_fields)
         self._pos_inner.pack(side=tk.RIGHT)
-        tk.Label(self._pos_inner, text=l['x'], bg=s['bg'], fg=s['fg'],
-                 font=(FONT_FAMILY, 9)).pack(side=tk.LEFT, padx=(0, 4))
+        self.components.Label(self._pos_inner, text=l['x']).pack(side=tk.LEFT, padx=(0, 4))
         self._pos_x_var = tk.StringVar(value="100")
-        tk.Entry(self._pos_inner, textvariable=self._pos_x_var, width=6,
-                 bg=s['input_bg'], fg=s['fg'], insertbackground=s['fg'],
-                 font=(FONT_FAMILY, 10), relief=tk.FLAT, bd=0,
-                 highlightthickness=1,
-                 highlightbackground=s['separator']).pack(
-            side=tk.LEFT, padx=(0, 12), ipady=3)
-        tk.Label(self._pos_inner, text=l['y'], bg=s['bg'], fg=s['fg'],
-                 font=(FONT_FAMILY, 9)).pack(side=tk.LEFT, padx=(0, 4))
+        self.components.Entry(self._pos_inner, textvariable=self._pos_x_var,
+                              width=6, font=self.components.font(10)).pack(
+            side=tk.LEFT, padx=(0, 8), ipady=3)
+        self.components.Label(self._pos_inner, text=l['y']).pack(side=tk.LEFT, padx=(0, 4))
         self._pos_y_var = tk.StringVar(value="100")
-        tk.Entry(self._pos_inner, textvariable=self._pos_y_var, width=6,
-                 bg=s['input_bg'], fg=s['fg'], insertbackground=s['fg'],
-                 font=(FONT_FAMILY, 10), relief=tk.FLAT, bd=0,
-                 highlightthickness=1,
-                 highlightbackground=s['separator']).pack(
+        self.components.Entry(self._pos_inner, textvariable=self._pos_y_var,
+                              width=6, font=self.components.font(10)).pack(
             side=tk.LEFT, ipady=3)
         # ---- auto-start: standalone section ----
-        self._autostart_sep = tk.Frame(self._form, bg=s['separator'], height=1)
-        self._autostart_sep.pack(fill=tk.X, padx=12, pady=(14, 6))
+        self._autostart_sep = self.components.Separator(self._form)
+        self._autostart_sep.pack(fill=tk.X, padx=8, pady=(14, 6))
 
-        self._autostart_header = tk.Frame(self._form, bg=s['bg'])
-        self._autostart_header.pack(fill=tk.X, padx=12, pady=(0, 2))
+        self._autostart_header = self.components.Frame(self._form)
+        self._autostart_header.pack(fill=tk.X, padx=8, pady=(0, 2))
 
-        tk.Label(self._autostart_header, text=l['auto_start'], bg=s['bg'],
-                 fg=s['fg'], font=(FONT_FAMILY, 10, "bold")).pack(side=tk.LEFT)
+        self.components.Label(self._autostart_header, text=l['auto_start'],
+                              font=self.components.font(10, "bold")).pack(side=tk.LEFT)
 
         self._auto_start_var = tk.BooleanVar(value=False)
         self._bool_vars['auto_start'] = self._auto_start_var
-        tk.Checkbutton(
+        self.components.Checkbutton(
             self._autostart_header, variable=self._auto_start_var,
             command=self._on_auto_start_change,
-            bg=s['bg'], fg=s['fg'],
-            font=(FONT_FAMILY, 8),
-            selectcolor=s['input_bg'],
-            relief=tk.FLAT,
-            activebackground=s['bg'],
-            activeforeground=s['fg'],
+            font=self.components.font(8),
         ).pack(side=tk.RIGHT)
 
         # start_hidden — indented, shown when auto_start is checked
         self._start_hidden_var = tk.BooleanVar(value=False)
         self._bool_vars['start_hidden'] = self._start_hidden_var
-        self._start_hidden_frame = tk.Frame(self._form, bg=s['bg'])
-        self._start_hidden_cb = tk.Checkbutton(
+        self._start_hidden_frame = self.components.Frame(self._form)
+        self._start_hidden_cb = self.components.Checkbutton(
             self._start_hidden_frame, text=l['start_hidden'],
             variable=self._start_hidden_var,
-            bg=s['bg'], fg=s['fg'],
-            font=(FONT_FAMILY, 8),
-            selectcolor=s['input_bg'],
-            relief=tk.FLAT,
-            activebackground=s['bg'],
-            activeforeground=s['fg'],
-            anchor=tk.W,
+            font=self.components.font(8), anchor=tk.W,
         )
         self._start_hidden_cb.pack(side=tk.RIGHT)
 
         # ---- lifecycle: standalone section ----
-        self._lifecycle_sep = tk.Frame(self._form, bg=s['separator'], height=1)
-        self._lifecycle_sep.pack(fill=tk.X, padx=12, pady=(14, 6))
+        self._lifecycle_sep = self.components.Separator(self._form)
+        self._lifecycle_sep.pack(fill=tk.X, padx=8, pady=(14, 6))
 
-        self._lifecycle_header = tk.Frame(self._form, bg=s['bg'])
-        self._lifecycle_header.pack(fill=tk.X, padx=12, pady=(0, 2))
+        self._lifecycle_header = self.components.Frame(self._form)
+        self._lifecycle_header.pack(fill=tk.X, padx=8, pady=(0, 2))
 
-        tk.Label(self._lifecycle_header, text=l['lifecycle'], bg=s['bg'],
-                 fg=s['fg'], font=(FONT_FAMILY, 10, "bold")).pack(side=tk.LEFT)
+        self.components.Label(self._lifecycle_header, text=l['lifecycle'],
+                              font=self.components.font(10, "bold")).pack(side=tk.LEFT)
 
         self._reload_var = tk.BooleanVar(value=True)
         self._bool_vars['reload'] = self._reload_var
-        tk.Checkbutton(
+        self.components.Checkbutton(
             self._lifecycle_header, text=l['reload_label'],
             variable=self._reload_var,
-            bg=s['bg'], fg=s['fg'],
-            font=(FONT_FAMILY, 8),
-            selectcolor=s['input_bg'],
-            relief=tk.FLAT,
-            activebackground=s['bg'],
-            activeforeground=s['fg'],
+            font=self.components.font(8),
         ).pack(side=tk.RIGHT)
 
         # ---- use_app_icon: label + checkbox (like auto-start) ----
-        self._useapp_sep = tk.Frame(self._form, bg=s['separator'], height=1)
-        self._useapp_sep.pack(fill=tk.X, padx=12, pady=(14, 6))
+        self._useapp_sep = self.components.Separator(self._form)
+        self._useapp_sep.pack(fill=tk.X, padx=8, pady=(14, 6))
 
-        self._useapp_header = tk.Frame(self._form, bg=s['bg'])
-        self._useapp_header.pack(fill=tk.X, padx=12, pady=(0, 2))
+        self._useapp_header = self.components.Frame(self._form)
+        self._useapp_header.pack(fill=tk.X, padx=8, pady=(0, 2))
 
-        tk.Label(self._useapp_header, text=l['use_app_icon'], bg=s['bg'],
-                 fg=s['fg'], font=(FONT_FAMILY, 10, "bold")).pack(side=tk.LEFT)
+        self.components.Label(self._useapp_header, text=l['use_app_icon'],
+                              font=self.components.font(10, "bold")).pack(side=tk.LEFT)
 
         self._use_app_icon_var = tk.BooleanVar(value=True)
         self._bool_vars['use_app_icon'] = self._use_app_icon_var
-        tk.Checkbutton(
+        self.components.Checkbutton(
             self._useapp_header, variable=self._use_app_icon_var,
-            bg=s['bg'], fg=s['fg'],
-            font=(FONT_FAMILY, 8),
-            selectcolor=s['input_bg'],
-            relief=tk.FLAT,
-            activebackground=s['bg'],
-            activeforeground=s['fg'],
+            font=self.components.font(8),
         ).pack(side=tk.RIGHT)
 
         # ---- create button ----
-        self._btn_frame = tk.Frame(self, bg=s['bg'])
-        self._btn_frame.pack(fill=tk.X, side=tk.BOTTOM, padx=12, pady=(12, 12))
+        self._btn_frame = self.components.Frame(self)
+        self._btn_frame.pack(fill=tk.X, side=tk.BOTTOM, padx=8, pady=(0, 6))
 
-        self._create_btn = tk.Button(
+        self._create_btn = self.components.Button(
             self._btn_frame, text=l['create_btn'],
             command=self._on_create,
-            bg=s['accent'], fg=s['accent_fg'],
-            font=(FONT_FAMILY, 10, "bold"),
-            relief=tk.FLAT, padx=20, pady=6,
-            cursor='hand2', bd=0,
-            activebackground='#3a6fa8',
-            activeforeground='#ffffff',
+            font=self.components.font(9, "bold")
         )
         self._create_btn.pack(fill=tk.X)
 
@@ -479,19 +385,13 @@ class PluginCreator(GuiPlugin):
         self.app.emit('app@window:set-geometry', self, w=440, h=640)
 
     def _add_field(self, label, var, required=False):
-        s = self._s
         display = label + (" *" if required else "")
-        tk.Label(self._form, text=display, bg=s['bg'], fg=s['fg'],
-                 font=(FONT_FAMILY, 10), anchor=tk.W).pack(
-            fill=tk.X, padx=12, pady=(8, 0))
-        entry = tk.Entry(self._form, textvariable=var,
-                         bg=s['input_bg'], fg=s['fg'],
-                         insertbackground=s['fg'],
-                         font=(FONT_FAMILY, 10),
-                         relief=tk.FLAT, bd=0,
-                         highlightthickness=1,
-                         highlightbackground=s['separator'])
-        entry.pack(fill=tk.X, padx=12, pady=(2, 0), ipady=4)
+        self.components.Label(self._form, text=display,
+                              font=self.components.font(10), anchor=tk.W).pack(
+            fill=tk.X, padx=8, pady=(8, 0))
+        entry = self.components.Entry(self._form, textvariable=var,
+                                      font=self.components.font(10))
+        entry.pack(fill=tk.X, padx=8, pady=(2, 0), ipady=4)
 
     def _on_pkg_change(self):
         """Auto-derive class name from package name (snake_case → PascalCase)."""
@@ -546,37 +446,37 @@ class PluginCreator(GuiPlugin):
 
         if not is_gui:
             # Service: only auto-start section
-            self._autostart_sep.pack(fill=tk.X, padx=12, pady=(14, 6))
-            self._autostart_header.pack(fill=tk.X, padx=12, pady=(0, 2))
+            self._autostart_sep.pack(fill=tk.X, padx=8, pady=(14, 6))
+            self._autostart_header.pack(fill=tk.X, padx=8, pady=(0, 2))
             return
 
         # GUI: repack visible sections in vertical order
         # -- window size --
-        self._size_sep.pack(fill=tk.X, padx=12, pady=(14, 6))
-        self._size_header.pack(fill=tk.X, padx=12, pady=(0, 2))
+        self._size_sep.pack(fill=tk.X, padx=8, pady=(14, 6))
+        self._size_header.pack(fill=tk.X, padx=8, pady=(0, 2))
         if not self._fixed_size_var.get():
-            self._size_fields.pack(fill=tk.X, padx=12, pady=(0, 6))
+            self._size_fields.pack(fill=tk.X, padx=8, pady=(0, 6))
 
         # -- window position --
-        self._pos_sep.pack(fill=tk.X, padx=12, pady=(14, 6))
-        self._pos_header.pack(fill=tk.X, padx=12, pady=(0, 2))
+        self._pos_sep.pack(fill=tk.X, padx=8, pady=(14, 6))
+        self._pos_header.pack(fill=tk.X, padx=8, pady=(0, 2))
         if not self._fixed_pos_var.get():
-            self._pos_fields.pack(fill=tk.X, padx=12, pady=(0, 6))
+            self._pos_fields.pack(fill=tk.X, padx=8, pady=(0, 6))
 
         # -- lifecycle --
-        self._lifecycle_sep.pack(fill=tk.X, padx=12, pady=(14, 6))
-        self._lifecycle_header.pack(fill=tk.X, padx=12, pady=(0, 2))
+        self._lifecycle_sep.pack(fill=tk.X, padx=8, pady=(14, 6))
+        self._lifecycle_header.pack(fill=tk.X, padx=8, pady=(0, 2))
 
         # -- auto-start --
-        self._autostart_sep.pack(fill=tk.X, padx=12, pady=(14, 6))
-        self._autostart_header.pack(fill=tk.X, padx=12, pady=(0, 2))
+        self._autostart_sep.pack(fill=tk.X, padx=8, pady=(14, 6))
+        self._autostart_header.pack(fill=tk.X, padx=8, pady=(0, 2))
         if self._auto_start_var.get():
             self._start_hidden_frame.pack(
-                fill=tk.X, padx=12, pady=(0, 4))
+                fill=tk.X, padx=8, pady=(0, 4))
 
         # -- use_app_icon --
-        self._useapp_sep.pack(fill=tk.X, padx=12, pady=(14, 6))
-        self._useapp_header.pack(fill=tk.X, padx=12, pady=(0, 2))
+        self._useapp_sep.pack(fill=tk.X, padx=8, pady=(14, 6))
+        self._useapp_header.pack(fill=tk.X, padx=8, pady=(0, 2))
 
     def _on_create(self):
         l = self._l
@@ -587,17 +487,17 @@ class PluginCreator(GuiPlugin):
         name = self._name_var.get().strip()
 
         if not pkg or not cls or not name:
-            self._show_dialog('warn', l['err_title'], l['required'])
+            self.components.showwarn(self, l['err_title'], l['required'])
             return
 
         # Validate package name: must be a valid Python identifier
         if not pkg.isidentifier():
-            self._show_dialog('warn', l['err_title'], l['invalid_pkg'])
+            self.components.showwarn(self, l['err_title'], l['invalid_pkg'])
             return
 
         # Validate class name: PascalCase
         if not re.match(r'^[A-Z][a-zA-Z0-9_]*$', cls):
-            self._show_dialog('warn', l['err_title'], l['invalid_cls'])
+            self.components.showwarn(self, l['err_title'], l['invalid_cls'])
             return
 
         # Validate priority
@@ -605,10 +505,10 @@ class PluginCreator(GuiPlugin):
         try:
             priority = int(prio_str) if prio_str else 0
         except ValueError:
-            self._show_dialog('warn', l['err_title'], l['invalid_priority'])
+            self.components.showwarn(self, l['err_title'], l['invalid_priority'])
             return
         if not (0 <= priority <= 100):
-            self._show_dialog('warn', l['err_title'], l['invalid_priority'])
+            self.components.showwarn(self, l['err_title'], l['invalid_priority'])
             return
 
         # Resolve target directory
@@ -616,7 +516,7 @@ class PluginCreator(GuiPlugin):
 
         # Check if already exists
         if os.path.exists(target_dir):
-            self._show_dialog('warn', l['err_title'], l['exists'].format(target_dir))
+            self.components.showwarn(self, l['err_title'], l['exists'].format(target_dir))
             return
 
         # Gather common values
@@ -630,7 +530,7 @@ class PluginCreator(GuiPlugin):
         try:
             os.makedirs(target_dir)
         except OSError as e:
-            self._show_dialog('error', l['err_title'], str(e))
+            self.components.showerror(self, l['err_title'], str(e))
             return
 
         # Write __init__.py
@@ -686,56 +586,9 @@ class PluginCreator(GuiPlugin):
         with open(module_path, 'w', encoding='utf-8') as f:
             f.write(module_content)
 
-        self._show_dialog('info', l['ok_title'],
+        self.components.showinfo(self, l['ok_title'],
                           l['success'].format(target_dir, cls))
         # self.destroy()
-
-    def _show_dialog(self, kind, title, message):
-        """Show a custom dialog centered on this plugin window."""
-        dlg = tk.Toplevel(self)
-        dlg.withdraw()  # hide until positioned to avoid top-left flash
-        dlg.title(title)
-        dlg.resizable(False, False)
-        dlg.transient(self)
-        s = self._s
-        dbg = s['dlg_bg']
-        dlg.configure(bg=dbg)
-        # Set icon via app event
-        self.app.emit('app@window:set-icon', dlg)
-        # icons
-        icons = {'info': '✓', 'warn': '⚠', 'error': '✕'}
-        icon = icons.get(kind, '•')
-        colors = {'info': '#4caf50', 'warn': '#ff9800', 'error': '#f44336'}
-        color = colors.get(kind, s['fg'])
-        icon_size = 40 if kind == 'info' else 32
-        # Content
-        body = tk.Frame(dlg, bg=dbg)
-        body.pack(padx=24, pady=(20, 12))
-        tk.Label(body, text=icon, font=("Segoe UI", icon_size), fg=color,
-                 bg=dbg).pack(side=tk.LEFT, padx=(0, 12))
-        tk.Label(body, text=message, font=(FONT_FAMILY, 10), fg=s['fg'],
-                 bg=dbg, justify=tk.LEFT, wraplength=240).pack(side=tk.LEFT)
-        # Button
-        btn_frame = tk.Frame(dlg, bg=dbg)
-        btn_frame.pack(pady=(0, 16))
-        tk.Button(btn_frame, text="OK", command=dlg.destroy,
-                  bg=s['accent'], fg=s['accent_fg'], relief=tk.FLAT,
-                  font=(FONT_FAMILY, 10, "bold"), padx=24, pady=4,
-                  cursor='hand2', bd=0,
-                  activebackground='#3a6fa8',
-                  activeforeground='#ffffff').pack()
-        # Center on plugin window (use reqwidth/reqheight — winfo_width/height
-        # return 1 while the window is withdrawn)
-        dlg.update_idletasks()
-        dw = dlg.winfo_reqwidth()
-        dh = dlg.winfo_reqheight()
-        px = self.winfo_rootx() + (self.winfo_width() - dw) // 2
-        py = self.winfo_rooty() + (self.winfo_height() - dh) // 2
-        dlg.geometry(f'{dw}x{dh}+{px}+{py}')
-        dlg.deiconify()  # show at final position
-        dlg.grab_set()
-        dlg.focus_force()
-        dlg.wait_window()
 
     def on_destroy(self):
         """Clean up any lingering mousewheel bindings."""
