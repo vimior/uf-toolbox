@@ -22,6 +22,8 @@ from plugins.task_scheduler._cron_utils import (
     next_cron_runs,
 )
 
+ENTRY_IPADY = 2
+
 # ---------------------------------------------------------------------------
 # i18n
 # ---------------------------------------------------------------------------
@@ -144,17 +146,17 @@ def _make_time_picker(parent, initial='', components=None, theme=None):
     secs = [f'{i:02d}' for i in range(60)]
     h_var = tk.StringVar(value=h)
     comp.Combobox(f, textvariable=h_var, values=hours,
-                  font=comp.mono_font(9), width=3, state='readonly').pack(side=tk.LEFT)
+                  font=comp.mono_font(9), width=3, state='readonly').pack(side=tk.LEFT, ipady=ENTRY_IPADY)
     comp.Label(f, text=':', font=comp.mono_font(9),
                fg=hint).pack(side=tk.LEFT)
     m_var = tk.StringVar(value=m)
     comp.Combobox(f, textvariable=m_var, values=mins,
-                  font=comp.mono_font(9), width=3, state='readonly').pack(side=tk.LEFT)
+                  font=comp.mono_font(9), width=3, state='readonly').pack(side=tk.LEFT, ipady=ENTRY_IPADY)
     comp.Label(f, text=':', font=comp.mono_font(9),
                fg=hint).pack(side=tk.LEFT)
     s_var = tk.StringVar(value=sec)
     comp.Combobox(f, textvariable=s_var, values=secs,
-                  font=comp.mono_font(9), width=3, state='readonly').pack(side=tk.LEFT)
+                  font=comp.mono_font(9), width=3, state='readonly').pack(side=tk.LEFT, ipady=ENTRY_IPADY)
     f.pack(side=tk.LEFT, padx=4)
     return lambda: f'{h_var.get()}:{m_var.get()}:{s_var.get()}'
 
@@ -489,8 +491,9 @@ class TaskScheduler(GuiPlugin):
         else:
             fg = s['fg']
 
-        last_str = '-' if not task.get('last_run') else \
-                   time.strftime('%m-%d %H:%M:%S', time.localtime(task['last_run']))
+        # last_fired = 真实执行时间 (last_run 兼作调度锚点, 重启时会被重置)
+        last_str = '-' if not task.get('last_fired') else \
+                   time.strftime('%m-%d %H:%M:%S', time.localtime(task['last_fired']))
         # vals = [tid, task['type'], last_str, self._status_text(task)]
         vals = [tid, task['type'], last_str]
 
@@ -555,7 +558,7 @@ class TaskScheduler(GuiPlugin):
     # ------------------------------------------------------------------
 
     _CACHE_KEYS = ('dead', 'failed', 'enabled', 'firing', 'last_run',
-                   'count', 'errors')
+                   'last_fired', 'count', 'errors')
 
     def _row_needs_update(self, tid, task):
         """Return True if *task* display differs from cached row state."""
@@ -588,8 +591,8 @@ class TaskScheduler(GuiPlugin):
         else:
             fg = s['fg']
 
-        last_str = '-' if not task.get('last_run') else \
-                   time.strftime('%m-%d %H:%M:%S', time.localtime(task['last_run']))
+        last_str = '-' if not task.get('last_fired') else \
+                   time.strftime('%m-%d %H:%M:%S', time.localtime(task['last_fired']))
         vals = [tid, task['type'], last_str, self._status_text(task)]
         for lbl, v in zip(row_data['labels'], vals):
             lbl.config(text=str(v)[:30], fg=fg)
@@ -628,6 +631,22 @@ class TaskScheduler(GuiPlugin):
         item = self._srv('get', tid)
         if not item or tid not in self._rows:
             return
+
+        # 完成的任务: 点击 = 重新执行 (一次点击生效; once 可能 fired 但
+        # enabled=True — 旧逻辑第一次只 pause, UI 无变化)
+        if self._is_done(item):
+            self._srv('restart', tid)
+            item = self._srv('get', tid)
+            if not item or tid not in self._rows:
+                return
+            old_group = self._rows[tid]['group']
+            new_group = self._task_group(item)
+            self._rows[tid]['group'] = new_group
+            self._update_row(tid, item)
+            if old_group != new_group:
+                self._relocate_row(tid)
+            return
+
         was_enabled = item.get('enabled', True)
         if was_enabled:
             self._srv('pause', tid)
@@ -1074,8 +1093,8 @@ class TaskScheduler(GuiPlugin):
             tframe.pack_forget()
 
         last = time.strftime('%Y-%m-%d %H:%M:%S',
-                             time.localtime(item['last_run'])) \
-               if item['last_run'] else '-'
+                             time.localtime(item['last_fired'])) \
+               if item['last_fired'] else '-'
         stats = [
             f'Last: {last}',
             f'×{item["count"]}',
@@ -1193,7 +1212,7 @@ class TaskScheduler(GuiPlugin):
         id_var = tk.StringVar(value=task_id or '')
         e = self.components.Entry(f, textvariable=id_var, font=self.components.mono_font(9),
                                   bg=s['card'])
-        e.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        e.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=ENTRY_IPADY)
 
         # ---- type ----
         f = self.components.Frame(dlg); f.pack(fill=tk.X, **P)
@@ -1221,7 +1240,7 @@ class TaskScheduler(GuiPlugin):
         every_var = tk.StringVar(value=str(item.get('interval', '')))
         self.components.Entry(every_f, textvariable=every_var,
                               font=self.components.mono_font(9), bg=s['card'],
-                              width=8).pack(side=tk.LEFT, padx=4)
+                              width=8).pack(side=tk.LEFT, padx=4, ipady=ENTRY_IPADY)
 
         every_start_f = self.components.Frame(detail)
         self.components.Label(every_start_f, text=l['form_start_time'],
@@ -1233,7 +1252,7 @@ class TaskScheduler(GuiPlugin):
             if saved_start else '')
         self.components.Entry(every_start_f, textvariable=every_start_var,
                               font=self.components.mono_font(9), bg=s['card'],
-                              width=18).pack(side=tk.LEFT, padx=4)
+                              width=18).pack(side=tk.LEFT, padx=4, ipady=ENTRY_IPADY)
 
         every_picker_btn = self.components.Button(
             every_start_f, text=' 🕐', font=self.components.mono_font(10),
@@ -1289,7 +1308,7 @@ class TaskScheduler(GuiPlugin):
         once_delay_var = tk.StringVar(value=str(item.get('delay', '')))
         self.components.Entry(once_f, textvariable=once_delay_var,
                               font=self.components.mono_font(9), bg=s['card'],
-                              width=18).pack(side=tk.LEFT, padx=4)
+                              width=18).pack(side=tk.LEFT, padx=4, ipady=ENTRY_IPADY)
 
         picker_btn = self.components.Button(
             once_f, text=' 🕐', font=self.components.mono_font(10),
@@ -1371,7 +1390,7 @@ class TaskScheduler(GuiPlugin):
         cron_var = tk.StringVar(value=item.get('cron_expr', ''))
         self.components.Entry(cron_f, textvariable=cron_var,
                               font=self.components.mono_font(9), bg=s['card'],
-                              width=22).pack(side=tk.LEFT, padx=4)
+                              width=22).pack(side=tk.LEFT, padx=4, ipady=ENTRY_IPADY)
 
         cron_preview = self.components.Label(cron_f, text='',
                                              font=self.components.mono_font(7),
@@ -1423,7 +1442,7 @@ class TaskScheduler(GuiPlugin):
                               fg=s['hint'], width=12, anchor='w').pack(side=tk.LEFT)
         fn_var = tk.StringVar(value=item.get('fn_ref', ''))
         self.components.Entry(f, textvariable=fn_var, font=self.components.mono_font(9),
-                              bg=s['card']).pack(side=tk.LEFT, fill=tk.X, expand=True)
+                              bg=s['card']).pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=ENTRY_IPADY)
         # hint aligned with input field
         target_hint_f = self.components.Frame(dlg)
         target_hint_f.pack(fill=tk.X, padx=10, pady=(1, 2))
@@ -1441,7 +1460,7 @@ class TaskScheduler(GuiPlugin):
         saved_args = item.get('args', ())
         args_var = tk.StringVar(value=', '.join(saved_args) if saved_args else '')
         self.components.Entry(f, textvariable=args_var, font=self.components.mono_font(9),
-                              bg=s['card']).pack(side=tk.LEFT, fill=tk.X, expand=True)
+                              bg=s['card']).pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=ENTRY_IPADY)
         args_hint_f = self.components.Frame(dlg)
         args_hint_f.pack(fill=tk.X, padx=10, pady=(0, 2))
         self.components.Label(args_hint_f, text='', font=self.components.mono_font(9),
@@ -1509,10 +1528,10 @@ class TaskScheduler(GuiPlugin):
                                   width=12).pack(side=tk.LEFT)
             self.components.Entry(row, textvariable=key_var,
                                   font=self.components.mono_font(9), bg=s['card'],
-                                  width=12).pack(side=tk.LEFT, padx=(0, 4))
+                                  width=12).pack(side=tk.LEFT, padx=(0, 4), ipady=ENTRY_IPADY)
             self.components.Entry(row, textvariable=val_var,
                                   font=self.components.mono_font(9), bg=s['card']).pack(
-                side=tk.LEFT, fill=tk.X, expand=True)
+                side=tk.LEFT, fill=tk.X, expand=True, ipady=ENTRY_IPADY)
             del_btn = self.components.Button(
                 row, text='✕', font=self.components.mono_font(9),
                 bg=s['bg'], fg=s['danger'], padx=6)
@@ -1551,7 +1570,7 @@ class TaskScheduler(GuiPlugin):
         max_var = tk.StringVar(value=str(item.get('max_runs', '') if item.get('max_runs') else ''))
         self.components.Entry(max_runs_frame, textvariable=max_var,
                               font=self.components.mono_font(9), bg=s['card'],
-                              width=5).pack(side=tk.LEFT, padx=2)
+                              width=5).pack(side=tk.LEFT, padx=2, ipady=ENTRY_IPADY)
 
         timeout_lbl = self.components.Label(opt, text='  Timeout(s)',
                                              font=self.components.mono_font(9),
@@ -1560,7 +1579,7 @@ class TaskScheduler(GuiPlugin):
         timeout_var = tk.StringVar(value=str(item.get('timeout', '') if item.get('timeout') else ''))
         self.components.Entry(opt, textvariable=timeout_var,
                               font=self.components.mono_font(9), bg=s['card'],
-                              width=5).pack(side=tk.LEFT, padx=2)
+                              width=5).pack(side=tk.LEFT, padx=2, ipady=ENTRY_IPADY)
 
         # ---- buttons ----
         bf = self.components.Frame(dlg)

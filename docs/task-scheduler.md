@@ -12,6 +12,7 @@
 | Click row | Expand/collapse execution details |
 | `✎` | Edit task |
 | `⏸` / `▶` | Pause/resume single task |
+| `✓` (done group) | Re-run task (resets counters, keeps history) |
 | `×` | Delete task |
 
 **Columns:** `ID` `Type` `Last Run` `Status`
@@ -161,6 +162,7 @@ tasks@create_cron('daily2', '@daily', 'demo@backup')
 | `tasks@cancel(task_id)` | Delete a task (irreversible) |
 | `tasks@pause(task_id)` | Pause a single task |
 | `tasks@resume(task_id)` | Resume (pause→keeps cadence; failure→resets timer) |
+| `tasks@restart(task_id)` | Re-run a completed task (resets counters/duration, keeps history, rebuilds timing) |
 | `tasks@list()` | List all tasks with status |
 | `tasks@get(task_id)` | Get detailed info for one task |
 
@@ -176,12 +178,18 @@ tasks@create_cron('daily2', '@daily', 'demo@backup')
 
 ## Notification Service (notify)
 
-Built-in popup notifications usable via `fn_ref` in tasks. All types refresh existing windows on repeat calls instead of creating new ones. `text=None` uses built-in i18n defaults.
+Built-in popup notifications usable via `fn_ref` in tasks. `text=None` uses built-in i18n defaults.
 
 - toast: Notice / 新通知
 - popup: Notification / 通知
 - banner: Heads up / 新消息
 - canvas: Hello! / 你好！
+
+**`unique` param (all styles, default `False`):**
+- `unique=False` (default): reuse the same-position window; new notifications overwrite the content. Unset style params fall back to defaults (custom styles do not stick).
+- `unique=True`: create a new window each time — toast/banner stack from the corner (reuse window stays at the base slot, new ones line up; auto reflows on close/height change); popup becomes non-modal; canvas stands alone centered.
+- Stack limits: max 10 per position, total height ≤ 60% of screen — oldest evicted when exceeded.
+- Positioning uses the **work area** (taskbar excluded automatically).
 
 ### notify@toast — Corner notification
 
@@ -192,8 +200,8 @@ Slides in from a screen corner. Click starts a 3-second auto-close countdown.
 | `text` | `None` | Display text |
 | `timeout` | `3` | Auto-close seconds, 0=never |
 | `duration` | `300` | Slide animation duration ms |
-| `position` | `'br'` | `tl`/`tr`/`bl`/`br` |
-| `x`, `y` | `None` | Exact coordinates (overrides position) |
+| `position` | `'br'` | `tl`/`tr`/`bl`/`br`, participates in stacking (each position is its own chain) |
+| `x`, `y` | `None` | Both set = absolute positioning, excluded from stacking (fully caller-controlled) |
 | `width` | `0` | Width, 0=auto |
 | `height` | `0` | Height, 0=auto |
 | `bg` | `#333` | Background |
@@ -202,12 +210,14 @@ Slides in from a screen corner. Click starts a 3-second auto-close countdown.
 
 ```
 notify@toast('Task done', timeout=3, position='br')
+notify@toast('Stacked notice', unique=True)
 notify@toast(bg='#1a8a3a', fg='#fff')
+notify@toast('Fixed position', x=100, y=200)   # absolute, no stacking
 ```
 
 ### notify@popup — Centered dialog
 
-Centered dialog. Close via X button.
+Centered dialog. Click anywhere to dismiss.
 
 | Param | Default | Description |
 |-------|---------|-------------|
@@ -220,10 +230,12 @@ Centered dialog. Close via X button.
 | `bg` | `#2b2b2b` | Background |
 | `fg` | `#e0e0e0` | Text color |
 | `font_size` | `10` | Font size |
+| `unique` | `False` | True = separate window (non-modal, multiple can coexist) |
 
 ```
 notify@popup('Important', title='Warning', timeout=0)
 notify@popup('Service restarted', width=400, height=150)
+notify@popup('Audit message', unique=True)
 ```
 
 ### notify@banner — Top banner
@@ -243,6 +255,7 @@ Full-width strip sliding down from top. Click starts a 3-second auto-close count
 
 ```
 notify@banner('Maintenance in 5 min', timeout=10, bg='#c0392b')
+notify@banner('Multi-line notice', unique=True)   # separate banner, stacks downward
 ```
 
 ### notify@canvas — Decorative pattern
@@ -262,6 +275,7 @@ Canvas-drawn decorative popup. Close via X button.
 | `fg` | `#f0e68c` | Text color |
 | `font_size` | `13` | Font size |
 | `show_time` | `True` | Show timestamp |
+| `unique` | `False` | True = separate window (multiple can coexist) |
 
 **Pattern sizes:** flower(300×360), heart/star/smiley(280×300), sun(300×310)
 
@@ -295,8 +309,9 @@ tasks@create_once('reminder', '14:00', 'notify@popup', kwargs={'text': 'Meeting'
 
 ## Behavior Notes
 
-- **Persistence:** Task configs auto-saved to `~/.uf_toolbox/tasks.json`, restored on restart
-- **Startup:** every tasks reset `last_run` on load to avoid immediate re-trigger
+- **Persistence:** Task configs auto-saved to `~/.uf_toolbox/tasks.json`, restored on restart; each execution is persisted immediately after it completes
+- **Startup:** every tasks keep their timing phase — missed periods are not back-filled and never fire immediately; aligned to the next grid slot (same as pause/resume)
+- **Last Run:** shows the real execution time (`last_fired`); never reset to startup time
 - **Auto-start:** If target plugin is offline, it is started in background and the call retried
 - **Prewarm:** Plugins probed and started 5s before trigger (30s cooldown per namespace)
 - **Timeout:** Counts actual call time only; startup time tracked as `startup_ms`

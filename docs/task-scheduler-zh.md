@@ -12,6 +12,7 @@
 | 点击任务行 | 展开/折叠执行详情 |
 | `✎` | 编辑任务 |
 | `⏸` / `▶` | 暂停/恢复单个任务 |
+| `✓`（完成组） | 重新执行任务（清零执行计数，保留历史） |
 | `×` | 删除任务 |
 
 **列：** `ID` `类型` `上次执行` `状态`
@@ -163,6 +164,7 @@ tasks@create_cron('daily2', '@daily', 'demo@backup')
 | `tasks@cancel(task_id)` | 删除任务（不可恢复） |
 | `tasks@pause(task_id)` | 暂停单个任务（保留调度参数） |
 | `tasks@resume(task_id)` | 恢复单个任务（暂停→保持节奏；失败→重置计时） |
+| `tasks@restart(task_id)` | 完成的任务重新执行（清零计数/时长，保留历史，重建计时） |
 | `tasks@list()` | 列出全部任务状态 |
 | `tasks@get(task_id)` | 获取单个任务详情 |
 
@@ -180,7 +182,13 @@ tasks@create_cron('daily2', '@daily', 'demo@backup')
 
 内置四种弹窗通知样式，可在任务中通过 `fn_ref` 调用。
 
-所有通知 `text` 为 `None` 时使用内置 i18n 默认文案（toast: 新通知/Notice，popup: 通知/Notification，banner: 新消息/Heads up，canvas: 你好！/Hello!）。同类型重复调用刷新现有窗口而非新建。
+所有通知 `text` 为 `None` 时使用内置 i18n 默认文案（toast: 新通知/Notice，popup: 通知/Notification，banner: 新消息/Heads up，canvas: 你好！/Hello!）。
+
+**`unique` 参数（所有样式通用，默认 `False`）：**
+- `unique=False`（默认）：复用同位置窗口，新通知覆盖内容；样式参数未传时回退默认（不继承上次调用的自定义样式）
+- `unique=True`：每次新建独立窗口——toast/banner 从角落按序堆叠（复用窗口恒占基准位，新窗口依次排开，消失/高度变化自动重排补位）；popup 转为非模态；canvas 独立居中
+- toast/banner 堆叠上限：同位置最多 10 个，累计高度不超过屏幕 60%，超出时淘汰最旧窗口
+- 定位基于**工作区**（自动排除任务栏，任意位置/高度都不会被遮挡）
 
 ### notify@toast — 角落通知
 
@@ -191,8 +199,8 @@ tasks@create_cron('daily2', '@daily', 'demo@backup')
 | `text` | `None` | 显示文本 |
 | `timeout` | `3` | 自动关闭秒数，0=不关 |
 | `duration` | `300` | 滑入动画时长 ms |
-| `position` | `'br'` | `tl`/`tr`/`bl`/`br` |
-| `x`, `y` | `None` | 精确坐标，设了则忽略 position |
+| `position` | `'br'` | `tl`/`tr`/`bl`/`br`，参与堆叠（不同位置各自成链） |
+| `x`, `y` | `None` | 同时指定 = 绝对定位，退出堆叠系统（位置完全由调用方控制，不参与重排） |
 | `width` | `0` | 宽度，0=自适应 |
 | `height` | `0` | 高度，0=自适应 |
 | `bg` | `#333` | 背景色 |
@@ -201,12 +209,14 @@ tasks@create_cron('daily2', '@daily', 'demo@backup')
 
 ```
 notify@toast('任务完成', timeout=3, position='br')
+notify@toast('堆叠通知', unique=True)
 notify@toast(bg='#1a8a3a', fg='#fff')
+notify@toast('固定位置', x=100, y=200)   # 绝对定位, 不参与堆叠
 ```
 
 ### notify@popup — 居中弹窗
 
-居中对话框，点击 X 关闭。
+居中对话框，点击任意处关闭。
 
 | 参数 | 默认 | 说明 |
 |------|------|------|
@@ -219,10 +229,12 @@ notify@toast(bg='#1a8a3a', fg='#fff')
 | `bg` | `#2b2b2b` | 背景色 |
 | `fg` | `#e0e0e0` | 文字色 |
 | `font_size` | `10` | 字号 |
+| `unique` | `False` | True = 独立窗口（非模态，多个可同时显示） |
 
 ```
 notify@popup('重要提醒', title='警告', timeout=0)
 notify@popup('服务重启成功', width=400, height=150)
+notify@popup('审计消息', unique=True)
 ```
 
 ### notify@banner — 顶部横幅
@@ -242,6 +254,7 @@ notify@popup('服务重启成功', width=400, height=150)
 
 ```
 notify@banner('系统将在 5 分钟后维护', timeout=10, bg='#c0392b')
+notify@banner('多行通知', unique=True)   # 独立横幅, 依次下叠
 ```
 
 ### notify@canvas — 装饰图案
@@ -261,6 +274,7 @@ Canvas 图案弹窗，点击 X 关闭。
 | `fg` | `#f0e68c` | 文字色 |
 | `font_size` | `13` | 字号 |
 | `show_time` | `True` | 是否显示时间戳 |
+| `unique` | `False` | True = 独立窗口（多个可同时显示） |
 
 **图案尺寸：** flower(300×360)、heart/star/smiley(280×300)、sun(300×310)
 
@@ -294,8 +308,9 @@ tasks@create_once('reminder', '14:00', 'notify@popup', kwargs={'text': '开会�
 
 ## 行为说明
 
-- **持久化：** 任务配置自动保存到 `~/.uf_toolbox/tasks.json`，重启恢复
-- **重启加载：** every 任务重新计时（`last_run = now`），避免启动立刻触发
+- **持久化：** 任务配置自动保存到 `~/.uf_toolbox/tasks.json`，重启恢复；每次执行完成即落盘，执行记录不丢失
+- **重启加载：** every 任务保持原计时相位——停机期间错过的周期不补、不立即触发，按原网格对齐到下一个槽位（与"暂停恢复"一致）
+- **上次执行：** 显示真实执行时间（`last_fired`）；重启不会把它重置为启动时刻
 - **离线自动启动：** 若目标插件未在线，自动后台启动后重试（不弹出窗口）
 - **预启动：** 提前 5 秒探测并拉起离线插件，30 秒内同 namespace 不重复发
 - **超时计时：** `timeout` 只计实际调用耗时，插件启动耗时单独统计（`startup_ms`）

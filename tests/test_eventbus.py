@@ -73,8 +73,15 @@ class TestEmit(unittest.TestCase):
         mod_a = self.bus.module('plugin_a')
         mod_b = self.bus.module('plugin_b')
         r_a, r_b = [], []
-        mod_a.on('timer', lambda *a: r_a.append(a))
-        mod_b.on('plugin_a@timer', lambda *a: r_b.append(a))
+
+        def on_a(*a):
+            r_a.append(a)
+
+        def on_b(*a):
+            r_b.append(a)
+
+        mod_a.on('timer', on_a)
+        mod_b.on('plugin_a@timer', on_b)  # 跨 ns 监听
         mod_a.emit('timer', 42)
         self.assertEqual(r_a, [(42,)])
         self.assertEqual(r_b, [(42,)])
@@ -113,10 +120,15 @@ class TestCleanup(unittest.TestCase):
     def test_cleanup_removes_only_own_scope(self):
         mod_a = self.bus.module('plugin_a')
         mod_b = self.bus.module('plugin_b')
-        cb_a = lambda *_a, **_kw: None
-        cb_b = lambda *_a, **_kw: None
+
+        def cb_a(*_a, **_kw):
+            pass
+
+        def cb_b(*_a, **_kw):
+            pass
+
         mod_a.on('timer', cb_a)
-        mod_b.on('plugin_a@timer', cb_b)
+        mod_b.on('plugin_a@timer', cb_b)  # 跨 ns 监听, cleanup('plugin_a') 不应删除
         self.bus.cleanup('plugin_a')
         self.assertNotIn(cb_a, self.bus._listeners.get('plugin_a@timer', []))
         self.assertIn(cb_b, self.bus._listeners.get('plugin_a@timer', []))

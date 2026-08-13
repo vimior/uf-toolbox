@@ -83,7 +83,7 @@ class TasksService(ServicePlugin):
 
     # Fields preserved across edits
     _PRESERVE_ON_EDIT = ('count', 'errors', 'total_dur', 'avg_dur',
-                         'max_dur', 'history', 'last_run',
+                         'max_dur', 'history', 'last_run', 'last_fired',
                          'created_at')
 
     def __init__(self, app=None):
@@ -107,6 +107,7 @@ class TasksService(ServicePlugin):
         s.register('resume', self._resume)
         s.register('list', self._list)
         s.register('get', self._get)
+        s.register('restart', self._restart)
 
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=8)
         self._load()
@@ -141,14 +142,13 @@ class TasksService(ServicePlugin):
                 data = json.load(f)
         except Exception:
             return
-        now_ts = time.time()
         for tid, t in (data.get('tasks') or {}).items():
             t.setdefault('enabled', True)
             t.pop('firing', None)
             t.pop('dead', None)
             t.pop('failed', None)
-            if t.get('type') == 'every' and not t.get('start_time'):
-                t['last_run'] = now_ts  # reset timer on startup
+            # 不做 last_run 覆盖: _skip_to_now 会对 every 无 start_time 的
+            # 任务对齐到最近过去槽位 (跳过过期周期, 保持原相位, 不立即触发)
             self._tasks[tid] = t
             self._skip_to_now(t)
 
@@ -192,6 +192,7 @@ class TasksService(ServicePlugin):
                         if not (t.get('max_runs') and t['count'] >= t['max_runs']):
                             t['firing'] = True
                             t['last_run'] = now_ts
+                            t['last_fired'] = now_ts
                             fire = True
                 if fire:
                     self._executor.submit(self._fire, task_id)
@@ -406,6 +407,7 @@ class TasksService(ServicePlugin):
             })
             if len(t['history']) > _MAX_HISTORY:
                 t['history'] = t['history'][-_MAX_HISTORY:]
+            self._save()  # 执行结果落盘, 重启后不丢失
 
         if self.root:
             event = 'task_succeeded' if all_ok else 'task_failed'
@@ -478,7 +480,7 @@ class TasksService(ServicePlugin):
                 'max_runs': kw.get('max_runs', 0) or 0,
                 'timeout': kw.get('timeout', 0) or 0,
                 'enabled': True,
-                'last_run': 0, 'count': 0, 'errors': 0,
+                'last_run': 0, 'last_fired': 0, 'count': 0, 'errors': 0,
                 'total_dur': 0.0, 'avg_dur': 0.0, 'max_dur': 0.0,
                 'args': tuple(args), 'kwargs': dict(kwargs or {}),
                 'history': [],
@@ -678,6 +680,31 @@ class TasksService(ServicePlugin):
                 self._save()
         return t is not None
 
+    def _restart(self, task_id):
+        """完成的任务重新执行: 清零执行计数并恢复启用, 重建计时.
+
+        *history* 保留 (历史执行记录不清); once 重新解析 fire_at.
+        """
+        with self._lock:
+            t = self._tasks.get(task_id)
+            if not t:
+                return False
+            t['count'] = 0
+            t['errors'] = 0
+            t['total_dur'] = 0.0
+            t['avg_dur'] = 0.0
+            t['max_dur'] = 0.0
+            t['enabled'] = True
+            t['failed'] = False
+            t['dead'] = False
+            if t.get('type') == 'once':
+                t['fired'] = False
+                t['fire_at'] = self._resolve_once_fire_at(t.get('delay', '0'))
+            else:
+                self._skip_to_now(t)
+            self._save()
+        return True
+
     def _toggle_enabled(self, task_id):
         with self._lock:
             t = self._tasks.get(task_id)
@@ -767,6 +794,7 @@ class TasksService(ServicePlugin):
             'fired': task.get('fired', False),
             'failed': task.get('failed', False),
             'last_run': task.get('last_run', 0),
+            'last_fired': task.get('last_fired', 0),
             'created_at': task.get('created_at', 0),
             'schedule': _schedule_str(task),
             'history': task.get('history', []),

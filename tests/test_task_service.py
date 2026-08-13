@@ -62,7 +62,7 @@ def _mk_task(typ, fn_ref='demo@hello', **kw):
         'max_runs': kw.pop('max_runs', 0) or 0,
         'timeout': kw.pop('timeout', 0) or 0,
         'enabled': True,
-        'last_run': 0, 'count': 0, 'errors': 0,
+        'last_run': 0, 'last_fired': 0, 'count': 0, 'errors': 0,
         'total_dur': 0.0, 'avg_dur': 0.0, 'max_dur': 0.0,
         'history': [],
         'created_at': time.time(),
@@ -469,6 +469,8 @@ class TestBaseTask(unittest.TestCase):
         self.assertTrue(t['enabled'])
         self.assertEqual(t['count'], 0)
         self.assertEqual(t['errors'], 0)
+        self.assertEqual(t['last_fired'], 0)
+        self.assertIn('last_fired', TasksService._PRESERVE_ON_EDIT)
 
     def test_base_extra_fields(self):
         t = TasksService._base('daily', 'd@h', time_str='08:00')
@@ -521,8 +523,14 @@ class TestTaskInfo(unittest.TestCase):
         info = self.svc._task_info('t1', t)
         for key in ('id', 'type', 'fn_ref', 'enabled', 'count', 'errors',
                      'avg_ms', 'max_ms', 'dead', 'firing', 'fired', 'failed',
-                     'last_run', 'created_at', 'schedule', 'history'):
+                     'last_run', 'last_fired', 'created_at', 'schedule',
+                     'history'):
             self.assertIn(key, info, f'missing key: {key}')
+
+    def test_info_last_fired_passthrough(self):
+        t = _mk_task('every', interval=10, last_fired=1234.5)
+        info = self.svc._task_info('t3', t)
+        self.assertEqual(info['last_fired'], 1234.5)
 
     def test_info_values(self):
         t = _mk_task('every', interval=60)
@@ -898,3 +906,119 @@ class TestEveryStartTimeCreation(unittest.TestCase):
         t = self.svc._get('est4')
         self.assertEqual(t['interval'], 20)
         self.assertEqual(t['start_time'], ts)
+
+
+# ---------------------------------------------------------------------------
+# _restart — 完成的任务重新执行
+# ---------------------------------------------------------------------------
+
+class TestRestart(unittest.TestCase):
+
+    def setUp(self):
+        self.svc = TasksService(app=_make_app().module('tasks'))
+
+    def tearDown(self):
+        if hasattr(self.svc, 'on_stop'):
+            self.svc.on_stop()
+
+    def test_restart_registered(self):
+        self.assertTrue(hasattr(self.svc, '_restart'))
+
+    def test_restart_once_rebuilds_fire_at(self):
+        """once 完成 (fired) 但 enabled=True → restart 重建计时."""
+        delay = 30
+        self.svc._once('t1', delay, 'demo@hello')
+        with self.svc._lock:
+            t = self.svc._tasks['t1']
+            t['fired'] = True
+            t['count'] = 1
+        self.assertTrue(self.svc._restart('t1'))
+        t = self.svc._tasks['t1']
+        self.assertFalse(t['fired'])
+        self.assertTrue(t['enabled'])
+        self.assertEqual(t['count'], 0)
+        self.assertAlmostEqual(t['fire_at'], time.time() + delay, delta=1)
+
+    def test_restart_max_runs_resets_counter_keeps_history(self):
+        """max_runs 已满 → 清零执行计数, 历史保留."""
+        self.svc._every('t2', 60, 'demo@hello', max_runs=3)
+        with self.svc._lock:
+            t = self.svc._tasks['t2']
+            t['count'] = 3
+            t['errors'] = 2
+            t['total_dur'] = 3.5
+            t['avg_dur'] = 1.2
+            t['max_dur'] = 2.0
+            t['history'] = [{'at': 1, 'ok': True}]
+            t['enabled'] = False
+        self.assertTrue(self.svc._restart('t2'))
+        t = self.svc._tasks['t2']
+        self.assertTrue(t['enabled'])
+        self.assertEqual(t['count'], 0)
+        self.assertEqual(t['errors'], 0)
+        self.assertEqual(t['total_dur'], 0.0)
+        self.assertEqual(t['avg_dur'], 0.0)
+        self.assertEqual(t['max_dur'], 0.0)
+        self.assertEqual(len(t['history']), 1)  # 历史保留
+
+    def test_restart_every_aligns_timer(self):
+        """every restart 走 _skip_to_now 对齐到最近过去槽位 (保持相位, 不立即触发)."""
+        self.svc._every('t3', 60, 'demo@hello')
+        with self.svc._lock:
+            self.svc._tasks['t3']['last_run'] = time.time() - 999
+        self.svc._restart('t3')
+        t = self.svc._tasks['t3']
+        remaining = (t['last_run'] + 60) - time.time()
+        self.assertGreater(t['last_run'], time.time() - 60)  # 对齐到槽位
+        self.assertGreater(remaining, 0)  # 不立即触发
+
+    def test_restart_nonexistent(self):
+        self.assertFalse(self.svc._restart('ghost'))
+
+    def test_restart_clears_failed(self):
+        self.svc._daily('t4', '08:00', 'demo@hello')
+        with self.svc._lock:
+            self.svc._tasks['t4']['failed'] = True
+            self.svc._tasks['t4']['dead'] = True
+        self.svc._restart('t4')
+        t = self.svc._tasks['t4']
+        self.assertFalse(t['failed'])
+        self.assertFalse(t['dead'])
+        self.assertTrue(t['enabled'])
+
+
+# ---------------------------------------------------------------------------
+# _skip_to_now — every 重启相位保持 (对齐到最近过去槽位)
+# ---------------------------------------------------------------------------
+
+class TestSkipToNowEveryPhase(unittest.TestCase):
+
+    def setUp(self):
+        self.svc = TasksService(app=_make_app().module('tasks'))
+
+    def tearDown(self):
+        if hasattr(self.svc, 'on_stop'):
+            self.svc.on_stop()
+
+    def test_skip_aligns_to_past_slot(self):
+        """停机 3.5 周期 → 跳过 3 个过期周期, 剩 0.5 周期, 不立即触发."""
+        interval = 10.0
+        t = _mk_task('every', interval=interval, last_run=time.time() - 35)
+        self.svc._skip_to_now(t)
+        remaining = (t['last_run'] + interval) - time.time()
+        self.assertAlmostEqual(remaining, 5, delta=1)
+
+    def test_skip_alignment_is_idempotent(self):
+        """连续对齐两次结果一致 (resume 后再对齐不漂移)."""
+        interval = 10.0
+        t = _mk_task('every', interval=interval, last_run=time.time() - 25)
+        self.svc._skip_to_now(t)
+        first = t['last_run']
+        self.svc._skip_to_now(t)
+        self.assertAlmostEqual(t['last_run'], first, delta=0.5)
+
+    def test_skip_never_run_uses_now(self):
+        """从未执行 (last_run=0) → 兜底 now, 不立即触发."""
+        t = _mk_task('every', interval=10, last_run=0)
+        self.svc._skip_to_now(t)
+        self.assertAlmostEqual(t['last_run'], time.time(), delta=1)
