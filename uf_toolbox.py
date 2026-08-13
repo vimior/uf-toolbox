@@ -32,6 +32,9 @@ class UFToolBox(MenuUI, LogUI, SettingsUI, AboutUI, tk.Tk):
         self._icon = None
 
         self.init()
+        # Combobox dropdown styles (must be set BEFORE Combobox creation)
+        self._refresh_tcombobox_style()
+        self.on('theme:changed', self._refresh_tcombobox_style)
 
         # ---------- menu bar ----------
         self._build_menu()
@@ -54,6 +57,7 @@ class UFToolBox(MenuUI, LogUI, SettingsUI, AboutUI, tk.Tk):
         # Trigger initial auto-hide check 5s after startup
         self.after(5000, self._check_auto_hide)
 
+    def _refresh_tcombobox_style(self, name=None):
         self.option_add('*TCombobox*Listbox.highlightThickness', 0)
         self.option_add('*TCombobox*Listbox.borderWidth', 0)
         self.option_add('*TCombobox*Listbox.relief', 'flat')
