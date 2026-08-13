@@ -289,10 +289,13 @@ class PluginStore(GuiPlugin):
                 'installed': installed,
             })
 
-            # 2. 远程获取 (失败不影响已显示的本地列表)
+            # 2. 远程获取 (失败不影响已显示的本地列表);
+            #    传入软件版本, 由 fetch_index 过滤类型/版本不兼容的插件
             data = None
             try:
-                data = PluginRepo.fetch_index(repo_url or None)
+                data = PluginRepo.fetch_index(repo_url or None,
+                                              app_type=self.app.app_type,
+                                              app_version=self.app.app_version)
             except PluginRepoError as e:
                 self._fetch_error = str(e)
             except Exception as e:

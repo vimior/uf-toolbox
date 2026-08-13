@@ -9,7 +9,7 @@ from tkinter import ttk
 
 from themes import DARK_THEME, LIGHT_THEME
 from i18n import ZH, EN
-from .common import logger
+from .common import logger, __version__
 from .infra import Infrastructure
 from .infra.utils import _resolve_name
 from .components import Components
@@ -168,6 +168,14 @@ class AppState:
             pass
 
     # ---- properties ----
+
+    @property
+    def app_type(self):
+        return 'uf-toolbox'
+
+    @property
+    def app_version(self):
+        return __version__
 
     @property
     def theme(self):

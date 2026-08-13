@@ -28,6 +28,21 @@ def _is_absolute_url(url):
     return bool(urlparse(url).scheme)
 
 
+def _parse_version(v):
+    """解析版本号 'x.y.z' → (x, y, z); 兼容 'v1.2.4'/'v1.3' 前缀; 空/非法返回 (0,)"""
+    if not v:
+        return (0,)
+    s = str(v).strip()
+    if s[:1].lower() == 'v':
+        s = s[1:]
+    parts = []
+    for x in s.split('.'):
+        try:
+            parts.append(int(x))
+        except ValueError:
+            break
+    return tuple(parts) or (0,)
+
 # ---- exception ----
 
 class PluginRepoError(Exception):
@@ -43,8 +58,13 @@ class PluginRepo:
     """
 
     @staticmethod
-    def fetch_index(url=None):
-        """HTTP GET 获取插件列表 JSON。"""
+    def fetch_index(url=None, app_type=None, app_version=None):
+        """HTTP GET 获取插件列表 JSON, 并按当前软件过滤不兼容插件。
+
+        *app_type*: 当前软件类型
+        *app_version*: 当前软件版本号; 提供时按类型 + 最低版本兼容性过滤,
+        类型不符或软件版本低于 min_app_version 的插件不会出现在结果中.
+        """
         if url is None:
             url = REPO_INDEX_URL_DEFAULT
         if not url:
@@ -73,7 +93,71 @@ class PluginRepo:
 
         data['_base_url'] = base_url
         data.setdefault('plugins', [])
+        if app_type or app_version:
+            filtered = []
+            for p in data['plugins']:
+                # 外层 type 不兼容 → 直接跳过, 不遍历 versions
+                if not PluginRepo._match_type(p, app_type):
+                    continue
+                resolved = PluginRepo.resolve_version(p, app_version)
+                # 版本级 type 覆盖时以最终条目为准再判一次
+                if resolved is not None and PluginRepo._match_type(resolved, app_type):
+                    filtered.append(resolved)
+            data['plugins'] = filtered
         return data
+
+    @staticmethod
+    def _match_type(pi, app_type):
+        """类型判定: 无 type / '*' / app_type 兼容, 其余不兼容"""
+        ptype = pi.get('type')
+        return ptype in (None, '*', app_type)
+
+    @staticmethod
+    def resolve_version(pi, app_version):
+        """解析插件在当前 app 下可安装的版本。
+
+        多版本 (versions): 选择兼容 app_version 的最高版本, 将其
+        version/url/size_kb/min_app_version/type/description 等字段
+        提升到条目顶层并移除 versions; 版本条目缺省字段保留外层值。
+        无兼容版本返回 None。app_version 为空时不做版本判定, 取最高版本。
+        旧格式 (单版本): 按 min_app_version 判定, 兼容返回原条目, 否则 None。
+        """
+        versions = pi.get('versions')
+        if versions:
+            outer_min = pi.get('min_app_version')   # 默认门槛, 版本项缺省时回退
+            if app_version:
+                ok = [v for v in versions
+                      if not v.get('min_app_version', outer_min)
+                      or _parse_version(app_version)
+                         >= _parse_version(v.get('min_app_version', outer_min))]
+                if not ok:
+                    return None
+                best = max(ok, key=lambda v: _parse_version(v.get('version', '0')))
+            else:
+                best = max(versions, key=lambda v: _parse_version(v.get('version', '0')))
+            out = dict(pi)
+            out.pop('versions', None)
+            # 版本条目可携带 type/description 等覆盖字段, 不存在则保留外层值
+            for k in ('version', 'url', 'size_kb', 'min_app_version',
+                      'type', 'description'):
+                if k in best:
+                    out[k] = best[k]
+            return out
+        min_ver = pi.get('min_app_version')
+        if min_ver and app_version and _parse_version(app_version) < _parse_version(min_ver):
+            return None
+        return pi
+
+    @staticmethod
+    def is_compatible(pi, app_type, app_version):
+        """远程插件条目是否与当前软件兼容: 存在任一兼容版本 + 最终类型匹配
+
+        类型: 无 type / '*' / app_type 兼容, 其余过滤;
+        版本: 多版本取兼容 app 的最高版本, 单版本按 min_app_version 判定.
+        """
+        resolved = PluginRepo.resolve_version(pi, app_version)
+        return (resolved is not None
+                and PluginRepo._match_type(resolved, app_type))
 
     @staticmethod
     def scan_installed(app):
@@ -121,9 +205,7 @@ class PluginRepo:
         if installed_ver is None:
             return 'local'
         remote_ver = remote_info.get('version', '0')
-        iv = tuple(int(x) for x in installed_ver.split('.'))
-        rv = tuple(int(x) for x in remote_ver.split('.'))
-        if iv < rv:
+        if _parse_version(installed_ver) < _parse_version(remote_ver):
             return 'update'
         return 'current'
 
