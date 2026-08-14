@@ -170,7 +170,7 @@ class TaskScheduler(GuiPlugin):
     name_zh = '任务调度器'
     name_en = 'Task Scheduler'
     namespace = 'task_panel'
-    priority = 996
+    priority = 995
     reload = True
     fixed_position = True
     fixed_size = False

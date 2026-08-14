@@ -97,7 +97,7 @@ class Services:
 
     def names(self, ns=None):
         """Return registered service names, optionally filtered by namespace."""
-        if ns is None:
+        if not ns:
             return list(self._services.keys())
         return [k for k, v in self._owners.items() if v == ns]
 

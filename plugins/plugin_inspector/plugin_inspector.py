@@ -35,7 +35,7 @@ class PluginInspector(GuiPlugin):
     name_zh = "插件审查器"
     name_en = "Plugin Inspector"
     namespace = "plugin_inspector"
-    priority = 998
+    priority = 997
     reload = True
     fixed_size = False
 

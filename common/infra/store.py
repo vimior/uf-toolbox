@@ -61,7 +61,7 @@ class Store:
 
     def keys(self, ns=None):
         """Return all keys, optionally filtered by namespace."""
-        if ns is None:
+        if not ns:
             return list(self._state.keys())
         return [k for k, v in self._owners.items() if v == ns]
 

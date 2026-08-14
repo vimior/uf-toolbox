@@ -8,6 +8,8 @@ import threading
 import functools
 from .utils import _callback_name, _resolve_name
 
+_SELF = object()  # sentinel: "show my own"
+
 
 class EventBus:
     """Publish-subscribe event system — on / off / emit / clear.
@@ -129,6 +131,8 @@ class EventBus:
             return
         # Obtain the final callback
         callback = listeners.pop(index)
+        if not listeners:
+            self._listeners.pop(event, None)
         if self._perf:
             self._perf.unregister_cb(callback)
         self._cb_since.pop(id(callback), None)
@@ -229,6 +233,15 @@ class EventBus:
         """Remove all listeners registered under namespace *ns*."""
         for event, callback in self._namespaced.pop(ns, []):
             self.off(event, callback)
+
+    # ---- queries ----
+
+    def events(self, ns=None):
+        """Return all event names with listeners, optionally filtered by namespace."""
+        if not ns:
+            return list(self._listeners.keys())
+        prefix = ns + '@'
+        return [e for e in self._listeners if e.startswith(prefix)]
 
     # ---- snapshot ----
 
@@ -354,11 +367,13 @@ class _EventBusModule:
     def clear(self, event):
         self._bus.clear(event, ns=self._ns)
 
+    def events(self, ns=_SELF):
+        """Return event names, filtered by namespace.  Defaults to this module's own."""
+        ns = self._ns if ns is _SELF else ns
+        return self._bus.events(ns=ns)
+
     def cleanup(self):
         self._bus.cleanup(self._ns)
 
     def snapshot(self):
         return self._bus.snapshot(ns=self._ns)
-
-    def __getattr__(self, name):
-        return getattr(self._bus, name)

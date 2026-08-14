@@ -110,6 +110,53 @@ class TestOff(unittest.TestCase):
         mod.off('plugin_a@data_ready', cb)
         self.assertNotIn(cb, self.bus._listeners.get('plugin_a@data_ready', []))
 
+    def test_off_last_listener_removes_event(self):
+        mod = self.bus.module('plugin_a')
+        cb = lambda *_a, **_kw: None
+        mod.on('timer', cb)
+        mod.off('timer', cb)
+        self.assertNotIn('plugin_a@timer', self.bus._listeners)
+        self.assertNotIn('plugin_a@timer', self.bus.events())
+
+    def test_off_keeps_emit_meta_in_snapshot(self):
+        mod = self.bus.module('plugin_a')
+        cb = lambda *_a, **_kw: None
+        mod.on('timer', cb)
+        mod.emit('timer', 42)
+        mod.off('timer', cb)
+        snap = self.bus.snapshot()
+        self.assertIn('plugin_a@timer', snap['events'])
+        self.assertEqual(snap['events']['plugin_a@timer']['count'], 1)
+        self.assertEqual(snap['events']['plugin_a@timer']['callbacks'], [])
+
+
+class TestEvents(unittest.TestCase):
+    """events() — list event names, module layer defaults to own ns."""
+
+    def setUp(self):
+        self.bus = EventBus()
+
+    def test_events_all(self):
+        cb = lambda *_a, **_kw: None
+        self.bus.module('plugin_a').on('timer', cb)
+        self.bus.module('plugin_b').on('ready', cb)
+        self.assertEqual(set(self.bus.events()), {'plugin_a@timer', 'plugin_b@ready'})
+
+    def test_events_filtered_by_ns(self):
+        cb = lambda *_a, **_kw: None
+        self.bus.module('plugin_a').on('timer', cb)
+        self.bus.module('plugin_b').on('ready', cb)
+        self.assertEqual(self.bus.events(ns='plugin_a'), ['plugin_a@timer'])
+
+    def test_module_events_defaults_to_own_ns(self):
+        cb = lambda *_a, **_kw: None
+        mod_a = self.bus.module('plugin_a')
+        mod_a.on('timer', cb)
+        self.bus.module('plugin_b').on('ready', cb)
+        self.assertIn('plugin_a@timer', mod_a.events())
+        self.assertNotIn('plugin_b@ready', mod_a.events())
+        self.assertIn('plugin_b@ready', mod_a.events(ns=None))
+
 
 class TestCleanup(unittest.TestCase):
     """EventBus.cleanup — only removes own namespace entries."""
