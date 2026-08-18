@@ -728,8 +728,8 @@ class TaskScheduler(GuiPlugin):
     def _export_tasks(self):
         tasks = self._all_tasks()
         if not tasks:
-            self.components.showinfo(self, self._l['export_tasks'],
-                                     self._l['no_tasks'])
+            self.components.showinfo(self._l['export_tasks'],
+                                     self._l['no_tasks'], parent=self)
             return
 
         dlg = self.components.Toplevel(self)
@@ -777,7 +777,7 @@ class TaskScheduler(GuiPlugin):
                                   f, ensure_ascii=False, indent=2)
                     dlg.destroy()
                 except Exception as e:
-                    self.components.showerror(self, 'Error', str(e))
+                    self.components.showerror('Error', str(e), parent=self)
 
         # top bar: select-all + save button
         top_bar = self.components.Frame(dlg)
@@ -823,7 +823,7 @@ class TaskScheduler(GuiPlugin):
             with open(path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
         except Exception as e:
-            self.components.showerror(self, 'Error', str(e))
+            self.components.showerror('Error', str(e), parent=self)
             return
 
         items = data.get('tasks', data) if isinstance(data, dict) else data
@@ -908,8 +908,8 @@ class TaskScheduler(GuiPlugin):
 
         self._sync_display(rebuild=True)
         self.components.showinfo(
-            self, self._l['import_tasks'],
-            f'导入 {added} 个任务，跳过 {skipped} 个')
+            self._l['import_tasks'],
+            f'导入 {added} 个任务，跳过 {skipped} 个', parent=self)
 
     def _sync_display(self, rebuild=False):
         """Incrementally sync the display with the current task list.

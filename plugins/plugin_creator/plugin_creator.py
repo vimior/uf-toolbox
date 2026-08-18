@@ -487,17 +487,17 @@ class PluginCreator(GuiPlugin):
         name = self._name_var.get().strip()
 
         if not pkg or not cls or not name:
-            self.components.showwarn(self, l['err_title'], l['required'])
+            self.components.showwarning(l['err_title'], l['required'], parent=self)
             return
 
         # Validate package name: must be a valid Python identifier
         if not pkg.isidentifier():
-            self.components.showwarn(self, l['err_title'], l['invalid_pkg'])
+            self.components.showwarning(l['err_title'], l['invalid_pkg'], parent=self)
             return
 
         # Validate class name: PascalCase
         if not re.match(r'^[A-Z][a-zA-Z0-9_]*$', cls):
-            self.components.showwarn(self, l['err_title'], l['invalid_cls'])
+            self.components.showwarning(l['err_title'], l['invalid_cls'], parent=self)
             return
 
         # Validate priority
@@ -505,10 +505,10 @@ class PluginCreator(GuiPlugin):
         try:
             priority = int(prio_str) if prio_str else 0
         except ValueError:
-            self.components.showwarn(self, l['err_title'], l['invalid_priority'])
+            self.components.showwarning(l['err_title'], l['invalid_priority'], parent=self)
             return
         if not (0 <= priority <= 100):
-            self.components.showwarn(self, l['err_title'], l['invalid_priority'])
+            self.components.showwarning(l['err_title'], l['invalid_priority'], parent=self)
             return
 
         # Resolve target directory
@@ -516,7 +516,8 @@ class PluginCreator(GuiPlugin):
 
         # Check if already exists
         if os.path.exists(target_dir):
-            self.components.showwarn(self, l['err_title'], l['exists'].format(target_dir))
+            self.components.showwarning(
+                l['err_title'], l['exists'].format(target_dir), parent=self)
             return
 
         # Gather common values
@@ -530,7 +531,7 @@ class PluginCreator(GuiPlugin):
         try:
             os.makedirs(target_dir)
         except OSError as e:
-            self.components.showerror(self, l['err_title'], str(e))
+            self.components.showerror(l['err_title'], str(e), parent=self)
             return
 
         # Write __init__.py
@@ -586,8 +587,8 @@ class PluginCreator(GuiPlugin):
         with open(module_path, 'w', encoding='utf-8') as f:
             f.write(module_content)
 
-        self.components.showinfo(self, l['ok_title'],
-                          l['success'].format(target_dir, cls))
+        self.components.showinfo(l['ok_title'],
+                          l['success'].format(target_dir, cls), parent=self)
         # self.destroy()
 
     def on_destroy(self):

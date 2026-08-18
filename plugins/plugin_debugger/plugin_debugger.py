@@ -271,14 +271,14 @@ class PluginDebugger(GuiPlugin):
 
         # ---- input line ----
         bottom = self.components.Frame(self, bg=t['bar'])
-        bottom.pack(fill=tk.X, padx=8, pady=8)
+        bottom.pack(fill=tk.X, padx=8, pady=6)
         self._prompt_label = self.components.Label(
-            bottom, text='>>> ', font=self.components.mono_font(10),
+            bottom, text='>>> ', font=self.components.mono_font(11),
             bg=t['bar'], fg=t['hint'], padx=0)
         self._prompt_label.pack(side=tk.LEFT)
         self._entry = self.components.Entry(
-            bottom, font=self.components.mono_font(10))
-        self._entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=3)
+            bottom, font=self.components.mono_font(11))
+        self._entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=4)
         self._entry.bind('<Return>', self._on_submit)
         self._entry.bind('<Up>', self._on_hist)
         self._entry.bind('<Down>', self._on_hist)

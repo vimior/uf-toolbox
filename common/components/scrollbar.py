@@ -75,6 +75,8 @@ class AutoHideScrollbar(tk.Scrollbar):
         # 当内容完全可见时（first为0，last为1），隐藏滚动条，
         # 并释放 master 的右 padx — 内容扩展到滚动条原位置（宽度不浪费）。
         visible = float(first) <= 0.0 and float(last) >= 1.0
+        if not self.winfo_exists():
+            return  # 如果已销毁，直接退出，不再执行后续逻辑
         if visible:
             if self.winfo_manager():
                 self.pack_forget()

@@ -801,7 +801,7 @@ class PluginStore(GuiPlugin):
             msg = lbl['delete_confirm'].format(
                 name, f' v{ver}' if ver else '')
 
-        if not self.components.askyesno(self, lbl['delete_title'], msg):
+        if not self.components.askyesno(lbl['delete_title'], msg, parent=self):
             return
         self._do_delete(namespace)
 
@@ -812,7 +812,7 @@ class PluginStore(GuiPlugin):
             if os.path.isdir(plugin_dir):
                 shutil.rmtree(plugin_dir)
         except Exception as e:
-            self.components.showerror(self, self._lbl['delete'], f"删除失败: {e}")
+            self.components.showerror(self._lbl['delete'], f"删除失败: {e}", parent=self)
             return
 
         # 按需更新: 只同步该插件卡片 (移除/变回可安装), 不 fetch 远程.
@@ -827,8 +827,9 @@ class PluginStore(GuiPlugin):
         name = plugin_info.get('name', '?')
         ver = plugin_info.get('version', '')
 
-        if not self.components.askyesno(self, lbl['confirm_title'],
-                                        lbl['confirm_overwrite'].format(name, ver)):
+        if not self.components.askyesno(lbl['confirm_title'],
+                                        lbl['confirm_overwrite'].format(name, ver),
+                                        parent=self):
             return
 
         self._do_install(plugin_info)
@@ -891,8 +892,9 @@ class PluginStore(GuiPlugin):
         name = plugin_info.get('name', '?')
         lbl = self._lbl
 
-        if not self.components.askyesno(self, lbl['confirm_title'],
-                                        lbl['confirm_install'].format(name)):
+        if not self.components.askyesno(lbl['confirm_title'],
+                                        lbl['confirm_install'].format(name),
+                                        parent=self):
             return
 
         self._do_install(plugin_info)
@@ -903,8 +905,9 @@ class PluginStore(GuiPlugin):
         lbl = self._lbl
 
         if not self.components.askyesno(
-                self, lbl['confirm_title'],
-                lbl['confirm_update'].format(name, installed_ver, remote_ver)):
+                lbl['confirm_title'],
+                lbl['confirm_update'].format(name, installed_ver, remote_ver),
+                parent=self):
             return
 
         self._do_install(plugin_info)
@@ -973,5 +976,5 @@ class PluginStore(GuiPlugin):
         # 按需更新该插件卡片 (成功变"已安装", 失败恢复原状态), 不 fetch 远程
         self._sync_plugins([namespace])
         if error:
-            self.components.showerror(self, self._lbl['install_failed'], error)
+            self.components.showerror(self._lbl['install_failed'], error, parent=self)
         # 成功: 卡片进度 → "已安装"状态即反馈, 不弹窗

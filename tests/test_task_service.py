@@ -321,7 +321,10 @@ class TestSkipToNow(unittest.TestCase):
 
     def test_skip_daily_not_yet(self):
         now = datetime.now()
-        h, m = (now.hour + 1) % 24, now.minute
+        if now.hour == 23:
+            # 23 点后"未来一小时"跨天, 任务时间会落在今天已过的 00:xx — 场景不成立
+            self.skipTest('23:00+ has no future hour within today')
+        h, m = now.hour + 1, now.minute
         t = _mk_task('daily', time_str=f'{h:02d}:{m:02d}:00')
         self.svc._skip_to_now(t)
         self.assertNotIn('last_day', t)
@@ -676,7 +679,10 @@ class TestResolveStartTime(unittest.TestCase):
     def test_time_str_past_stays_today(self):
         """Past time string resolves to today (anchors are valid in the past)."""
         now = datetime.now()
-        h = (now.hour - 2) % 24
+        if now.hour < 2:
+            # 凌晨 0-1 点: 今天不存在"过去 2 小时"的时刻, 场景不成立
+            self.skipTest('midnight boundary: no past hour within today')
+        h = now.hour - 2
         at = TasksService._resolve_start_time(f'{h:02d}:00')
         expected = now.replace(hour=h, minute=0, second=0, microsecond=0).timestamp()
         self.assertAlmostEqual(at, expected, delta=1)

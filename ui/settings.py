@@ -209,10 +209,10 @@ class SettingsUI(AppState, tk.Tk):
                     or cur_plugin != self._orig_plugin
                     or cur_repo != self._orig_repo):
                 answer = self.components.askyesnocancel(
-                    win, l['config_title'], l['config_unsaved_msg'])
+                    l['config_title'], l['config_unsaved_msg'], parent=win)
                 if answer is None:
                     return
-                if answer == 'yes':
+                if answer is True:
                     self._save_config_fields(cur_tool, cur_plugin, cur_repo, win)
                     return
             win.destroy()

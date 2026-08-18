@@ -21,11 +21,12 @@ class AppToplevel(tk.Toplevel):
     手动设置图标.
     """
 
-    def __init__(self, master=None, app=None, **kwargs):
+    def __init__(self, master=None, cnf={}, app=None, **kwargs):
         self._app = app
         if app is not None:
             d = dict(app.theme.get('Toplevel', {}))
-            d.update(kwargs)  # 调用方参数覆盖主题默认
+            d.update(cnf)      # cnf 位置参数（原生用法）
+            d.update(kwargs)   # 调用方参数覆盖主题默认
             kwargs = d
         super().__init__(master, **kwargs)
         # self.geometry('+{}+{}'.format(-9999, -9999))
