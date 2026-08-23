@@ -379,7 +379,7 @@ class Components:
                 # 次按钮: 对话框底色 + 细描边
                 btn = self.Button(btn_frame, text=self._btn_text(b),
                                   command=lambda r=b: finish(r),
-                                  bg=s['card'], fg=s['fg'],
+                                  bg=s['sep'] if i != 0 else s['card'], fg=s['fg'],
                                   highlightbackground=s['sep'],
                                   highlightthickness=1)
             if b == default:

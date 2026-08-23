@@ -17,27 +17,9 @@
     {
       "id": "system/terminal", "name": "终端", "name_en": "Terminals",
       "tools": [
-        {
-          "id": "cmd", "name": "命令提示符", "name_en": "Command Prompt",
-          "tools": [
-            { "id": "cmd", "name": "运行", "name_en": "Run", "path": "cmd.exe", "shell": true, "console": true },
-            { "id": "cmd_admin", "name": "管理员运行", "name_en": "Run as Admin", "path": "cmd.exe", "shell": true, "console": true, "run_as_admin": true }
-          ]
-        },
-        {
-          "id": "powershell", "name": "PowerShell", "name_en": "PowerShell",
-          "tools": [
-            { "id": "powershell", "name": "运行", "name_en": "Run", "path": "powershell.exe", "shell": true, "console": true },
-            { "id": "powershell_admin", "name": "管理员运行", "name_en": "Run as Admin", "path": "powershell.exe", "shell": true, "console": true, "run_as_admin": true }
-          ]
-        },
-        {
-          "id": "wt", "name": "Windows 终端", "name_en": "Windows Terminal",
-          "tools": [
-            { "id": "wt", "name": "运行", "name_en": "Run", "path": "wt.exe", "shell": true, "console": true },
-            { "id": "wt_admin", "name": "管理员运行", "name_en": "Run as Admin", "path": "wt.exe", "shell": true, "console": true, "run_as_admin": true }
-          ]
-        }
+        { "id": "cmd", "name": "命令提示符", "name_en": "Command Prompt", "path": "cmd.exe", "shell": true, "console": true, "privilege_level": "both" },
+        { "id": "powershell", "name": "PowerShell", "name_en": "PowerShell", "path": "powershell.exe", "shell": true, "console": true, "privilege_level": "both" },
+        { "id": "wt", "name": "Windows 终端", "name_en": "Windows Terminal", "path": "wt.exe", "shell": true, "console": true, "privilege_level": "both" }
       ]
     },
     {
@@ -77,62 +59,14 @@
         {
           "id": "management", "name": "管理工具", "name_en": "Management",
           "tools": [
-            {
-              "id": "devmgmt", "name": "设备管理器", "name_en": "Device Manager",
-              "tools": [
-                { "id": "devmgmt", "name": "运行", "name_en": "Run", "path": "devmgmt.msc", "shell": true },
-                { "id": "devmgmt_admin", "name": "管理员运行", "name_en": "Run as Admin", "path": "devmgmt.msc", "shell": true, "run_as_admin": true }
-              ]
-            },
-            {
-              "id": "eventvwr", "name": "事件查看器", "name_en": "Event Viewer",
-              "tools": [
-                { "id": "eventvwr", "name": "运行", "name_en": "Run", "path": "eventvwr.msc", "shell": true },
-                { "id": "eventvwr_admin", "name": "管理员运行", "name_en": "Run as Admin", "path": "eventvwr.msc", "shell": true, "run_as_admin": true }
-              ]
-            },
-            {
-              "id": "taskschd", "name": "任务计划器", "name_en": "Task Scheduler",
-              "tools": [
-                { "id": "taskschd", "name": "运行", "name_en": "Run", "path": "taskschd.msc", "shell": true },
-                { "id": "taskschd_admin", "name": "管理员运行", "name_en": "Run as Admin", "path": "taskschd.msc", "shell": true, "run_as_admin": true }
-              ]
-            },
-            {
-              "id": "diskmgmt", "name": "磁盘管理", "name_en": "Disk Management",
-              "tools": [
-                { "id": "diskmgmt", "name": "运行", "name_en": "Run", "path": "diskmgmt.msc", "shell": true },
-                { "id": "diskmgmt_admin", "name": "管理员运行", "name_en": "Run as Admin", "path": "diskmgmt.msc", "shell": true, "run_as_admin": true }
-              ]
-            },
-            {
-              "id": "compmgmt", "name": "计算机管理", "name_en": "Computer Management",
-              "tools": [
-                { "id": "compmgmt", "name": "运行", "name_en": "Run", "path": "compmgmt.msc", "shell": true },
-                { "id": "compmgmt_admin", "name": "管理员运行", "name_en": "Run as Admin", "path": "compmgmt.msc", "shell": true, "run_as_admin": true }
-              ]
-            },
-            {
-              "id": "lusrmgr", "name": "本地用户和组", "name_en": "Local Users",
-              "tools": [
-                { "id": "lusrmgr", "name": "运行", "name_en": "Run", "path": "lusrmgr.msc", "shell": true },
-                { "id": "lusrmgr_admin", "name": "管理员运行", "name_en": "Run as Admin", "path": "lusrmgr.msc", "shell": true, "run_as_admin": true }
-              ]
-            },
-            {
-              "id": "services", "name": "服务", "name_en": "Services",
-              "tools": [
-                { "id": "services", "name": "运行", "name_en": "Run", "path": "services.msc", "shell": true },
-                { "id": "services_admin", "name": "管理员运行", "name_en": "Run as Admin", "path": "services.msc", "shell": true, "run_as_admin": true }
-              ]
-            },
-            {
-              "id": "regedit", "name": "注册表编辑器", "name_en": "Registry Editor",
-              "tools": [
-                { "id": "regedit", "name": "运行", "name_en": "Run", "path": "regedit.exe" },
-                { "id": "regedit_admin", "name": "管理员运行", "name_en": "Run as Admin", "path": "regedit.exe", "run_as_admin": true }
-              ]
-            }
+            { "id": "devmgmt", "name": "设备管理器", "name_en": "Device Manager", "path": "devmgmt.msc", "shell": true, "privilege_level": "both" },
+            { "id": "eventvwr", "name": "事件查看器", "name_en": "Event Viewer", "path": "eventvwr.msc", "shell": true, "privilege_level": "both" },
+            { "id": "taskschd", "name": "任务计划器", "name_en": "Task Scheduler", "path": "taskschd.msc", "shell": true, "privilege_level": "both" },
+            { "id": "diskmgmt", "name": "磁盘管理", "name_en": "Disk Management", "path": "diskmgmt.msc", "shell": true, "privilege_level": "both" },
+            { "id": "compmgmt", "name": "计算机管理", "name_en": "Computer Management", "path": "compmgmt.msc", "shell": true, "privilege_level": "both" },
+            { "id": "lusrmgr", "name": "本地用户和组", "name_en": "Local Users", "path": "lusrmgr.msc", "shell": true, "privilege_level": "both" },
+            { "id": "services", "name": "服务", "name_en": "Services", "path": "services.msc", "shell": true, "privilege_level": "both" },
+            { "id": "regedit", "name": "注册表编辑器", "name_en": "Registry Editor", "path": "regedit.msc", "shell": true, "privilege_level": "both" }
           ]
         }
       ]

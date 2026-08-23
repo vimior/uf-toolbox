@@ -24,6 +24,7 @@ import sys
 import math
 import time
 import tkinter as tk
+from typing import Literal
 
 if sys.platform == 'win32':
     import ctypes
@@ -743,6 +744,8 @@ class NotifyService(ServicePlugin):
         s.register('canvas', self._canvas)
         self._bind_wakeup()
 
+        self.register_agent_tools()
+
     # -- helpers --
     _STYLES = {'toast': _Toast, 'popup': _Popup,
                'banner': _Banner, 'canvas': _Canvas}
@@ -955,3 +958,62 @@ class NotifyService(ServicePlugin):
                 pass
         self._popups.clear()
         self._unique_windows.clear()
+
+    # -- Agent ---------------------------------------------------------
+    
+    def register_agent_tools(self):
+        # 惰性 import — 保持模块 standalone
+        from plugins.ai_assistant.core.registry import registry as agent_registry
+        agent_registry.register('notify_operation', fn=self.agent_notify)
+
+    def agent_notify(self,
+        action: Literal['toast', 'popup', 'banner', 'canvas'],
+        text: str = None,
+        title: str = None,
+        timeout: float = None,
+        width: int = None,
+        height: int = None,
+        bg: str = None,
+        fg: str = None,
+        font_size: int = None,
+        position: Literal['br', 'bl', 'tr', 'tl'] = None,
+        pattern: Literal['flower', 'heart', 'star', 'sun',
+                        'smiley'] = None,
+        duration: int = None,
+        x: int = None,
+        y: int = None,
+        show_time: bool = None,
+        unique: bool = None):
+        """
+        发布系统通知: toast=角落滑出小卡片(轻量提示); popup=居中弹窗(点击关闭); banner=顶部全宽横幅; canvas=带图案的居中卡片
+
+        action: 通知形式
+        text: 正文, 省略用默认文案
+        title: 窗口标题, 仅popup/canvas
+        timeout: 自动关闭秒数, 0=不关闭; 省略用默认(toast 3秒, banner 5秒, popup/canvas不关闭)
+        width: 宽度px, 省略自适应
+        height: 高度px, 省略自适应
+        bg: 背景色, 如#2b2b2b
+        fg: 文字颜色, 如#ffffff
+        font_size: 字体大小
+        position: 弹出角落, 仅toast: br=右下(默认), bl=左下, tr=右上, tl=左上
+        pattern: 图案, 仅canvas
+        duration: 滑入动画毫秒, 仅toast/banner(默认300/400)
+        x: 左上角横坐标px, 与y同用; popup/canvas默认居中
+        y: 左上角纵坐标px
+        show_time: 显示时间戳, 默认True
+        unique: True=独立窗口堆叠, False=覆盖上一条(默认)
+        """
+        fn = {'toast': self._toast, 'popup': self._popup,
+                'banner': self._banner, 'canvas': self._canvas}.get(action)
+        if fn is None:
+            return False
+        kw = {
+            'text': text, 'title': title, 'timeout': timeout,
+            'width': width, 'height': height, 'bg': bg, 'fg': fg,
+            'font_size': font_size, 'position': position,
+            'pattern': pattern, 'duration': duration, 'x': x, 'y': y,
+            'show_time': show_time, 'unique': unique}
+        fn(**{k: v for k, v in kw.items() if v is not None})
+        return True
+    

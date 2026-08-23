@@ -14,6 +14,8 @@ tracebacks), 'sys' (timing / reset notices), 'magic' (magic output).
 """
 import code
 import time
+import queue
+import threading
 import tkinter as tk
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
@@ -288,6 +290,46 @@ class PluginDebugger(GuiPlugin):
         self._write_prelude()
         self.app.emit('app@window:set-geometry', self, w=720, h=520)
 
+        self._in_quque = queue.Queue() # input
+        self._out_quque = queue.Queue() # output
+        self._poll_queue()
+        self._console_t = threading.Thread(target=self._console_thread_loop, daemon=True)
+        self._console_t.start()
+
+    def _console_thread_loop(self):
+        while self.winfo_exists():
+            try:
+                if self._in_quque.empty():
+                    time.sleep(0.1)
+                    continue
+                msg = self._in_quque.get_nowait()
+                if msg:
+                    t0 = time.perf_counter()
+                self._more = self._console.push(msg)
+                if msg and not self._more:
+                    elapsed = (time.perf_counter() - t0) * 1000
+                    self._out_quque.put(f'[{elapsed:.1f} ms]\n')
+            except Exception as e:
+                print(e)
+                self._out_quque.put([str(e), 'err'])
+            time.sleep(0.01)
+
+    def _poll_queue(self):
+        try:
+            if not self.winfo_exists():
+                return
+            while True:
+                msg = self._out_quque.get_nowait()
+                if msg and isinstance(msg, (str, list)):
+                    if isinstance(msg, str):
+                        self._write(msg, 'sys')
+                    elif len(msg):
+                        self._write(msg[0], 'sys' if len(msg) == 1 else msg[1])
+                self._echo_prompt()
+        except:
+            pass
+        self.after(100, self._poll_queue)
+
     # ---- output helpers ----
 
     def _write(self, data, tag='out'):
@@ -341,8 +383,9 @@ class PluginDebugger(GuiPlugin):
                 # blank line finishes a pending compound statement
                 # (for/def blocks execute only after an empty line,
                 # same as the native REPL)
-                self._more = self._console.push('')
-                self._echo_prompt()
+                # self._more = self._console.push('')
+                # self._echo_prompt()
+                self._in_quque.put('')
             return 'break'
         self._history.append(source)
         self._hist_idx = -1
@@ -359,13 +402,15 @@ class PluginDebugger(GuiPlugin):
             self._write(self._l['exit_hint'] + '\n', 'sys')
             return 'break'
 
-        t0 = time.perf_counter()
-        # push() buffers continuation lines and re-runs the whole block
-        self._more = self._console.push(source)
-        if not self._more:
-            elapsed = (time.perf_counter() - t0) * 1000
-            self._write(f'[{elapsed:.1f} ms]\n', 'sys')
-        self._echo_prompt()
+        self._in_quque.put(source)
+
+        # t0 = time.perf_counter()
+        # # push() buffers continuation lines and re-runs the whole block
+        # self._more = self._console.push(source)
+        # if not self._more:
+        #     elapsed = (time.perf_counter() - t0) * 1000
+        #     self._write(f'[{elapsed:.1f} ms]\n', 'sys')
+        # self._echo_prompt()
         return 'break'
 
     def _on_hist(self, event):

@@ -3,8 +3,11 @@
 import ast
 import os
 import sys
+import time
 import pkgutil
+import threading
 import importlib.util
+from typing import Literal
 
 from plugins.plugin import GuiPlugin, HookInfo, ServicePlugin
 
@@ -12,7 +15,7 @@ NS = 'plugins'
 
 
 class NamespaceManager:
-    _RESERVED = set(['app', NS, 'services'])
+    _RESERVED = set(['app', NS, 'services', 'tasks', 'agent', 'notify'])
     _USED = set([])
 
     @classmethod
@@ -38,6 +41,10 @@ class NamespaceManager:
     def update(cls, ns_used):
         if ns_used != cls._USED:
             cls._USED = ns_used
+
+    @classmethod
+    def is_reserved(cls, ns):
+        return ns in cls._RESERVED
 
 
 class PluginManager:
@@ -68,7 +75,7 @@ class PluginManager:
                      '_cls', 'app', '_inst', '_pkg_dir', '_module_name',
                      '_class_name', '_mgr', '_shown',
                      '_name_raw', '_name_zh', '_name_en', '_src_mtime', '_key',
-                     '_namespace', '_builtin')
+                     '_namespace', '_builtin', '_agent_tools', '_last_error')
 
         def __init__(self, cls, app, mgr, pkg_dir=None, module_name=None,
                      class_name=None, metadata=None, key=None, builtin=False):
@@ -87,9 +94,12 @@ class PluginManager:
             self._src_mtime = 0
             self._key = key
             self._namespace = None
+            self._agent_tools = None
+            self._last_error = None   # 最近一次 start 失败原因 (供 agent 回显)
 
             if cls is not None:
                 # Eager — class attributes are available directly
+                self._agent_tools = getattr(cls, 'agent_tools', None)
                 self._name_raw = cls.name
                 self._name_zh = getattr(cls, 'name_zh', None)
                 self._name_en = getattr(cls, 'name_en', None)
@@ -110,6 +120,7 @@ class PluginManager:
             else:
                 # Lazy — use metadata from AST parsing (or defaults)
                 meta = metadata or {}
+                self._agent_tools = meta.get('agent_tools')
                 self._name_raw = meta.get('name') or module_name or 'Unnamed'
                 self._name_zh = meta.get('name_zh')
                 self._name_en = meta.get('name_en')
@@ -318,6 +329,7 @@ class PluginManager:
             cls = self._mgr._import_class(
                 self._pkg_dir, self._module_name, self._class_name)
             if cls is None:
+                self._last_error = '模块导入失败'
                 self._mgr.logger.warning(
                     f'Plugin {self._module_name} could not be loaded')
                 return False
@@ -394,6 +406,7 @@ class PluginManager:
                             self._cls._hidden_launch = False
                 NamespaceManager.add(self.namespace)
             except Exception as e:
+                self._last_error = str(e)
                 self._mgr.logger.error(
                     f'[Plugin:{name}] init error: {e}')
                 return None
@@ -572,6 +585,35 @@ class PluginManager:
         app.on('auto-start',  self._on_auto_start,   ns=NS)
 
         app.services.register('get_info', self.get_plugin_info, ns=NS)
+        app.services.register('check', self.check_plugin, ns=NS)
+        self.register_agent_tools()
+
+    def check_plugin(self, ns, timeout=None):
+        """
+        检测插件状态(如果不存在会重新扫描一遍)
+        
+        :params ns: 插件命名空间
+        :param timeout: 如果指定了timeout, 当插件存在且不在线时, 就等待插件在线的超时时间
+        :return
+            -1: 不存在
+            0: 存在但不在线
+            1: 在线
+        """
+        if not ns:
+            return -1
+        if NamespaceManager.is_reserved(ns):
+            return 1
+        h = self._resolve_one(ns)
+        if h is None:
+            self.load(self._plugin_path)
+            h = self._resolve_one(ns)
+        if h is not None and timeout is not None and isinstance(timeout, (int, float)) and timeout > 0:
+            expired = time.monotonic() + timeout
+            while time.monotonic() < expired:
+                if h[1].alive:
+                    return 1
+                time.sleep(0.01)
+        return -1 if h is None else 1 if h[1].alive else 0
 
     def _resolve_one(self, target):
         """Look up a single target by namespace or registry key. Returns (key, Handle) or None."""
@@ -641,6 +683,7 @@ class PluginManager:
         in the background.  Each entry is a (import_path, class_name, namespace) tuple.
         """
         BUILTIN_SERVICES = [
+            ('plugins.ai_assistant.agent_service', 'AgentService', 'agent'),
             ('plugins.task_scheduler.task_service', 'TasksService', 'tasks'),
             ('plugins.task_scheduler.notify_service', 'NotifyService', 'notify'),
         ]
@@ -650,6 +693,7 @@ class PluginManager:
                 mod = __import__(import_path, fromlist=[class_name])
                 cls = getattr(mod, class_name)
                 svc = cls(app=self._ctrl_app.module(namespace))
+                svc.on_start()
                 NamespaceManager.add(namespace, True)
                 self._builtin_instances.append(svc)
                 self.logger.info('[PluginManager] built-in service started: %s', class_name)
@@ -722,6 +766,13 @@ class PluginManager:
                         if isinstance(target, ast.Name) and target.id in PluginManager.META_KEYS:
                             if isinstance(item.value, ast.Constant):
                                 metadata[target.id] = item.value.value
+                        elif isinstance(target, ast.Name) and target.id == 'agent_tools':
+                            # 能力声明: agent_tools = {纯字面量 dict} —
+                            # 坏声明跳过, 不影响插件加载
+                            try:
+                                metadata['agent_tools'] = ast.literal_eval(item.value)
+                            except Exception:
+                                pass
         return module_name, class_name, metadata
 
     # -- Lazy import helper --
@@ -878,4 +929,216 @@ class PluginManager:
             else:
                 ns_seen[ns] = key
         NamespaceManager.update(ns_used)
+
+    # -- Agent ---------------------------------------------------------
+
+    def register_agent_tools(self):
+        if self._ctrl_app:
+            # 注册 agent 工具
+            # 惰性 import — 保持模块 standalone (无 app 时不引入项目依赖)。
+            from plugins.ai_assistant.core.registry import registry as agent_registry
+            self._ctrl_app.services.register('list_capabilities', self._svc_list_capabilities, ns=NS)
+            agent_registry.register('plugins_operation', fn=self.agent_plugins)
+
+    def agent_plugins(self,
+        action: Literal['start', 'stop', 'hide', 'list'],
+        targets: str = '',
+        exclude: str = '',
+        hidden: bool = False,
+        refresh: bool = False):
+        """
+        管理 UF Toolbox 插件: 启动/停止/隐藏应用内功能窗口, 或列出插件信息 (启动外部exe程序用 tools_operation)
+
+        action: start=打开插件(未启动则启动, 已启动则前置显示); stop=停止销毁; hide=隐藏窗口(不销毁); list=列出插件信息(含namespace)
+        targets: 目标插件namespace或显示名(中英文,支持模糊), 多个用;分隔, '*'=全部; list时省略=全部
+        exclude: 要排除的插件(格式同targets), 仅配合'*'使用
+        hidden: 仅start: False=显示窗口(默认; 已启动的会前置显示), True=静默(未启动=静默启动不弹窗, 已启动=隐藏窗口)
+        refresh: 仅list: True=先重扫插件目录, 默认False
+        """
+        # agent 工具在 agent 工作线程执行, 而 start/stop/show/hide 都会
+        # 触碰 Tk (构造/销毁/显隐窗口) — tkinter 非线程安全, 且工作线程
+        # 构造窗口会与主线程的 after(0) 自动显示竞争 (窗口先在默认位置
+        # 亮相再被重新定位, 表现为闪烁), 故整体切主线程执行
+        return self._run_on_ui(lambda: self._agent_plugins_impl(
+            action, targets, exclude, hidden, refresh))
+
+    def _run_on_ui(self, fn, timeout=15):
+        """在主线程执行 fn 并回传返回值 (agent 工作线程 → 主线程).
+
+        主线程调用时直接执行; 否则 after(0) 调度 + Event 阻塞等待
+        (同 agent_service._confirm 的握手模式), 超时按失败返回.
+        """
+        if threading.current_thread() is threading.main_thread():
+            return fn()
+        box = {}
+        done = threading.Event()
+
+        def _wrap():
+            try:
+                box['v'] = fn()
+            except Exception as e:
+                box['e'] = e
+            finally:
+                done.set()
+
+        try:
+            self._ctrl_app.after(0, _wrap)
+        except Exception as e:
+            return 'error: %s' % e
+        if not done.wait(timeout):
+            return 'error: 主线程执行超时'
+        if 'e' in box:
+            return 'error: %s' % box['e']
+        return box.get('v')
+
+    def _agent_plugins_impl(self, action, targets, exclude, hidden,
+                            refresh):
+        """agent_plugins 的实际逻辑 (主线程执行, 见 agent_plugins)."""
+        if action == 'list':
+            if not targets.strip():
+                return self.get_plugin_info(refresh=refresh)
+            handles, err = self._agent_targets(targets)
+            ret = {h.namespace: self._info_for(h) for _, h in handles}
+            if err:
+                ret['_errors'] = err
+            return ret
+        handles, err = self._agent_targets(targets)
+        if not handles:
+            return err or 'error: targets is required'
+        if exclude.strip():
+            excluded = set()
+            for token in exclude.split(';'):
+                hit, _cands = self._agent_resolve(token)
+                if hit:
+                    excluded.add(hit[1].namespace)
+            handles = [(k, h) for k, h in handles
+                       if h.namespace not in excluded]
+        if not handles:
+            return 'error: targets 全部被 exclude 排除'
+        # 结果按执行后真实状态判定 (start_plugin 对服务恒返回 None,
+        # 不能据返回值判成败); 统一返回 {namespace: 'ok'|'failed[: 原因]'}
+        if action == 'start':
+            ret = {}
+            for _, h in handles:
+                h._last_error = None
+                if h.alive and hidden and not h.is_service:
+                    # 已启动 + 静默指令 → 隐藏窗口 (hide 的逆操作也走 start,
+                    # 模型只需记 start/hide 两个动作)
+                    self.hide_plugin(h)
+                    ret[h.namespace] = 'ok' if not h.visible else 'failed'
+                    continue
+                self.start_plugin(h, self._ctrl_app, hidden=hidden)
+                if h.alive:
+                    ret[h.namespace] = 'ok'
+                else:
+                    # 带回失败原因 (init error 等) — 模型可据此判断是
+                    # 重试还是放弃, 而不是对着干巴巴的 failed 瞎试
+                    err2 = h._last_error
+                    ret[h.namespace] = ('failed: %s' % err2) if err2 else 'failed'
+        else:
+            op, check = {
+                'stop': (self.stop_plugin, lambda h: not h.alive),
+                'hide': (self.hide_plugin, lambda h: not h.visible),
+            }.get(action, (None, None))
+            if op is None:
+                return 'error: unknown action %r' % action
+            ret = {}
+            for _, h in handles:
+                op(h)
+                ret[h.namespace] = 'ok' if check(h) else 'failed'
+        if err:
+            # 部分目标未匹配: 附在结果里 (不阻塞已匹配目标的执行),
+            # 模型拿到明确事实, 不会对未执行目标幻觉成功
+            ret['_errors'] = err
+        return ret
+
+    def _agent_targets(self, targets):
+        """解析 agent 传入的分号分隔目标串.
+
+        返回 (handles, error_str|None) — 部分目标解析失败不阻塞其余
+        目标, 失败信息 (含候选清单与工具指引) 由 error_str 返回,
+        调用方并入结果 (结果的 _errors 键)。
+        """
+        resolved, errs = self._resolve_agent_tokens(targets)
+        if errs:
+            # 兜底重扫一次: 插件目录可能刚放入新插件。重扫仅毫秒级
+            # (目录遍历 + mtime 比对, 仅新插件才 AST 解析), 比失败后
+            # 让模型二次调用省一整轮 LLM 往返
+            try:
+                self.load(self._plugin_path)
+            except Exception:
+                pass
+            resolved, errs = self._resolve_agent_tokens(targets)
+        if not errs:
+            return resolved, None
+        lines = []
+        for token, cands in errs:
+            if cands:
+                opts = '; '.join('%s(%s)' % (h.get_name(), h.namespace)
+                                 for _, h in cands)
+                lines.append('%r 匹配到多个候选: %s' % (token, opts))
+            else:
+                lines.append('%r 未匹配到插件' % token)
+        avail = '; '.join('%s(%s)' % (h.get_name(), h.namespace)
+                          for h in self.plugins.values())
+        # 错误尾部互相指引 — 模型首次选错工具时第二轮必中
+        return None, ('error: %s. 可用插件: %s. 如果你要启动的是外部程序'
+                      '(终端/exe等), 请改用 tools_operation'
+                      % (' | '.join(lines), avail))
+
+    def _resolve_agent_tokens(self, targets):
+        """逐 token 解析目标串 → (resolved pairs, [(token, 候选), ...])."""
+        resolved, errs = [], []
+        for token in targets.split(';'):
+            token = token.strip()
+            if not token:
+                continue
+            if token == '*':
+                resolved.extend(self.plugins.items())
+                continue
+            hit, cands = self._agent_resolve(token)
+            if hit:
+                resolved.append(hit)
+            else:
+                errs.append((token, cands))
+        return resolved, errs
+
+    def _agent_resolve(self, token):
+        """单个目标解析: namespace 精确 → 显示名(中/英)精确 → 唯一包含匹配.
+
+        返回 ((key, Handle) | None, 候选 list); 候选仅在歧义/模糊
+        多中时非空, 供错误提示使用.
+        """
+        token = token.strip()
+        if not token:
+            return None, []
+        hit = self._resolve_one(token)
+        if hit:
+            return hit, []
+        tl = token.lower()
+
+        def names(h):
+            return {n.lower() for n in
+                    (h._name_raw, h._name_zh, h._name_en) if n}
+
+        pairs = list(self.plugins.items())
+        exact = [p for p in pairs if tl in names(p[1])]
+        if len(exact) == 1:
+            return exact[0], []
+        if exact:
+            return None, exact
+        fuzzy = [p for p in pairs
+                 if any(tl in n or n in tl for n in names(p[1]))]
+        if len(fuzzy) == 1:
+            return fuzzy[0], []
+        return None, fuzzy
+
+    def _svc_list_capabilities(self):
+        """全部已发现插件的 agent 能力声明 (含未启动插件, 不执行插件代码)."""
+        caps = []
+        for key, h in self.plugins.items():
+            tools = h._agent_tools
+            if isinstance(tools, dict) and tools:
+                caps.append({'plugin': h.namespace or key, 'tools': tools})
+        return caps
 

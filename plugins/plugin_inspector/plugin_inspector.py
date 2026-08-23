@@ -64,9 +64,9 @@ class PluginInspector(GuiPlugin):
                 padx=14, pady=3)
             btn.pack(side=tk.LEFT)
             btn.bind("<Button-1>", lambda _, k=key: self._switch_tab(k))
-            btn.bind("<Enter>", lambda _, b=btn: b.config(bg=s['hover']))
-            btn.bind("<Leave>",
-                     lambda _, b=btn, k=key:
+            btn.bind("<Enter>", lambda _, b=btn, k=key: 
+                     b.config(bg=s['accent'] if self._active_tab == k else s['hover']))
+            btn.bind("<Leave>", lambda _, b=btn, k=key:
                      b.config(bg=s['accent'] if self._active_tab == k else s['bg']))
             self._tabs[key] = btn
 

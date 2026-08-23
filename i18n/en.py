@@ -21,6 +21,8 @@ EN = {
     'menu_system': 'System',
     'menu_no_system': '(No System Tools)',
     'tool_guide': 'Tool Guide',
+    'run': 'Run',
+    'run_as_admin': 'Run as Admin',
     # generic
     'window_title': 'UF ToolBox',
     'menu_about': 'About',

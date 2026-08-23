@@ -205,6 +205,74 @@ class TestTasksServiceCreation(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# agent_tasks fn_args 参数通道
+# ---------------------------------------------------------------------------
+
+class TestAgentTasksFnArgs(unittest.TestCase):
+
+    def setUp(self):
+        self.app = _make_app()
+        self.svc = TasksService(app=self.app.module('tasks'))
+
+    def tearDown(self):
+        if hasattr(self.svc, 'on_stop'):
+            self.svc.on_stop()
+
+    def test_create_once_with_fn_args(self):
+        r = self.svc.agent_tasks(
+            'create_once', task_id='off', delay='60',
+            fn_ref='notify@canvas',
+            fn_args='{"text":"该下班了","pattern":"sun"}')
+        self.assertEqual(r, 'off')
+        raw = self.svc._tasks['off']
+        self.assertEqual(raw['kwargs'],
+                         {'text': '该下班了', 'pattern': 'sun'})
+
+    def test_create_every_with_fn_args(self):
+        # every/daily/weekly/cron 经 **common 透传 kwargs
+        r = self.svc.agent_tasks(
+            'create_every', task_id='ev', interval=10,
+            fn_ref='notify@toast', fn_args='{"text":"hi"}')
+        self.assertEqual(r, 'ev')
+        self.assertEqual(self.svc._tasks['ev']['kwargs'], {'text': 'hi'})
+
+    def test_fn_args_invalid_json(self):
+        r = self.svc.agent_tasks(
+            'create_once', task_id='bad', delay='60',
+            fn_ref='notify@toast', fn_args='{oops')
+        self.assertTrue(r.startswith('error:'), r)
+        self.assertNotIn('bad', self.svc._tasks)
+
+    def test_fn_args_non_object(self):
+        r = self.svc.agent_tasks(
+            'create_once', task_id='bad2', delay='60',
+            fn_ref='notify@toast', fn_args='[1,2]')
+        self.assertTrue(r.startswith('error:'), r)
+        self.assertNotIn('bad2', self.svc._tasks)
+
+    def test_no_fn_args_defaults_empty(self):
+        r = self.svc.agent_tasks(
+            'create_once', task_id='plain', delay='60',
+            fn_ref='notify@toast')
+        self.assertEqual(r, 'plain')
+        self.assertEqual(self.svc._tasks['plain']['kwargs'], {})
+
+    def test_fire_passes_kwargs_to_service(self):
+        received = {}
+        self.app.services.register(
+            'notify@canvas',
+            lambda text=None, **kw: received.update({'text': text, **kw}))
+        self.svc.agent_tasks(
+            'create_once', task_id='fire', delay='60',
+            fn_ref='notify@canvas',
+            fn_args='{"text":"该下班了","pattern":"sun"}')
+        ok, _result, _ms = self.svc._call_target(
+            'notify@canvas', self.svc._tasks['fire'], None)
+        self.assertTrue(ok)
+        self.assertEqual(received, {'text': '该下班了', 'pattern': 'sun'})
+
+
+# ---------------------------------------------------------------------------
 # Pause / Resume / Cancel
 # ---------------------------------------------------------------------------
 

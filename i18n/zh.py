@@ -21,6 +21,8 @@ ZH = {
     'menu_system': '系统',
     'menu_no_system': '(无系统工具)',
     'tool_guide': '工具指南',
+    'run': '运行',
+    'run_as_admin': '管理员运行',
     # generic
     'window_title': 'UF工具箱',
     'menu_about': '关于',

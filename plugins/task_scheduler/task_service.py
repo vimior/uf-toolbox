@@ -19,6 +19,7 @@ import os
 import threading
 import time
 from datetime import datetime, timedelta
+from typing import Literal
 
 from plugins.plugin import ServicePlugin
 from plugins.task_scheduler._cron_utils import (
@@ -109,6 +110,8 @@ class TasksService(ServicePlugin):
         s.register('get', self._get)
         s.register('restart', self._restart)
 
+        self.register_agent_tools()
+
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=8)
         self._load()
         self._start_tick()
@@ -180,8 +183,7 @@ class TasksService(ServicePlugin):
                 continue
             if task.get('max_runs') and task['count'] >= task['max_runs']:
                 continue
-            if (task.get('auto_start', True) and
-                    self._will_fire_within(task, now, now_ts, 5)):
+            if (task.get('auto_start', True) and self._will_fire_within(task, now, now_ts, 5)):
                 self._prewarm_targets(task['fn_ref'])
             if self._should_fire(task, now, now_ts):
                 fire = False
@@ -309,7 +311,9 @@ class TasksService(ServicePlugin):
                 self._prewarmed[ns] = now
                 to_start.append(ns)
         for ns in to_start:
-            self.app.emit('plugins@start', ns, hidden=True)
+            if self.services.call('plugins@check', ns) == 0:
+                # 预启动, 没有记录, 暂时没有做用完关闭操作
+                self.app.emit('plugins@start', ns, hidden=True)
 
     @staticmethod
     def _parse_time(time_str):
@@ -418,50 +422,80 @@ class TasksService(ServicePlugin):
             }
             self.root.after(0, lambda e=event, d=data: self.app.emit(e, d))
 
+        if not all_ok:
+            # 触发时 agent 不在场 — toast 通知到人; 独立窗口堆叠 (复用
+            # 窗口会互相覆盖), notify 不可用则静默 (不影响状态记录)
+            try:
+                self.services.call(
+                    'notify@toast',
+                    '任务 %s 执行失败: %s'
+                    % (task_id, '; '.join(results)[:80]),
+                    unique=True)
+            except Exception:
+                pass
+
     def _call_target(self, target, task, timeout_val):
         """Call a single target. Returns (ok, result_str, startup_ms).
 
         Does NOT mutate *task* — state updates happen under lock in _fire.
         """
+        auto_start = task.get('auto_start', True)
+        if '@' in target:
+            plugin_ns = target.split('@')[0]
+        else:
+            plugin_ns = ''
+        ok = False
+        startup_ms = 0
         def _call():
+            nonlocal ok, startup_ms
+            t_start = time.perf_counter()
+            alive = True
+            if plugin_ns:
+                try:
+                    plugin_status = self.services.call('plugins@check', plugin_ns)
+                except:
+                    plugin_status = -1
+                if plugin_status < 0:
+                    # 插件不存在, raise错误
+                    return 'plugin not exists'
+                elif plugin_status == 0 and not auto_start:
+                    return 'plugin not alive'
+            if auto_start and plugin_ns:
+                alive = plugin_status > 0
+                if not alive and self.root:
+                    self.root.after(0, lambda ns=plugin_ns: self.app.emit('plugins@start', ns, hidden=True))
+                    # 检测插件是否启动，最大检测时间为1s
+                    self.services.call('plugins@check', plugin_ns, 1)
+
             task_args = task.get('args', ())
             task_kwargs = task.get('kwargs', {})
-            return self.services.call(target, *task_args, **task_kwargs)
+            startup_ms = int((time.perf_counter() - t_start) * 1000)
+            try:
+                ret = self.services.call(target, *task_args, **task_kwargs)
+                ok = True
+                return ret
+            except KeyError:
+                raise KeyError('not found')
+            finally:
+                if not alive and plugin_ns and self.root:
+                    # 自行启动的插件，在执行完后自动关闭
+                    try:
+                        # 停止必须落在主线程 (Tk 非线程安全) — after 调度, 同 task_service
+                        self.root.after(0, lambda ns=plugin_ns: self.app.emit('plugins@stop', ns))
+                    except Exception:
+                        pass
 
-        ok = False
-        result = None
-        startup_ms = 0
         try:
             future = self._executor.submit(_call)
-            try:
-                result = future.result(timeout=timeout_val)
-                ok = True
-            except concurrent.futures.TimeoutError:
-                result = f'timeout({timeout_val}s)'
+            result = future.result(timeout=timeout_val)
+        except concurrent.futures.TimeoutError:
+            result = f'timeout({timeout_val}s)'
         except KeyError:
-            if task.get('auto_start', True) and '@' in target:
-                plugin_ns = target.split('@')[0]
-                t_start = time.perf_counter()
-                if self.root:
-                    self.root.after(0, lambda ns=plugin_ns: self.app.emit('plugins@start', ns, hidden=True))
-                time.sleep(0.5)
-                startup_ms = int((time.perf_counter() - t_start) * 1000)
-                try:
-                    future2 = self._executor.submit(_call)
-                    try:
-                        result = future2.result(timeout=timeout_val)
-                        ok = True
-                    except concurrent.futures.TimeoutError:
-                        result = f'timeout({timeout_val}s)'
-                except KeyError:
-                    result = 'not found'
-            else:
-                result = 'not found'
+            result = 'not found'
         except Exception as e:
             import traceback
             traceback.print_exc()
             result = str(e)[:80]
-
         return ok, str(result)[:80] if result is not None else 'ok', startup_ms
 
     # ===================================================================
@@ -806,3 +840,130 @@ class TasksService(ServicePlugin):
                 t['firing'] = False
         if self._executor:
             self._executor.shutdown(wait=False)
+
+    # -- Agent ---------------------------------------------------------
+
+    def register_agent_tools(self):
+        # 惰性 import — 保持模块 standalone
+        from plugins.ai_assistant.core.registry import registry as agent_registry
+        agent_registry.register('tasks_operation', fn=self.agent_tasks)
+
+    def agent_tasks(self,
+        action: Literal['create_every', 'create_once',
+                        'create_daily', 'create_weekly',
+                        'create_cron', 'cancel', 'pause',
+                        'resume', 'restart', 'list', 'get'],
+        task_id: str = '',
+        fn_ref: str = '',
+        fn_args: str = '',
+        interval: float = 0,
+        delay: str = '',
+        time_str: str = '',
+        days: str = '',
+        cron_expr: str = '',
+        max_runs: int = 0,
+        timeout: float = 0):
+        """
+        定时任务管理: 创建/取消/暂停/恢复/重启/查询。到点自动调用fn_ref指定的服务(格式"命名空间@方法名", 多个用英文逗号分隔), 例如"notify@toast"
+
+        action: create_every=按间隔循环; create_once=延迟一次; create_daily=每天定点; create_weekly=每周定点; create_cron=cron表达式; cancel=删除; pause=暂停; resume=恢复; restart=清零重跑; list=全部任务; get=单个详情
+        task_id: 任务标识(自定义), 除list外必填
+        fn_ref: 到点执行的服务引用, 仅create类需要
+        fn_args: 到点调用参数(JSON对象字符串), 仅create类; 如 fn_ref=notify@canvas 时 '{"text":"该下班了","pattern":"sun"}', 键名须与目标服务参数一致(通知参数见notify_operation)
+        interval: 间隔秒数, 仅create_every
+        delay: 仅create_once: 秒数(如"60"), 当天时间(如"14:30",已过顺延明天), 绝对时间(如"2026-08-18 14:30:00")
+        time_str: "HH:MM"或"HH:MM:SS", 仅daily/weekly
+        days: 0=周一到6=周日, 逗号分隔(如"0,2,4"=周一/三/五), 仅weekly
+        cron_expr: cron表达式(分 时 日 月 星期), 仅create_cron
+        max_runs: 最大执行次数, 0=不限, 仅create类
+        timeout: 单次超时秒数, 0=不限, 仅create类
+        """
+        try:
+            if action == 'list':
+                return self._list()
+            if not task_id:
+                return 'error: task_id is required'
+            if action == 'get':
+                return self._get(task_id)
+            if action == 'cancel':
+                return self._cancel(task_id)
+            if action == 'pause':
+                return self._pause(task_id)
+            if action == 'resume':
+                return self._resume(task_id)
+            if action == 'restart':
+                return self._restart(task_id)
+            if not fn_ref:
+                return 'error: fn_ref is required for create actions'
+            err = self._check_fn_ref(fn_ref)
+            if err:
+                return err
+            kwargs = {}
+            if fn_args:
+                # 显式报错文案即模型的自我修正指引 (比外层兜底更具体)
+                try:
+                    kwargs = json.loads(fn_args)
+                except ValueError as e:
+                    return 'error: fn_args 不是合法 JSON: %s' % e
+                if not isinstance(kwargs, dict):
+                    return ('error: fn_args 必须是 JSON 对象, '
+                            '如 {"text":"..."}')
+            common = {'max_runs': max_runs, 'timeout': timeout,
+                        'kwargs': kwargs}
+            if action == 'create_every':
+                if not interval:
+                    return 'error: interval is required for create_every'
+                return self._every(task_id, interval, fn_ref, **common)
+            if action == 'create_once':
+                if not delay:
+                    return 'error: delay is required for create_once'
+                return self._once(task_id, delay, fn_ref, timeout=timeout,
+                                    kwargs=kwargs)
+            if action == 'create_daily':
+                if not time_str:
+                    return 'error: time_str is required for create_daily'
+                return self._daily(task_id, time_str, fn_ref, **common)
+            if action == 'create_weekly':
+                if isinstance(days, (list, tuple)):
+                    day_list = [int(d) for d in days]
+                else:
+                    day_list = [int(d.strip()) for d in str(days).split(',')
+                                if d.strip()]
+                if not day_list or not time_str:
+                    return ('error: days and time_str are required '
+                            'for create_weekly')
+                return self._weekly(task_id, day_list, time_str, fn_ref,
+                                    **common)
+            if action == 'create_cron':
+                if not cron_expr:
+                    return 'error: cron_expr is required for create_cron'
+                return self._cron(task_id, cron_expr, fn_ref, **common)
+        except (ValueError, TypeError) as e:
+            return 'error: %s' % e
+        return 'error: unknown action %r' % action
+
+    def _check_fn_ref(self, fn_ref):
+        """创建前校验 fn_ref (namespace 级): 格式 → 已注册服务 → 可启动插件.
+
+        方法名无法在不启动插件的前提下校验, 不在此检查 (漏过的情况
+        由触发失败时的 toast 兜底). 返回错误字符串, 通过返回 None.
+        """
+        for target in fn_ref.split(','):
+            target = target.strip()
+            if not target:
+                continue
+            ns, sep, method = target.partition('@')
+            if not sep or not ns.strip() or not method.strip():
+                return ("error: fn_ref %r 格式错误, 应为 '命名空间@方法名'"
+                        % target)
+            if self.services.has(target):
+                continue
+            # 服务未注册: 可能是未启动的插件 (触发时按需启动) — 查插件清单
+            try:
+                info = self.services.call('plugins@get_info', ns.strip())
+            except Exception:
+                continue   # 无插件管理器可查询 — 放行不阻塞
+            if not info:
+                return ("error: fn_ref %r 的服务未注册, 且不存在命名空间为 "
+                        "%r 的插件" % (target, ns.strip()))
+        return None

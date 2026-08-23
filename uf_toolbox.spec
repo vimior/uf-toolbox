@@ -17,6 +17,7 @@ _extra_hidden = [
     'urllib.request', 'urllib.parse', 'webbrowser',
     # config / file / db (~830 KB total)
     'configparser', 'logging.handlers', 'zipfile', 'shutil', 'code',
+    'serial', 'serial.tools', 'serial.tools.list_ports', 'websocket',
     # introspection — plugins may load dynamically (~160 KB total)
     'inspect', 'pkgutil', 'importlib.util',
     'xarm', 'xarm.core', 'xarm.core.comm',
@@ -42,6 +43,7 @@ a = Analysis(
         ('plugins/plugin_inspector', 'plugins/plugin_inspector'),
         ('plugins/plugin_debugger', 'plugins/plugin_debugger'),
         ('plugins/task_scheduler', 'plugins/task_scheduler'),
+        ('plugins/ai_assistant', 'plugins/ai_assistant'),
         ('docs/plugin-guide.md', 'docs'),
         ('docs/plugin-guide-zh.md', 'docs'),
         ('docs/task-scheduler.md', 'docs'),

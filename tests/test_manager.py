@@ -4,7 +4,7 @@
 import logging
 import unittest
 
-from unittest.mock import Mock, MagicMock, PropertyMock, patch
+from unittest.mock import Mock, MagicMock, PropertyMock, call, patch
 from plugins.manager import PluginManager
 
 # ---------------------------------------------------------------------------
@@ -623,11 +623,11 @@ class TestControlEvents(_EagerTestBase, unittest.TestCase):
 
     def test_info_service_registered_in_init(self):
         svc = self.app._infra.services
-        svc.register.assert_called_once_with(
-            'get_info',
-            self.mgr.get_plugin_info,
-            ns='plugins',
-        )
+        svc.register.assert_has_calls([
+            call('get_info', self.mgr.get_plugin_info, ns='plugins'),
+            call('list_capabilities', self.mgr._svc_list_capabilities,
+                 ns='plugins'),
+        ], any_order=True)
 
     def test_on_plugin_stop_delegates(self):
         h = PluginManager.Handle(_EagerGui, self.app, self.mgr, key='g')

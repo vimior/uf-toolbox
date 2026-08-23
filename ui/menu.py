@@ -40,7 +40,7 @@ class MenuUI(AppState, tk.Tk):
 
     def init(self):
         self._pm = PluginManager(logger, self)
-        self._tm = ToolManager(logger)
+        self._tm = ToolManager(logger, self)
         super().init()
         self.on('theme:changed', lambda name: MenuUI.apply_theme(self, name))
         self.on('lang:changed', lambda name: MenuUI.apply_lang(self, name))
@@ -346,15 +346,24 @@ class MenuUI(AppState, tk.Tk):
                 state=tk.DISABLED)
             return
 
-        def _cmd(t):
-            return lambda: (self._tm.launch(t),
+        def _cmd(t, run_as_admin=False):
+            return lambda: (self._tm.launch(t, run_as_admin=run_as_admin),
                             self.after(200, lambda: self.lift() or self.focus_force()))
 
         def _build_group(parent_menu, groups):
             for g in groups:
                 sub = self.components.Menu(parent_menu)
                 for tool in g.get('tools', []):
-                    sub.add_command(label=tool['name'], command=_cmd(tool))
+                    privilege_level = tool.get('privilege_level', 'user')
+                    if privilege_level == 'both':
+                        pri_sub = self.components.Menu(sub)
+                        pri_sub.add_command(label=self.lang['run'], command=_cmd(tool))
+                        pri_sub.add_command(label=self.lang['run_as_admin'], command=_cmd(tool, True))
+                        sub.add_cascade(label=tool['name'], menu=pri_sub)
+                    elif privilege_level == 'admin':
+                        sub.add_command(label=tool['name'], command=_cmd(tool, True))
+                    else:
+                        sub.add_command(label=tool['name'], command=_cmd(tool))
                 _build_group(sub, g.get('groups', []))
                 label = g.get('name', '')
                 if sub.index(tk.END) is not None:

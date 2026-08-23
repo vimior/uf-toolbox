@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+from typing import Literal
 
 
 class ToolManager:
@@ -17,11 +18,17 @@ class ToolManager:
         result = tm.scan(lang, tab='tools')
         tm.launch(tool_dict)
         tm.kill_all()
+
+    *app* 可选 — 传入后自动注册 agent 工具 ``tools_operation``
+    (需要 app 提供 tool_path / current_lang_name); standalone
+    使用时不传, 无任何项目依赖。
     """
 
-    def __init__(self, logger):
+    def __init__(self, logger, app=None):
         self.logger = logger
+        self.app = app
         self._running = {}  # name -> [Popen, ...]
+        self.register_agent_tools()
 
     # -- public API -----------------------------------------------------------
 
@@ -72,14 +79,14 @@ class ToolManager:
             all_tools = [t for t in all_tools if t.get('tab', 'tools') == tab]
         return {'tools': all_tools, 'groups': all_groups}
 
-    def launch(self, tool):
+    def launch(self, tool, run_as_admin=False):
         """Spawn a tool process. *tool* is a dict from scan()."""
         name = tool['name']
         if not tool.get('multiple', True) and name in self._running:
             for p in self._running[name]:
                 if p.poll() is None:
                     return p
-        cmd = self._build_cmd(tool)
+        cmd = self._build_cmd(tool, run_as_admin=run_as_admin)
         cwd = tool.get('cwd', '')
         env = tool.get('env')
         shell = tool.get('shell', True)
@@ -215,7 +222,7 @@ class ToolManager:
             'shell': entry.get('shell', True),
             'env': entry.get('env'),
             'console': entry.get('console', False),
-            'run_as_admin': entry.get('run_as_admin', False),
+            'privilege_level': entry.get('privilege_level', 'user'),
             'wait': entry.get('wait', False),
             'multiple': entry.get('multiple', True),
             'kill_on_exit': entry.get('kill_on_exit', False),
@@ -259,7 +266,7 @@ class ToolManager:
                     'shell': True,
                     'env': None,
                     'console': False,
-                    'run_as_admin': False,
+                    'privilege_level': 'user',
                     'wait': False,
                     'multiple': True,
                     'kill_on_exit': False,
@@ -268,10 +275,10 @@ class ToolManager:
         return {'tools': entries, 'groups': []}
 
     @staticmethod
-    def _build_cmd(tool):
+    def _build_cmd(tool, run_as_admin=False):
         exe_path = tool['_exe_path']
         args = tool.get('args', '')
-        if tool.get('run_as_admin', False) and sys.platform == 'win32':
+        if run_as_admin and sys.platform == 'win32':
             return (f'powershell -Command '
                     f'"Start-Process \'{exe_path}\' -Verb RunAs"')
         if tool.get('console', False) and sys.platform == 'win32':
@@ -287,3 +294,136 @@ class ToolManager:
         if tool.get('console', False):
             return 0
         return subprocess.CREATE_NO_WINDOW
+
+    # -- Agent ---------------------------------------------------------
+
+    def register_agent_tools(self):
+        if self.app is not None:
+            # 注册 agent 工具
+            # 惰性 import — 保持模块 standalone (无 app 时不引入项目依赖)。
+            from plugins.ai_assistant.core.registry import registry as agent_registry
+            agent_registry.register('tools_operation', fn=self.agent_tools)
+
+    def agent_tools(self,
+        action: Literal['list', 'launch'],
+        target: str = '',
+        run_as_admin: bool = False,
+        tab: str = ''):
+        """
+        启动外部程序: 终端/编辑器/exe等 (非 UF Toolbox 插件; 打开插件用 plugins_operation)
+
+        action: launch=启动指定工具(首选: 直接传名称即可, 支持模糊匹配, 未命中自动返回可用清单); list=列出全部工具(仅需要浏览有哪些工具时用)
+        target: 仅launch: 外部程序的id/显示名/exe文件名(如 uf-teleop 或 UFTeleop.exe, 支持模糊, 唯一匹配即可)
+        run_as_admin: 仅launch: 是否以管理员方式打开
+        tab: 分组标签过滤(如 tools/system), 省略=全部
+        """
+        lang = getattr(self.app, 'current_lang_name', 'en')
+        path = getattr(self.app, 'tool_path', None)
+        tab = tab.strip() or None
+        if action == 'list':
+            tools = self.flatten(self.scan(lang, tab=tab, path=path))
+            # 紧凑格式 ('name(id); ...') — 工具多时 JSON 列表会被结果
+            # 截断 (TOOL_RESULT_MAX), 导致模型漏看尾部条目
+            return '; '.join(
+                '%s(%s)' % (t['name'], t['id']) if t.get('id')
+                else t['name'] for t in tools) or '(无可用工具)'
+        if action != 'launch':
+            return 'error: unknown action %r' % action
+        if not target.strip():
+            return 'error: target is required'
+        tool, cands, all_tools = self.resolve(target, lang, tab=tab,
+                                              path=path)
+        if tool is None:
+            # 错误尾部互相指引 — 模型首次选错工具时第二轮必中
+            hint = ' 如果你要打开的是 UF Toolbox 插件, 请改用 plugins_operation'
+            avail = '; '.join('%s(%s)' % (t.get('name'), t.get('id'))
+                              for t in all_tools) or '(无)'
+            if cands:
+                opts = '; '.join('%s(%s)' % (t.get('name'), t.get('id'))
+                                 for t in cands)
+                return ('error: %r 匹配到多个工具: %s. 可用工具: %s.%s'
+                        % (target, opts, avail, hint))
+            return ('error: %r 未匹配到工具. 可用工具: %s.%s'
+                    % (target, avail, hint))
+        try:
+            self.launch(tool, run_as_admin=run_as_admin)
+        except Exception as e:
+            return 'error: 启动失败: %s' % e
+        return 'ok: 已启动 %s' % tool.get('name')
+
+    # -- agent 支持: 扁平化 + 名称解析 ----------------------------------------
+        
+    @staticmethod
+    def flatten(scan_result):
+        """scan() 结果 → 扁平工具列表 (groups 递归展开, 顶层在后)."""
+        flat = []
+
+        def _walk(groups):
+            for g in groups:
+                flat.extend(g.get('tools', []))
+                _walk(g.get('groups', []))
+
+        _walk(scan_result.get('groups', []))
+        flat.extend(scan_result.get('tools', []))
+        return flat
+
+    _STRIP_EXTS = ('.exe', '.bat', '.cmd', '.sh', '.py')
+
+    @staticmethod
+    def _norm(s):
+        """归一化匹配串: 小写 + 去 -_ 和空格 (uf-teleop ≡ UFTeleop)."""
+        return s.lower().replace('-', '').replace('_', '').replace(' ', '')
+
+    @classmethod
+    def _match_map(cls, tool):
+        """工具的分层匹配键 (归一化): id 全串 / id 末段 / 显示名 / exe basename.
+
+        分层原因: 同一 exe 可能被多个工具引用 (cmd.exe → 运行/管理员运行/
+        安全中心), basename 同级比较必然歧义; id 末段先比可唯一命中。
+        """
+        m = {}
+        tid = tool.get('id')
+        if tid:
+            m['id'] = cls._norm(tid)
+            m['id_tail'] = cls._norm(tid.split('/')[-1])
+        if tool.get('name'):
+            m['name'] = cls._norm(tool['name'])
+        base = os.path.basename(tool.get('_exe_path', ''))
+        for ext in cls._STRIP_EXTS:
+            if base.lower().endswith(ext):
+                base = base[:-len(ext)]
+                break
+        if base:
+            m['base'] = cls._norm(base)
+        return m
+
+    _TIERS = ('id', 'id_tail', 'name', 'base')
+
+    def resolve(self, query, lang='en', tab=None, path=None):
+        """按名称解析工具: id → id末段 → 显示名 → exe名 分层精确 → 唯一模糊.
+
+        返回 (tool | None, candidates, all_tools) — candidates 仅在
+        歧义/多候选时非空, 供错误提示; query 未匹配任何工具时为空。
+        匹配归一化 (小写, 去 -_ 空格); query 带扩展名会被剥掉。
+        """
+        q = query.strip()
+        for ext in self._STRIP_EXTS:
+            if q.lower().endswith(ext):
+                q = q[:-len(ext)]
+                break
+        nq = self._norm(q)
+        tools = self.flatten(self.scan(lang, tab=tab, path=path))
+        if not nq:
+            return None, [], tools
+        maps = [(t, self._match_map(t)) for t in tools]
+        for tier in self._TIERS:
+            hits = [t for t, m in maps if m.get(tier) == nq]
+            if len(hits) == 1:
+                return hits[0], [], tools
+            if hits:
+                return None, hits, tools
+        fuzzy = [t for t, m in maps
+                    if any(nq in k or k in nq for k in m.values())]
+        if len(fuzzy) == 1:
+            return fuzzy[0], [], tools
+        return None, fuzzy, tools
