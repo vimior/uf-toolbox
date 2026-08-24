@@ -160,7 +160,8 @@ class Config:
             self.model = args[0] if len(args) > 0 else kwargs.get('model', self.model)
             timeout = args[1] if len(args) > 1 else kwargs.get('timeout', self.timeout)
             self.set_timeout(timeout)
-            self.proxy = args[2] if len(args) > 2 else kwargs.get('proxy', self.proxy)
+            proxy = args[2] if len(args) > 2 else kwargs.get('proxy', self.proxy)
+            self.set_proxy(proxy)
 
         def set_provider(self, provider):
             if not provider.get('models', []):
@@ -215,10 +216,13 @@ class Config:
                 return False
 
         def set_proxy(self, proxy):
-            if not proxy or proxy == self.proxy:
+            try:
+                if not proxy or str(proxy) == self.proxy:
+                    return False
+                self.proxy = str(proxy)
+                return True
+            except:
                 return False
-            self.proxy = proxy
-            return True
 
         def to_dict(self):
             return {
@@ -261,7 +265,7 @@ class Config:
         current = self.Current(
             model=cfg.get('model', ''),
             timeout=cfg.get('timeout', 180),
-            proxy=cfg.get('timeout', 'system'),
+            proxy=cfg.get('proxy', 'system'),
         )
         current.set_provider(curr_privider)
         try:

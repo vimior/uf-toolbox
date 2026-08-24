@@ -16,8 +16,8 @@ _extra_hidden = [
     # network / web (~170 KB total)
     'urllib.request', 'urllib.parse', 'webbrowser',
     # config / file / db (~830 KB total)
-    'configparser', 'logging.handlers', 'zipfile', 'shutil', 'code',
-    'serial', 'serial.tools', 'serial.tools.list_ports', 'websocket',
+    'configparser', 'logging.handlers', 'zipfile', 'shutil', 'code', 'ssl', '_ssl',
+    'serial', 'serial.tools', 'serial.tools.list_ports', 'websocket', 'difflib',
     # introspection — plugins may load dynamically (~160 KB total)
     'inspect', 'pkgutil', 'importlib.util',
     'xarm', 'xarm.core', 'xarm.core.comm',
@@ -79,7 +79,7 @@ exe = EXE(
     icon='icons/uf_toolbox.ico',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=True,
+    strip=False,  # 是否剥离符号/元数据, Windows特别要小心, 为True可能会破坏dll导致运行不了, 如ssl的dll
     upx=True,
     upx_exclude=['libcrypto*', 'libssl*'],
     runtime_tmpdir=None,
