@@ -856,43 +856,49 @@ class TasksService(ServicePlugin):
         task_id: str = '',
         fn_ref: str = '',
         fn_args: str = '',
-        interval: float = 0,
-        delay: str = '',
-        time_str: str = '',
-        days: str = '',
-        cron_expr: str = '',
+        schedule: str = '',
+        # interval: float = 0,
+        # delay: str = '',
+        # time_str: str = '',
+        # days: str = '',
+        # cron_expr: str = '',
         max_runs: int = 0,
         timeout: float = 0):
         """
-        定时任务管理: 创建/取消/暂停/恢复/重启/查询。到点自动调用fn_ref指定的服务(格式"命名空间@方法名", 多个用英文逗号分隔), 例如"notify@toast"
+        定时任务管理: create类必须传fn_ref和schedule, 除了list外必须传task_id
 
-        action: create_every=按间隔循环; create_once=延迟一次; create_daily=每天定点; create_weekly=每周定点; create_cron=cron表达式; cancel=删除; pause=暂停; resume=恢复; restart=清零重跑; list=全部任务; get=单个详情
-        task_id: 任务标识(自定义), 除list外必填
-        fn_ref: 到点执行的服务引用, 仅create类需要
-        fn_args: 到点调用参数(JSON对象字符串), 仅create类; 如 fn_ref=notify@canvas 时 '{"text":"该下班了","pattern":"sun"}', 键名须与目标服务参数一致(通知参数见notify_operation)
-        interval: 间隔秒数, 仅create_every
-        delay: 仅create_once: 秒数(如"60"), 当天时间(如"14:30",已过顺延明天), 绝对时间(如"2026-08-18 14:30:00")
-        time_str: "HH:MM"或"HH:MM:SS", 仅daily/weekly
-        days: 0=周一到6=周日, 逗号分隔(如"0,2,4"=周一/三/五), 仅weekly
-        cron_expr: cron表达式(分 时 日 月 星期), 仅create_cron
-        max_runs: 最大执行次数, 0=不限, 仅create类
-        timeout: 单次超时秒数, 0=不限, 仅create类
+        action: create_every=按间隔循环|create_once=延迟一次|create_daily=每天定点|create_weekly=每周定点|create_cron=cron表达式|cancel=删除|pause=暂停|resume=恢复|restart=清零重跑|list=全部任务|get=单个详情
+        task_id: 除list外必填,自定义任务标识(create类带上当前时间戳)
+        fn_ref: 仅create类,到点执行的服务引用(格式"命名空间@方法名",多个用英文逗号分隔,通知服务使用notify@xxx,xxx和fn_args分别为notify_operation的action和其它参数)
+        fn_args: 仅create类,必填,调用参数JSON字符串,键名须与目标服务签名一致
+        schedule: 仅create类,调度表达式,直接传值不带前缀:间隔秒数(create_every)|延迟秒数或时间点(create_once)|HH:MM(create_daily)|星期+空格+时间如"0,2,4 14:30"(create_weekly,0=周一)|cron表达式(create_cron)
+        # interval: 仅create_every,间隔秒数
+        # delay: 仅create_once,秒数(如"60"),当天时间(如"14:30",已过顺延明天),绝对时间(如"2026-08-18 14:30:00")
+        # time_str: 仅daily/weekly,"HH:MM"或"HH:MM:SS"
+        # days: 仅weekly,0=周一到6=周日,逗号分隔(如"0,2,4"=周一/三/五)
+        # cron_expr: 仅create_cron,cron表达式(分 时 日 月 星期)
+        max_runs: 仅create类,最大执行次数,0=不限
+        timeout: 仅create类,单次超时秒数,0=不限
         """
         try:
             if action == 'list':
                 return self._list()
             if not task_id:
                 return 'error: task_id is required'
-            if action == 'get':
-                return self._get(task_id)
-            if action == 'cancel':
-                return self._cancel(task_id)
-            if action == 'pause':
-                return self._pause(task_id)
-            if action == 'resume':
-                return self._resume(task_id)
-            if action == 'restart':
-                return self._restart(task_id)
+            func_map = {
+                'get': self._get,
+                'cancel': self._cancel,
+                'pause': self._pause,
+                'resume': self._resume,
+                'restart': self._restart,
+            }
+            func = func_map.get(action, None)
+            if func:
+                ret = func(task_id)
+                if not ret:
+                    return 'error: task(%s) not exist' % task_id
+                return ret
+            # create
             if not fn_ref:
                 return 'error: fn_ref is required for create actions'
             err = self._check_fn_ref(fn_ref)
@@ -908,22 +914,31 @@ class TasksService(ServicePlugin):
                 if not isinstance(kwargs, dict):
                     return ('error: fn_args 必须是 JSON 对象, '
                             '如 {"text":"..."}')
-            common = {'max_runs': max_runs, 'timeout': timeout,
-                        'kwargs': kwargs}
+            common = {'max_runs': max_runs, 'timeout': timeout, 'kwargs': kwargs}
             if action == 'create_every':
+                interval = float(schedule) if schedule else 0
                 if not interval:
                     return 'error: interval is required for create_every'
                 return self._every(task_id, interval, fn_ref, **common)
             if action == 'create_once':
+                delay = schedule if schedule else ''
                 if not delay:
                     return 'error: delay is required for create_once'
-                return self._once(task_id, delay, fn_ref, timeout=timeout,
-                                    kwargs=kwargs)
+                return self._once(task_id, delay, fn_ref, timeout=timeout, kwargs=kwargs)
             if action == 'create_daily':
+                time_str = schedule if schedule else ''
                 if not time_str:
                     return 'error: time_str is required for create_daily'
                 return self._daily(task_id, time_str, fn_ref, **common)
             if action == 'create_weekly':
+                if schedule:
+                    parts = schedule.strip().split(None, 1)
+                    if len(parts) == 2:
+                        days, time_str = parts
+                    else:
+                        days, time_str = parts[0], ''
+                else:
+                    days, time_str = [], ''
                 if isinstance(days, (list, tuple)):
                     day_list = [int(d) for d in days]
                 else:
@@ -932,9 +947,9 @@ class TasksService(ServicePlugin):
                 if not day_list or not time_str:
                     return ('error: days and time_str are required '
                             'for create_weekly')
-                return self._weekly(task_id, day_list, time_str, fn_ref,
-                                    **common)
+                return self._weekly(task_id, day_list, time_str, fn_ref, **common)
             if action == 'create_cron':
+                cron_expr = schedule
                 if not cron_expr:
                     return 'error: cron_expr is required for create_cron'
                 return self._cron(task_id, cron_expr, fn_ref, **common)

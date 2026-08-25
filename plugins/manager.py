@@ -941,15 +941,15 @@ class PluginManager:
             agent_registry.register('plugins_operation', fn=self.agent_plugins)
 
     def agent_plugins(self,
-        action: Literal['start', 'stop', 'hide', 'list'],
+        action: Literal['start', 'stop', 'hide', 'list', 'get'],
         targets: str = '',
         exclude: str = '',
         hidden: bool = False,
         refresh: bool = False):
         """
-        管理 UF Toolbox 插件: 启动/停止/隐藏应用内功能窗口, 或列出插件信息 (启动外部exe程序用 tools_operation)
+        管理UFToolBox插件: 除了list外必须传targets
 
-        action: start=打开插件(未启动则启动, 已启动则前置显示); stop=停止销毁; hide=隐藏窗口(不销毁); list=列出插件信息(含namespace)
+        action: start=打开插件(未启动则启动, 已启动则前置显示);stop=停止销毁;hide=隐藏窗口(不销毁);list=列出所有插件(含namespace);get=获取插件信息
         targets: 目标插件namespace或显示名(中英文,支持模糊), 多个用;分隔, '*'=全部; list时省略=全部
         exclude: 要排除的插件(格式同targets), 仅配合'*'使用
         hidden: 仅start: False=显示窗口(默认; 已启动的会前置显示), True=静默(未启动=静默启动不弹窗, 已启动=隐藏窗口)
@@ -991,14 +991,20 @@ class PluginManager:
             return 'error: %s' % box['e']
         return box.get('v')
 
-    def _agent_plugins_impl(self, action, targets, exclude, hidden,
-                            refresh):
+    def _agent_plugins_impl(self, action, targets, exclude, hidden, refresh):
         """agent_plugins 的实际逻辑 (主线程执行, 见 agent_plugins)."""
         if action == 'list':
-            if not targets.strip():
-                return self.get_plugin_info(refresh=refresh)
+            # print(action, targets, exclude, hidden, refresh)
+            ret = self.get_plugin_info(refresh=refresh)
+            # 太长会被结果截断, 导致模型漏看尾部条目
+            # 紧凑格式: name1(ns1)|name2(ns2)|...
+            ret_str = '|'.join([f"{info['name']}({ns})" for ns, info in ret.items()])
+            return ret_str
+        elif action == 'get':
             handles, err = self._agent_targets(targets)
-            ret = {h.namespace: self._info_for(h) for _, h in handles}
+            ret = {}
+            if handles:
+                ret = {h.namespace: self._info_for(h) for _, h in handles}
             if err:
                 ret['_errors'] = err
             return ret
@@ -1082,9 +1088,7 @@ class PluginManager:
         avail = '; '.join('%s(%s)' % (h.get_name(), h.namespace)
                           for h in self.plugins.values())
         # 错误尾部互相指引 — 模型首次选错工具时第二轮必中
-        return None, ('error: %s. 可用插件: %s. 如果你要启动的是外部程序'
-                      '(终端/exe等), 请改用 tools_operation'
-                      % (' | '.join(lines), avail))
+        return None, ('error: %s. 可用插件: %s.' % (' | '.join(lines), avail))
 
     def _resolve_agent_tokens(self, targets):
         """逐 token 解析目标串 → (resolved pairs, [(token, 候选), ...])."""

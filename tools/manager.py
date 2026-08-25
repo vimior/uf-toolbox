@@ -310,21 +310,21 @@ class ToolManager:
         run_as_admin: bool = False,
         tab: str = ''):
         """
-        启动外部程序: 终端/编辑器/exe等 (非 UF Toolbox 插件; 打开插件用 plugins_operation)
+        启动外部程序: launch必须传target
 
-        action: launch=启动指定工具(首选: 直接传名称即可, 支持模糊匹配, 未命中自动返回可用清单); list=列出全部工具(仅需要浏览有哪些工具时用)
-        target: 仅launch: 外部程序的id/显示名/exe文件名(如 uf-teleop 或 UFTeleop.exe, 支持模糊, 唯一匹配即可)
+        action: launch=启动指定工具(首选:直接传名称即可,支持模糊匹配,未命中自动返回可用清单);list=列出全部工具(仅需要浏览有哪些工具时用)
+        target: 仅launch: 外部程序的id/显示名/exe文件名(支持模糊,唯一匹配即可)
         run_as_admin: 仅launch: 是否以管理员方式打开
-        tab: 分组标签过滤(如 tools/system), 省略=全部
+        tab: 分组标签过滤(如tools/system),省略=全部
         """
         lang = getattr(self.app, 'current_lang_name', 'en')
         path = getattr(self.app, 'tool_path', None)
         tab = tab.strip() or None
         if action == 'list':
             tools = self.flatten(self.scan(lang, tab=tab, path=path))
-            # 紧凑格式 ('name(id); ...') — 工具多时 JSON 列表会被结果
-            # 截断 (TOOL_RESULT_MAX), 导致模型漏看尾部条目
-            return '; '.join(
+            # 太长会被结果截断, 导致模型漏看尾部条目
+            # 紧凑格式: name1(id1)|name2(id2)|...
+            return '|'.join(
                 '%s(%s)' % (t['name'], t['id']) if t.get('id')
                 else t['name'] for t in tools) or '(无可用工具)'
         if action != 'launch':
@@ -335,7 +335,8 @@ class ToolManager:
                                               path=path)
         if tool is None:
             # 错误尾部互相指引 — 模型首次选错工具时第二轮必中
-            hint = ' 如果你要打开的是 UF Toolbox 插件, 请改用 plugins_operation'
+            # hint = ' 如果你要打开的是 UF Toolbox 插件, 请改用 plugins_operation'
+            hint = ''
             avail = '; '.join('%s(%s)' % (t.get('name'), t.get('id'))
                               for t in all_tools) or '(无)'
             if cands:

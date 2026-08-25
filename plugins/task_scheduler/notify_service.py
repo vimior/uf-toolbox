@@ -774,6 +774,7 @@ class NotifyService(ServicePlugin):
 
     def _show(self, style, text, **kw):
         """投递通知请求 (任意线程可调; 主线程事件循环处理)"""
+        self._revert_kwargs(kw)
         self._queue.put((style, text, kw))
         if self.root is not None:
             # 线程安全: 追加到事件队列尾部, 主线程下一轮事件循环处理
@@ -923,6 +924,36 @@ class NotifyService(ServicePlugin):
         except Exception:
             return zh
 
+    @staticmethod
+    def _revert_kwargs(kw):
+        if not kw:
+            return kw
+        # ── size → 原始参数还原 ──
+        if 'size' in kw:
+            size = kw.pop('size')
+            tmp = size.split('x')
+            if len(tmp) > 0:
+                if tmp[0] and tmp[0] != '0':
+                    try:
+                        kw['width'] = int(tmp[0])
+                    except:
+                        pass
+                if len(tmp) > 1 and tmp[1] and tmp[1] != '0':
+                    try:
+                        kw['height'] = int(tmp[1])
+                    except:
+                        pass
+        # ── color → 原始参数还原 ──
+        if 'color' in kw:
+            color = kw.pop('color')
+            tmp = color.split('/')
+            if len(tmp) > 0:
+                if tmp[0] and tmp[0] != '0':
+                    kw['bg'] = tmp[0]
+                if len(tmp) > 1 and tmp[1] and tmp[1] != '0':
+                    kw['fg'] = tmp[1]
+        return kw
+
     def _toast(self, text=None, **kw):
         if text is None:
             text = self._t('新通知', 'Notice')
@@ -971,49 +1002,44 @@ class NotifyService(ServicePlugin):
         text: str = None,
         title: str = None,
         timeout: float = None,
-        width: int = None,
-        height: int = None,
-        bg: str = None,
-        fg: str = None,
+        size: str = None,
+        color: str = None,
         font_size: int = None,
-        position: Literal['br', 'bl', 'tr', 'tl'] = None,
-        pattern: Literal['flower', 'heart', 'star', 'sun',
-                        'smiley'] = None,
-        duration: int = None,
-        x: int = None,
-        y: int = None,
-        show_time: bool = None,
-        unique: bool = None):
+        pattern: Literal['flower', 'heart', 'star', 'sun', 'smiley'] = None,
+        # duration: int = None,
+        # position: Literal['br', 'bl', 'tr', 'tl'] = None,
+        # x: int = None,
+        # y: int = None,
+        # show_time: bool = None,
+        # unique: bool = None
+        ):
         """
-        发布系统通知: toast=角落滑出小卡片(轻量提示); popup=居中弹窗(点击关闭); banner=顶部全宽横幅; canvas=带图案的居中卡片
+        发布系统通知: toast=角落滑出小卡片(轻量提示)|popup=居中弹窗(点击关闭)|banner=顶部全宽横幅|canvas=带图案的居中卡片
 
         action: 通知形式
-        text: 正文, 省略用默认文案
-        title: 窗口标题, 仅popup/canvas
-        timeout: 自动关闭秒数, 0=不关闭; 省略用默认(toast 3秒, banner 5秒, popup/canvas不关闭)
-        width: 宽度px, 省略自适应
-        height: 高度px, 省略自适应
-        bg: 背景色, 如#2b2b2b
-        fg: 文字颜色, 如#ffffff
+        text: 正文,省略用默认文案
+        title: 仅popup/canvas,窗口标题
+        timeout: 自动关闭秒数,0=不关闭,省略用默认
+        size: 宽高px如"400x300",支持只传递宽或高,0x400表示只设置高度,省略用默认
+        color: 背景/文字色如"#2b2b2b/#ffffff",支持只传递背景或文字颜色,0/#ffffff表示只设置文字颜色,省略用主题默认
         font_size: 字体大小
-        position: 弹出角落, 仅toast: br=右下(默认), bl=左下, tr=右上, tl=左上
-        pattern: 图案, 仅canvas
-        duration: 滑入动画毫秒, 仅toast/banner(默认300/400)
-        x: 左上角横坐标px, 与y同用; popup/canvas默认居中
-        y: 左上角纵坐标px
-        show_time: 显示时间戳, 默认True
-        unique: True=独立窗口堆叠, False=覆盖上一条(默认)
+        pattern: 图案,仅canvas
+        # duration: 滑入动画毫秒,仅toast/banner(默认300/400)
+        # position: 弹出角落,仅toast:br=右下(默认)|bl=左下|tr=右上|tl=左上
+        # x: 左上角横坐标px,与y同用;popup/canvas默认居中
+        # y: 左上角纵坐标px
+        # show_time: 显示时间戳,默认True
+        # unique: True=独立窗口堆叠,False=覆盖上一条(默认)
         """
-        fn = {'toast': self._toast, 'popup': self._popup,
-                'banner': self._banner, 'canvas': self._canvas}.get(action)
-        if fn is None:
-            return False
         kw = {
             'text': text, 'title': title, 'timeout': timeout,
-            'width': width, 'height': height, 'bg': bg, 'fg': fg,
-            'font_size': font_size, 'position': position,
-            'pattern': pattern, 'duration': duration, 'x': x, 'y': y,
-            'show_time': show_time, 'unique': unique}
+            'size': size, 'color': color,
+            'font_size': font_size, 'pattern': pattern,
+            # 'position': position, 'duration': duration, 'x': x, 'y': y,
+            # 'show_time': show_time, 'unique': unique
+        }
+        fn = {'toast': self._toast, 'popup': self._popup,
+              'banner': self._banner, 'canvas': self._canvas}.get(action)
         fn(**{k: v for k, v in kw.items() if v is not None})
         return True
     
