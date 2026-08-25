@@ -975,10 +975,10 @@ class TasksService(ServicePlugin):
                 continue
             # 服务未注册: 可能是未启动的插件 (触发时按需启动) — 查插件清单
             try:
-                info = self.services.call('plugins@get_info', ns.strip())
+                status = self.services.call('plugins@check', ns.strip())
             except Exception:
                 continue   # 无插件管理器可查询 — 放行不阻塞
-            if not info:
+            if status < 0:
                 return ("error: fn_ref %r 的服务未注册, 且不存在命名空间为 "
                         "%r 的插件" % (target, ns.strip()))
         return None

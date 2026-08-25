@@ -487,7 +487,7 @@ class PluginDebugger(GuiPlugin):
         self._write(l['help_examples'] + '\n' + l['help_ex_list'] + '\n\n', 'magic')
         self._write(l['help_attach_title'] + '\n' + l['help_attach_list'] + '\n\n', 'magic')
         self._write(l['help_attach_warn'] + '\n\n', 'sys')
-        self._write(l['help_note'] + '\n', 'sys')
+        # self._write(l['help_note'] + '\n', 'sys')
 
     # ---- toolbar actions ----
 

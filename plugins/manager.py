@@ -513,7 +513,7 @@ class PluginManager:
         if handle.alive and not handle.is_service:
             handle.hide()
 
-    def get_plugin_info(self, target=None, refresh=False):
+    def get_plugin(self, target=None, refresh=False):
         """Return plugin status info as a dict.
 
         *target*: namespace / registry key → single dict; ``None`` → dict of dicts keyed by namespace.
@@ -584,7 +584,7 @@ class PluginManager:
         app.on('hide',        self._on_plugin_hide,  ns=NS)
         app.on('auto-start',  self._on_auto_start,   ns=NS)
 
-        app.services.register('get_info', self.get_plugin_info, ns=NS)
+        app.services.register('get', self.get_plugin, ns=NS)
         app.services.register('check', self.check_plugin, ns=NS)
         self.register_agent_tools()
 
@@ -995,7 +995,7 @@ class PluginManager:
         """agent_plugins 的实际逻辑 (主线程执行, 见 agent_plugins)."""
         if action == 'list':
             # print(action, targets, exclude, hidden, refresh)
-            ret = self.get_plugin_info(refresh=refresh)
+            ret = self.get_plugin(refresh=refresh)
             # 太长会被结果截断, 导致模型漏看尾部条目
             # 紧凑格式: name1(ns1)|name2(ns2)|...
             ret_str = '|'.join([f"{info['name']}({ns})" for ns, info in ret.items()])

@@ -441,7 +441,7 @@ class TestResolveTargets(unittest.TestCase):
 
 
 # ===========================================================================
-#  Manager — get_plugin_info / _info_for
+#  Manager — get_plugin / _info_for
 # ===========================================================================
 
 
@@ -450,30 +450,30 @@ class TestPluginInfo(_EagerTestBase, unittest.TestCase):
         self.app = make_mock_app()
         self.mgr = PluginManager(make_logger(), self.app)
 
-    def test_get_plugin_info_all(self):
+    def test_get_plugin_all(self):
         h1 = PluginManager.Handle(None, self.app, self.mgr,
                                   metadata={'name': 'Plugin A', 'namespace': 'pa'},
                                   module_name='mod_a', class_name='ClsA', key='a')
         h2 = PluginManager.Handle(_EagerService, self.app, self.mgr, key='s')
         self.mgr.plugins = {'a': h1, 's': h2}
 
-        info = self.mgr.get_plugin_info()
+        info = self.mgr.get_plugin()
         self.assertIn('pa', info)
         self.assertIn('mock_svc', info)
         self.assertEqual(info['pa']['type'], 'GuiPlugin')
         self.assertEqual(info['mock_svc']['type'], 'ServicePlugin')
 
-    def test_get_plugin_info_single(self):
+    def test_get_plugin_single(self):
         h = PluginManager.Handle(_EagerGui, self.app, self.mgr, key='g')
         self.mgr.plugins['g'] = h
-        info = self.mgr.get_plugin_info('mock_gui')
+        info = self.mgr.get_plugin('mock_gui')
         self.assertEqual(info['namespace'], 'mock_gui')
         self.assertEqual(info['name'], 'Mock GUI')
         self.assertEqual(info['type'], 'GuiPlugin')
         self.assertFalse(info['alive'])
 
-    def test_get_plugin_info_not_found(self):
-        self.assertIsNone(self.mgr.get_plugin_info('unknown'))
+    def test_get_plugin_not_found(self):
+        self.assertIsNone(self.mgr.get_plugin('unknown'))
 
     def test_info_for_lazy_handle(self):
         h = PluginManager.Handle(None, self.app, self.mgr,
@@ -624,7 +624,7 @@ class TestControlEvents(_EagerTestBase, unittest.TestCase):
     def test_info_service_registered_in_init(self):
         svc = self.app._infra.services
         svc.register.assert_has_calls([
-            call('get_info', self.mgr.get_plugin_info, ns='plugins'),
+            call('get', self.mgr.get_plugin, ns='plugins'),
             call('list_capabilities', self.mgr._svc_list_capabilities,
                  ns='plugins'),
         ], any_order=True)
