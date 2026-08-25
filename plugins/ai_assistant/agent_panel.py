@@ -578,21 +578,68 @@ class AgentPanel(GuiPlugin):
         self._cfg_provider.config(state=tk.NORMAL)
         self._cfg_model.config(state=tk.NORMAL)
 
+    def _add_row_tag(self, name, result, summary=None):
+        try:
+            text = summary or self._summarize_result(result)
+            # 折叠行: 点击展开完整结果/收起 — 唯一 tag + 闭包索引
+            idx = len(self._tool_rows)
+            row_tag = 'tool_row_%d' % idx
+            w = self._txt_chat
+            w.tag_configure(row_tag, foreground=self.theme['fg'],
+                            lmargin1=16, lmargin2=16)   # 与时间线/tokens 行同缩进
+            w.tag_bind(row_tag, '<Button-1>',
+                        lambda _e, i=idx: self._toggle_tool(i))
+            w.tag_bind(row_tag, '<Enter>',
+                        lambda _e: w.config(cursor='hand2'))
+            w.tag_bind(row_tag, '<Leave>',
+                        lambda _e: w.config(cursor=''))
+            w.insert(tk.END, '\n▶ ⚙ %s → %s\n' % (name, text), (row_tag,))
+            w.see(tk.END)   # 每次输出都跟随到底
+            mark_at = 'tool_%d_at' % idx
+            # end-1c = 末尾隐含 \n 处 (工具行尾之后); append 实际插在该 \n
+            # 之前 (= 锚点处), gravity left 使锚点留在新文本之前 → 钉在行尾
+            w.mark_set(mark_at, 'end-1c')
+            w.mark_gravity(mark_at, 'left')
+            self._tool_rows.append({'result': result, 'open': False,
+                                    'tag': row_tag, 'mark_at': mark_at,
+                                    'mark_start': 'tool_%d_s' % idx,
+                                    'mark_end': 'tool_%d_e' % idx})
+        except Exception as e:
+            print('add_row_tag err:', str(e))
+
     # ---- 会话回显 ----
 
     def _restore_session(self):
         """打开面板时回显服务端会话历史 (上下文仍在, 界面保持一致)."""
-        history = self._svc('get_session') or []
-        for m in history:
-            content = (m or {}).get('content', '')
-            if not isinstance(content, str) or not content.strip():
-                continue
-            if (m or {}).get('role') == 'user':
-                self._append_chat('%s: %s\n' % (self._l['you'], content), 'ai_user')
-            elif (m or {}).get('role') == 'assistant':
-                # Agent 回复走 markdown 渲染 (与实时输出一致)
-                self._append_chat('%s:\n' % self._l['agent'], 'ai_assistant')
-                self._txt_chat.append_markdown(content + '\n', 'ai_body')
+        try:
+            history = self._svc('get_session') or []
+            tool_call_map = {m.get('tool_call_id'): m.get('content', '') for m in history if m and (m or {}).get('role') == 'tool'}
+            ai_assistant = False
+            for m in history:
+                if not m or not isinstance(m, dict):
+                    continue
+                content = m.get('content', '')
+                if not isinstance(content, str):
+                    content = ''
+                role = (m or {}).get('role')
+                if role == 'user':
+                    self._append_chat('%s: %s\n' % (self._l['you'], content), 'ai_user')
+                    ai_assistant = False
+                elif role == 'assistant':
+                    # Agent 回复走 markdown 渲染 (与实时输出一致)
+                    if not ai_assistant:
+                        self._append_chat('%s:\n' % self._l['agent'], 'ai_assistant')
+                        ai_assistant = True
+                    for tc in m.get('tool_calls', []):
+                        fc = tc['function']
+                        name = fc['name']
+                        result = tool_call_map.get(tc['id'], '')
+                        self._add_row_tag(name, result)
+                    if content:
+                        self._txt_chat.append_markdown(content + '\n', 'ai_body')
+                    self._txt_chat.flush()
+        except Exception as e:
+            print('restore_session err:', str(e))
         self._txt_chat.flush()
         if not history:
             self._show_welcome()
@@ -724,30 +771,7 @@ class AgentPanel(GuiPlugin):
             return
         self._flush_chunks()   # 先落攒批文本, 保证工具行接在流式输出之后
         self._txt_chat.flush()   # 工具行插入前强制渲染未稳定段
-        text = summary or self._summarize_result(result)
-        # 折叠行: 点击展开完整结果/收起 — 唯一 tag + 闭包索引
-        idx = len(self._tool_rows)
-        row_tag = 'tool_row_%d' % idx
-        w = self._txt_chat
-        w.tag_configure(row_tag, foreground=self.theme['fg'],
-                        lmargin1=16, lmargin2=16)   # 与时间线/tokens 行同缩进
-        w.tag_bind(row_tag, '<Button-1>',
-                   lambda _e, i=idx: self._toggle_tool(i))
-        w.tag_bind(row_tag, '<Enter>',
-                   lambda _e: w.config(cursor='hand2'))
-        w.tag_bind(row_tag, '<Leave>',
-                   lambda _e: w.config(cursor=''))
-        w.insert(tk.END, '\n▶ ⚙ %s → %s\n' % (name, text), (row_tag,))
-        w.see(tk.END)   # 每次输出都跟随到底
-        mark_at = 'tool_%d_at' % idx
-        # end-1c = 末尾隐含 \n 处 (工具行尾之后); append 实际插在该 \n
-        # 之前 (= 锚点处), gravity left 使锚点留在新文本之前 → 钉在行尾
-        w.mark_set(mark_at, 'end-1c')
-        w.mark_gravity(mark_at, 'left')
-        self._tool_rows.append({'result': result, 'open': False,
-                                'tag': row_tag, 'mark_at': mark_at,
-                                'mark_start': 'tool_%d_s' % idx,
-                                'mark_end': 'tool_%d_e' % idx})
+        self._add_row_tag(name, result, summary)
         self._set_thinking(True)   # 工具结果回填模型, 等待下一轮回答
 
     def _toggle_tool(self, idx):
