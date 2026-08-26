@@ -62,13 +62,6 @@ class TestEmit(unittest.TestCase):
         mod.emit('timer', 42)
         self.assertEqual(called, [(42,)])
 
-    def test_emit_at_present_passthrough(self):
-        mod = self.bus.module('plugin_a')
-        called = []
-        mod.on('plugins@stop', lambda *a: called.append(a))
-        mod.emit('plugins@stop', 'target')
-        self.assertEqual(called, [('target',)])
-
     def test_emit_delivers_to_all_listeners(self):
         mod_a = self.bus.module('plugin_a')
         mod_b = self.bus.module('plugin_b')

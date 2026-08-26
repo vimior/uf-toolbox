@@ -313,7 +313,11 @@ class TasksService(ServicePlugin):
         for ns in to_start:
             if self.services.call('plugins@check', ns) == 0:
                 # 预启动, 没有记录, 暂时没有做用完关闭操作
-                self.app.emit('plugins@start', ns, hidden=True)
+                try:
+                    self.services.call('plugins@start', ns, hidden=True)
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
 
     @staticmethod
     def _parse_time(time_str):
@@ -463,9 +467,9 @@ class TasksService(ServicePlugin):
             if auto_start and plugin_ns:
                 alive = plugin_status > 0
                 if not alive and self.root:
-                    self.root.after(0, lambda ns=plugin_ns: self.app.emit('plugins@start', ns, hidden=True))
+                    self.root.after(0, lambda ns=plugin_ns: self.services.call('plugins@start', ns, hidden=True))
                     # 检测插件是否启动，最大检测时间为1s
-                    self.services.call('plugins@check', plugin_ns, 1)
+                    self.services.call('plugins@check', plugin_ns, 2)
 
             task_args = task.get('args', ())
             task_kwargs = task.get('kwargs', {})
@@ -479,12 +483,8 @@ class TasksService(ServicePlugin):
             finally:
                 if not alive and plugin_ns and self.root:
                     # 自行启动的插件，在执行完后自动关闭
-                    try:
-                        # 停止必须落在主线程 (Tk 非线程安全) — after 调度, 同 task_service
-                        self.root.after(0, lambda ns=plugin_ns: self.app.emit('plugins@stop', ns))
-                    except Exception:
-                        pass
-
+                    # 停止必须落在主线程 (Tk 非线程安全) — after 调度, 同 task_service
+                    self.root.after(0, lambda ns=plugin_ns: self.services.call('plugins@stop', ns))
         try:
             future = self._executor.submit(_call)
             result = future.result(timeout=timeout_val)

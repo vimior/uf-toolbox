@@ -457,7 +457,7 @@ class TestPluginInfo(_EagerTestBase, unittest.TestCase):
         h2 = PluginManager.Handle(_EagerService, self.app, self.mgr, key='s')
         self.mgr.plugins = {'a': h1, 's': h2}
 
-        info = self.mgr.get_plugin()
+        info = self.mgr._service_get_plugin()
         self.assertIn('pa', info)
         self.assertIn('mock_svc', info)
         self.assertEqual(info['pa']['type'], 'GuiPlugin')
@@ -466,14 +466,14 @@ class TestPluginInfo(_EagerTestBase, unittest.TestCase):
     def test_get_plugin_single(self):
         h = PluginManager.Handle(_EagerGui, self.app, self.mgr, key='g')
         self.mgr.plugins['g'] = h
-        info = self.mgr.get_plugin('mock_gui')
+        info = self.mgr._service_get_plugin('mock_gui')
         self.assertEqual(info['namespace'], 'mock_gui')
         self.assertEqual(info['name'], 'Mock GUI')
         self.assertEqual(info['type'], 'GuiPlugin')
         self.assertFalse(info['alive'])
 
     def test_get_plugin_not_found(self):
-        self.assertIsNone(self.mgr.get_plugin('unknown'))
+        self.assertIsNone(self.mgr._service_get_plugin('unknown'))
 
     def test_info_for_lazy_handle(self):
         h = PluginManager.Handle(None, self.app, self.mgr,
@@ -611,34 +611,35 @@ class TestControlEvents(_EagerTestBase, unittest.TestCase):
 
     def test_control_events_registered_in_init(self):
         bus = self.app._infra.eventbus
-        self.assertEqual(bus.on.call_count, 5)
+        self.assertEqual(bus.on.call_count, 1)
         events = {call[0][0] for call in bus.on.call_args_list}
         self.assertEqual(events, {
-            'plugins@start',
-            'plugins@stop',
-            'plugins@show',
-            'plugins@hide',
             'plugins@auto-start',
         })
 
     def test_info_service_registered_in_init(self):
         svc = self.app._infra.services
         svc.register.assert_has_calls([
-            call('get', self.mgr.get_plugin, ns='plugins'),
+            call('start', self.mgr._service_start_plugin, ns='plugins'),
+            call('stop', self.mgr._service_stop_plugin, ns='plugins'),
+            call('show', self.mgr._service_show_plugin, ns='plugins'),
+            call('hide', self.mgr._service_hide_plugin, ns='plugins'),
+            call('get', self.mgr._service_get_plugin, ns='plugins'),
+            call('check', self.mgr._service_check_plugin, ns='plugins'),
             call('list_capabilities', self.mgr._svc_list_capabilities,
                  ns='plugins'),
         ], any_order=True)
 
-    def test_on_plugin_stop_delegates(self):
+    def test_stop_plugin_delegates(self):
         h = PluginManager.Handle(_EagerGui, self.app, self.mgr, key='g')
         h._inst = make_mock_win()
         self.mgr.plugins['g'] = h
 
         with patch.object(self.mgr, 'stop_plugin') as mock_stop:
-            self.mgr._on_plugin_stop('mock_gui')
+            self.mgr._service_stop_plugin('mock_gui')
             mock_stop.assert_called_once_with(h)
 
-    def test_on_plugin_hide_with_exclude(self):
+    def test_hide_plugin_with_exclude(self):
         """Wildcard hide excludes the caller."""
         h1 = PluginManager.Handle(None, self.app, self.mgr,
                                   metadata={'name': 'A', 'namespace': 'pa'},
@@ -651,7 +652,7 @@ class TestControlEvents(_EagerTestBase, unittest.TestCase):
         self.mgr.plugins = {'a': h1, 'b': h2}
 
         with patch.object(self.mgr, 'hide_plugin') as mock_hide:
-            self.mgr._on_plugin_hide('*', exclude='pa')
+            self.mgr._service_hide_plugin('*', exclude='pa')
             mock_hide.assert_called_once_with(h2)  # only 'pb', not 'pa'
 
 

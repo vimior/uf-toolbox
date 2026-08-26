@@ -501,13 +501,10 @@ class AgentService(ServicePlugin):
             alive = plugin_status > 0
             if not alive:
                 # 插件存在, 但是没启动, 先尝试启动
-                try:
-                    # 启动必须落在主线程 (Tk 非线程安全) — after 调度, 同 task_service
-                    self.root.after(0, lambda ns=plugin_ns: self.app.emit('plugins@start', ns, hidden=True))
-                except Exception:
-                    pass
-                # 检测插件是否启动，最大检测时间为1s
-                self.services.call('plugins@check', plugin_ns, 1)
+                # 启动必须落在主线程 (Tk 非线程安全) — after 调度, 同 task_service
+                self.root.after(0, lambda ns=plugin_ns: self.services.call('plugins@start', ns, hidden=True))
+                # 检测插件是否启动，最大检测时间为2s
+                self.services.call('plugins@check', plugin_ns, 2)
             # 尝试调用插件的服务
             try:
                 return self.services.call(ref, **args)
@@ -516,11 +513,8 @@ class AgentService(ServicePlugin):
             finally:
                 if not alive:
                     # 自行启动的插件，在执行完后自动关闭
-                    try:
-                        # 停止必须落在主线程 (Tk 非线程安全) — after 调度, 同 task_service
-                        self.root.after(0, lambda ns=plugin_ns: self.app.emit('plugins@stop', ns))
-                    except Exception:
-                        pass
+                    # 停止必须落在主线程 (Tk 非线程安全) — after 调度, 同 task_service
+                    self.root.after(0, lambda ns=plugin_ns: self.services.call('plugins@stop', ns))
         return caller
 
     # ---- 事件队列 (线程 → 主线程) ----

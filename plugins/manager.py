@@ -466,7 +466,7 @@ class PluginManager:
         self.plugins = {}
         self._ctrl_app = app
         self._plugin_path = getattr(app, 'plugin_path', None)
-        self._setup_control_events()
+        self._register_services()
 
     # -- public lifecycle API ----------------------------------------------
     #
@@ -513,22 +513,6 @@ class PluginManager:
         if handle.alive and not handle.is_service:
             handle.hide()
 
-    def get_plugin(self, target=None, refresh=False):
-        """Return plugin status info as a dict.
-
-        *target*: namespace / registry key → single dict; ``None`` → dict of dicts keyed by namespace.
-        *refresh*: if True, re-scan plugin directories before querying.
-        """
-        if refresh:
-            self.load(self._plugin_path)
-        if target is not None:
-            h = self._resolve_one(target)
-            if h is None:
-                return None
-            return self._info_for(h[1])
-
-        return {h.namespace: self._info_for(h) for h in self.plugins.values()}
-
     def _info_for(self, h):
         """Build an info dict for *handle*."""
         if h._cls:
@@ -573,22 +557,56 @@ class PluginManager:
         if handle._shown and win.winfo_exists():
             win.deiconify()
 
-    # -- control events ---------------------------------------------------
+    # -- services ---------------------------------------------------
 
-    def _setup_control_events(self):
-        """Register lifecycle control events and services."""
+    def _register_services(self):
+        """Register services."""
         app = self._ctrl_app
-        app.on('start',       self._on_plugin_start, ns=NS)
-        app.on('stop',        self._on_plugin_stop,  ns=NS)
-        app.on('show',        self._on_plugin_show,  ns=NS)
-        app.on('hide',        self._on_plugin_hide,  ns=NS)
-        app.on('auto-start',  self._on_auto_start,   ns=NS)
-
-        app.services.register('get', self.get_plugin, ns=NS)
-        app.services.register('check', self.check_plugin, ns=NS)
+        app.services.register('auto_start', self._auto_start_plugins, ns=NS)
+        app.services.register('start', self._service_start_plugin, ns=NS)
+        app.services.register('stop',  self._service_stop_plugin,  ns=NS)
+        app.services.register('show',  self._service_show_plugin,  ns=NS)
+        app.services.register('hide',  self._service_hide_plugin,  ns=NS)
+        app.services.register('get',   self._service_get_plugin,   ns=NS)
+        app.services.register('check', self._service_check_plugin, ns=NS)
+        self._start_builtin_services()
         self.register_agent_tools()
 
-    def check_plugin(self, ns, timeout=None):
+    def _start_builtin_services(self):
+        """Start built-in services that are not exported via __init__.py.
+
+        These services are invisible in the plugin menu and always run
+        in the background.  Each entry is a (import_path, class_name, namespace) tuple.
+        """
+        BUILTIN_SERVICES = [
+            ('plugins.ai_assistant.agent_service', 'AgentService', 'agent'),
+            ('plugins.task_scheduler.task_service', 'TasksService', 'tasks'),
+            ('plugins.task_scheduler.notify_service', 'NotifyService', 'notify'),
+        ]
+        self._builtin_instances = getattr(self, '_builtin_instances', [])
+        for import_path, class_name, namespace in BUILTIN_SERVICES:
+            try:
+                mod = __import__(import_path, fromlist=[class_name])
+                cls = getattr(mod, class_name)
+                svc = cls(app=self._ctrl_app.module(namespace))
+                svc.on_start()
+                NamespaceManager.add(namespace, True)
+                self._builtin_instances.append(svc)
+                self.logger.info('[PluginManager] built-in service started: %s', class_name)
+            except Exception as e:
+                self.logger.error(
+                    '[PluginManager] failed to start built-in service %s: %s',
+                    class_name, e)
+
+    def _auto_start_plugins(self):
+        """Load plugins then auto-start those whose ``auto_start`` flag is set."""
+        self._ctrl_app.services.unregister('auto_start', NS)
+        self.load(self._plugin_path)
+        for h in self.plugins.values():
+            if h.auto_start and not h.alive:
+                self.start_plugin(h, self._ctrl_app)
+
+    def _service_check_plugin(self, ns, timeout=None):
         """
         检测插件状态(如果不存在会重新扫描一遍)
         
@@ -614,6 +632,38 @@ class PluginManager:
                     return 1
                 time.sleep(0.01)
         return -1 if h is None else 1 if h[1].alive else 0
+
+    def _service_start_plugin(self, targets, hidden=False, exclude=None):
+        for _, h in self._resolve_targets(targets, exclude=exclude):
+            self.start_plugin(h, self._ctrl_app, hidden=hidden)
+
+    def _service_stop_plugin(self, targets, exclude=None):
+        for _, h in self._resolve_targets(targets, exclude=exclude):
+            self.stop_plugin(h)
+
+    def _service_show_plugin(self, targets, exclude=None):
+        for _, h in self._resolve_targets(targets, exclude=exclude):
+            self.show_plugin(h)
+
+    def _service_hide_plugin(self, targets, exclude=None):
+        for _, h in self._resolve_targets(targets, exclude=exclude):
+            self.hide_plugin(h)
+
+    def _service_get_plugin(self, target=None, refresh=False):
+        """Return plugin status info as a dict.
+
+        *target*: namespace / registry key → single dict; ``None`` → dict of dicts keyed by namespace.
+        *refresh*: if True, re-scan plugin directories before querying.
+        """
+        if refresh:
+            self.load(self._plugin_path)
+        if target is not None:
+            h = self._resolve_one(target)
+            if h is None:
+                return None
+            return self._info_for(h[1])
+
+        return {h.namespace: self._info_for(h) for h in self.plugins.values()}
 
     def _resolve_one(self, target):
         """Look up a single target by namespace or registry key. Returns (key, Handle) or None."""
@@ -650,57 +700,6 @@ class PluginManager:
                 exclude = set(exclude)
             pairs = [(k, h) for k, h in pairs if h.namespace not in exclude]
         return pairs
-
-    def _on_plugin_start(self, targets, hidden=False, exclude=None):
-        for _, h in self._resolve_targets(targets, exclude=exclude):
-            self.start_plugin(h, self._ctrl_app, hidden=hidden)
-
-    def _on_plugin_stop(self, targets, exclude=None):
-        for _, h in self._resolve_targets(targets, exclude=exclude):
-            self.stop_plugin(h)
-
-    def _on_plugin_show(self, targets, exclude=None):
-        for _, h in self._resolve_targets(targets, exclude=exclude):
-            self.show_plugin(h)
-
-    def _on_plugin_hide(self, targets, exclude=None):
-        for _, h in self._resolve_targets(targets, exclude=exclude):
-            self.hide_plugin(h)
-
-    def _on_auto_start(self):
-        """Load plugins then auto-start those whose ``auto_start`` flag is set."""
-        self._ctrl_app.off('auto-start', self._on_auto_start, ns=NS)
-        self.load(self._plugin_path)
-        for h in self.plugins.values():
-            if h.auto_start and not h.alive:
-                self.start_plugin(h, self._ctrl_app)
-        self._start_builtin_services()
-
-    def _start_builtin_services(self):
-        """Start built-in services that are not exported via __init__.py.
-
-        These services are invisible in the plugin menu and always run
-        in the background.  Each entry is a (import_path, class_name, namespace) tuple.
-        """
-        BUILTIN_SERVICES = [
-            ('plugins.ai_assistant.agent_service', 'AgentService', 'agent'),
-            ('plugins.task_scheduler.task_service', 'TasksService', 'tasks'),
-            ('plugins.task_scheduler.notify_service', 'NotifyService', 'notify'),
-        ]
-        self._builtin_instances = getattr(self, '_builtin_instances', [])
-        for import_path, class_name, namespace in BUILTIN_SERVICES:
-            try:
-                mod = __import__(import_path, fromlist=[class_name])
-                cls = getattr(mod, class_name)
-                svc = cls(app=self._ctrl_app.module(namespace))
-                svc.on_start()
-                NamespaceManager.add(namespace, True)
-                self._builtin_instances.append(svc)
-                self.logger.info('[PluginManager] built-in service started: %s', class_name)
-            except Exception as e:
-                self.logger.error(
-                    '[PluginManager] failed to start built-in service %s: %s',
-                    class_name, e)
 
     # -- AST-based metadata extraction (no import needed) --
 
@@ -994,8 +993,7 @@ class PluginManager:
     def _agent_plugins_impl(self, action, targets, exclude, hidden, refresh):
         """agent_plugins 的实际逻辑 (主线程执行, 见 agent_plugins)."""
         if action == 'list':
-            # print(action, targets, exclude, hidden, refresh)
-            ret = self.get_plugin(refresh=refresh)
+            ret = self._service_get_plugin(refresh=refresh)
             # 太长会被结果截断, 导致模型漏看尾部条目
             # 紧凑格式: name1(ns1)|name2(ns2)|...
             ret_str = '|'.join([f"{info['name']}({ns})" for ns, info in ret.items()])
