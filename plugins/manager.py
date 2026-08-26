@@ -143,7 +143,7 @@ class PluginManager:
                 return False
             if isinstance(self._inst, ServicePlugin):
                 return True
-            return self._inst.winfo_exists()
+            return bool(self._inst.winfo_exists())
 
         @property
         def loaded(self):
@@ -201,7 +201,7 @@ class PluginManager:
             """True if this GUI plugin window is currently viewable."""
             if self._inst is None or self.is_service:
                 return False
-            return self._inst.winfo_exists() and self._inst.winfo_viewable()
+            return bool(self._inst.winfo_exists() and self._inst.winfo_viewable())
 
         @staticmethod
         def _start(inst):
@@ -473,45 +473,63 @@ class PluginManager:
     #   These are the single source of truth for plugin start/stop/show/hide.
     #   Both the menu and the control-event handlers route through here.
 
-    def start_plugin(self, handle, parent, hidden=False):
-        """Start *handle* and apply position + icon. Returns the window
-        instance (GUI) or ``None`` (Service / already running).
+    def start_plugin(self, handle, hidden=False):
+        """Start *handle* and apply position + icon.
 
-        :rtype: object | None
+        :return: HookInfo | None
         """
-        was_loaded = handle.loaded
-
+        if not handle or not isinstance(handle, self.Handle):
+            return None
         if not handle.alive:
-            win = handle.start(parent, hidden=hidden)
+            win = handle.start(parent=self._ctrl_app, hidden=hidden)
             if not handle.is_service:
                 self._apply_window_setup(handle)
         elif not handle.is_service and not hidden:
-            handle.show()
+            if hidden:
+               handle.hide()
+            else: 
+                handle.show()
             win = handle._inst
         else:
             win = None
-
-        menu_changed = handle.loaded and not was_loaded
-        return win, menu_changed
+        return HookInfo.from_handle(handle)
 
     def stop_plugin(self, handle):
         """Stop (destroy) *handle*.
 
         Third-party plugins are fully unloaded (class + module dropped) so
         their memory is released; built-in plugins keep the class for a fast
-        restart."""
+        restart.
+        
+        :return: HookInfo | None
+        """
+        if not handle or not isinstance(handle, self.Handle):
+            return None
         if handle.alive:
             handle.close()
+        return HookInfo.from_handle(handle)
 
     def show_plugin(self, handle):
-        """Show a hidden GUI plugin window (no-op for services)."""
+        """Show a hidden GUI plugin window (no-op for services).
+        
+        :return: HookInfo | None
+        """
+        if not handle or not isinstance(handle, self.Handle):
+            return None
         if handle.alive and not handle.is_service:
             handle.show()
+        return HookInfo.from_handle(handle)
 
     def hide_plugin(self, handle):
-        """Hide a visible GUI plugin window (no-op for services)."""
+        """Hide a visible GUI plugin window (no-op for services).
+        
+        :return: HookInfo | None
+        """
+        if not handle or not isinstance(handle, self.Handle):
+            return None
         if handle.alive and not handle.is_service:
             handle.hide()
+        return HookInfo.from_handle(handle)
 
     def _info_for(self, h):
         """Build an info dict for *handle*."""
@@ -567,8 +585,9 @@ class PluginManager:
         app.services.register('stop',  self._service_stop_plugin,  ns=NS)
         app.services.register('show',  self._service_show_plugin,  ns=NS)
         app.services.register('hide',  self._service_hide_plugin,  ns=NS)
-        app.services.register('get',   self._service_get_plugin,   ns=NS)
+        app.services.register('list',  self._service_list_plugins, ns=NS)
         app.services.register('check', self._service_check_plugin, ns=NS)
+        app.services.register('get',   self._service_get_plugin,   ns=NS)
         self._start_builtin_services()
         self.register_agent_tools()
 
@@ -604,102 +623,176 @@ class PluginManager:
         self.load(self._plugin_path)
         for h in self.plugins.values():
             if h.auto_start and not h.alive:
-                self.start_plugin(h, self._ctrl_app)
+                self.start_plugin(h)
 
-    def _service_check_plugin(self, ns, timeout=None):
+    def _service_list_plugins(self, refresh=False):
+        if refresh:
+            self.load(self._plugin_path)
+        return [self._info_for(h) for h in self.plugins.values()]
+
+    def _service_check_plugin(self, target, timeout=None):
         """
         检测插件状态(如果不存在会重新扫描一遍)
         
-        :params ns: 插件命名空间
+        :params target: 插件命名空间或名字
         :param timeout: 如果指定了timeout, 当插件存在且不在线时, 就等待插件在线的超时时间
         :return
             -1: 不存在
             0: 存在但不在线
             1: 在线
         """
-        if not ns:
+        if not target:
             return -1
-        if NamespaceManager.is_reserved(ns):
+        if NamespaceManager.is_reserved(target):
             return 1
-        h = self._resolve_one(ns)
-        if h is None:
+        ret = self._resolve_one(target)
+        if not ret[0] or not isinstance(ret[1], self.Handle):
+            # 没有精准匹配到, 重新load一遍
             self.load(self._plugin_path)
-            h = self._resolve_one(ns)
-        if h is not None and timeout is not None and isinstance(timeout, (int, float)) and timeout > 0:
+            ret = self._resolve_one(target)
+            if not ret[0] or not isinstance(ret[1], self.Handle):
+                # 还是没有精准匹配到, 当作不存在
+                return -1
+        h = ret[1]
+        if timeout is not None and isinstance(timeout, (int, float)) and timeout > 0:
             expired = time.monotonic() + timeout
             while time.monotonic() < expired:
-                if h[1].alive:
+                if h.alive:
                     return 1
                 time.sleep(0.01)
-        return -1 if h is None else 1 if h[1].alive else 0
+        return 1 if h.alive else 0
+    
+    def _service_get_plugin(self, target):
+        """获取插件信息
+        不存在返回None
+        精准匹配上返回插件信息dict
+        模糊匹配上返回列表, 列表内是匹配上的插件信息dict
+        """
+
+        ret = self._resolve_one(target)
+        if not ret[0]:
+            self.load(self._plugin_path)
+            ret = self._resolve_one(target)
+            if not ret[0]:
+                return None
+        if isinstance(ret[1], self.Handle):
+            return self._info_for(ret[1])
+        else:
+            return [self._info_for(h) for h in ret[1]]
 
     def _service_start_plugin(self, targets, hidden=False, exclude=None):
-        for _, h in self._resolve_targets(targets, exclude=exclude):
-            self.start_plugin(h, self._ctrl_app, hidden=hidden)
+        for item in self._resolve_targets(targets):
+            h = self._get_handle_from_resolve_item(item, exclude)
+            if h:
+                self._ctrl_app.after(0, lambda h=h,hidden=hidden: self.start_plugin(h, hidden=hidden))
 
     def _service_stop_plugin(self, targets, exclude=None):
-        for _, h in self._resolve_targets(targets, exclude=exclude):
-            self.stop_plugin(h)
+        for item in self._resolve_targets(targets):
+            h = self._get_handle_from_resolve_item(item, exclude)
+            if h:
+                self._ctrl_app.after(0, lambda h=h: self.stop_plugin(h))
 
     def _service_show_plugin(self, targets, exclude=None):
-        for _, h in self._resolve_targets(targets, exclude=exclude):
-            self.show_plugin(h)
+        for item in self._resolve_targets(targets):
+            h = self._get_handle_from_resolve_item(item, exclude)
+            if h:
+                self._ctrl_app.after(0, lambda h=h: self.show_plugin(h))
 
     def _service_hide_plugin(self, targets, exclude=None):
-        for _, h in self._resolve_targets(targets, exclude=exclude):
-            self.hide_plugin(h)
+        for item in self._resolve_targets(targets):
+            h = self._get_handle_from_resolve_item(item, exclude)
+            if h:
+                self._ctrl_app.after(0, lambda h=h: self.hide_plugin(h))
 
-    def _service_get_plugin(self, target=None, refresh=False):
-        """Return plugin status info as a dict.
+    # ===============================================
 
-        *target*: namespace / registry key → single dict; ``None`` → dict of dicts keyed by namespace.
-        *refresh*: if True, re-scan plugin directories before querying.
-        """
-        if refresh:
-            self.load(self._plugin_path)
-        if target is not None:
-            h = self._resolve_one(target)
-            if h is None:
+    def _get_handle_from_resolve_item(self, item, exclude):
+        if not item or not item[0]:
+            return None 
+        if isinstance(item[1], list) and len(item[1]) != 1:
+            return None
+        if exclude and isinstance(exclude, str):
+            exclude = [exclude]
+        h = item[1][0] if isinstance(item[1], list) else item[1]
+        if exclude and isinstance(exclude, list):
+            if h.namespace in exclude or h.get_name() in exclude:
                 return None
-            return self._info_for(h[1])
+        return h
 
-        return {h.namespace: self._info_for(h) for h in self.plugins.values()}
+    def _resolve_targets(self, targets, loaded=True):
+        """多个目标解析, 匹配规则参看_resolve_one
+
+        :targets: 要解析的目录列表
+        :return: list, list里每一项如下
+            规则1匹配上: (True, handle)
+            规则2匹配上: (True, [...])
+            规则3匹配上: (True, [...])
+            否则:       (False, []) 
+        """
+        if not targets:
+            return []
+        if isinstance(targets, str):
+            targets = [targets]
+        all_ret = []
+        for target in targets:
+            ret = self._resolve_one(target)
+            if loaded and (not ret[0] or isinstance(ret[1], list)):
+                self.load(self._plugin_path)
+                loaded = False
+                ret = self._resolve_one(target)
+            all_ret.append(ret)
+        return all_ret
 
     def _resolve_one(self, target):
-        """Look up a single target by namespace or registry key. Returns (key, Handle) or None."""
-        for key, h in self.plugins.items():
-            if h.namespace == target or key == target:
-                return key, h
-        return None
+        """单个目标解析, 匹配规则:
+        1. 完整匹配: target 和 key/namespace 完全一样
+        2. (忽略大小写)完整匹配: target 和 key/namespace/_name_raw/_name_zh/_name_en 完全一样
+        3. (忽略大小写)包含关系: target 和 key/namespace/_name_raw/_name_zh/_name_en 有包含关系
 
-    def _resolve_targets(self, targets, exclude=None):
-        """Resolve *targets* to a flat list of (key, Handle) pairs.
-
-        *targets* may be a single namespace string, a list of strings,
-        or ``'*'`` for all registered plugins.  *exclude* (namespace) is
-        removed from the result — used to skip the caller on wildcard
-        stop/hide.
+        :return:
+            规则1匹配上: 返回(True, handle)
+            规则2匹配上: 返回(True, [...])
+            规则3匹配上: 返回(True, [...])
+            否则: 返回(False, []) 
         """
-        if targets == '*':
-            pairs = list(self.plugins.items())
-        elif isinstance(targets, str):
-            found = self._resolve_one(targets)
-            pairs = [found] if found else []
-        else:
-            pairs = []
-            for t in targets:
-                found = self._resolve_one(t)
-                if found:
-                    pairs.append(found)
-                else:
-                    self.logger.warning('[PluginManager] unknown target: %s', t)
-        if exclude:
-            if isinstance(exclude, str):
-                exclude = {exclude}
+        if not target or not isinstance(target, str):
+            return False, []
+        target = target.strip()
+        if not target:
+            return False, []
+        exact = [] # 精确的(不区分大小写)
+        fuzzy = [] # 模糊的(包含匹配)
+        token = target.lower()
+
+        def names(key, h):
+            _names = []
+            for name in [key, h.namespace, h._name_raw, h._name_zh, h._name_en]:
+                if not name or not isinstance(name, str):
+                    continue
+                _name = name.lower()
+                if _name not in _names:
+                    _names.append(_name)
+            return _names
+
+        for key, h in self.plugins.items():
+            if target in [key, h.namespace]:
+                return True, h
+            _names = names(key, h)
+            if token in _names:
+                if h not in exact:
+                    exact.append(h)
             else:
-                exclude = set(exclude)
-            pairs = [(k, h) for k, h in pairs if h.namespace not in exclude]
-        return pairs
+                for n in _names:
+                    if token in n or n in token:
+                        if h not in fuzzy:
+                            fuzzy.append(h)
+        if exact:
+            return True, exact
+        if fuzzy:
+            return True, fuzzy
+        return False, []
+
+    # ===============================================
 
     # -- AST-based metadata extraction (no import needed) --
 
@@ -936,7 +1029,7 @@ class PluginManager:
             # 注册 agent 工具
             # 惰性 import — 保持模块 standalone (无 app 时不引入项目依赖)。
             from plugins.ai_assistant.core.registry import registry as agent_registry
-            self._ctrl_app.services.register('list_capabilities', self._svc_list_capabilities, ns=NS)
+            self._ctrl_app.services.register('list_agent_tools', self._svc_list_plugin_agent_tools, ns=NS)
             agent_registry.register('plugins_operation', fn=self.agent_plugins)
 
     def agent_plugins(self,
@@ -949,7 +1042,7 @@ class PluginManager:
         管理UFToolBox插件: 除了list外必须传targets
 
         action: start=打开插件(未启动则启动, 已启动则前置显示);stop=停止销毁;hide=隐藏窗口(不销毁);list=列出所有插件(含namespace);get=获取插件信息
-        targets: 目标插件namespace或显示名(中英文,支持模糊), 多个用;分隔, '*'=全部; list时省略=全部
+        targets: 目标插件namespace或显示名(中英文,支持模糊), 多个用";"分隔; list时省略=全部
         exclude: 要排除的插件(格式同targets), 仅配合'*'使用
         hidden: 仅start: False=显示窗口(默认; 已启动的会前置显示), True=静默(未启动=静默启动不弹窗, 已启动=隐藏窗口)
         refresh: 仅list: True=先重扫插件目录, 默认False
@@ -993,149 +1086,46 @@ class PluginManager:
     def _agent_plugins_impl(self, action, targets, exclude, hidden, refresh):
         """agent_plugins 的实际逻辑 (主线程执行, 见 agent_plugins)."""
         if action == 'list':
-            ret = self._service_get_plugin(refresh=refresh)
+            ret = self._service_list_plugins(refresh=refresh)
             # 太长会被结果截断, 导致模型漏看尾部条目
             # 紧凑格式: name1(ns1)|name2(ns2)|...
-            ret_str = '|'.join([f"{info['name']}({ns})" for ns, info in ret.items()])
+            ret_str = '|'.join([f"{info['name']}({info['namespace']})" for info in ret])
             return ret_str
-        elif action == 'get':
-            handles, err = self._agent_targets(targets)
-            ret = {}
-            if handles:
-                ret = {h.namespace: self._info_for(h) for _, h in handles}
-            if err:
-                ret['_errors'] = err
-            return ret
-        handles, err = self._agent_targets(targets)
-        if not handles:
-            return err or 'error: targets is required'
-        if exclude.strip():
-            excluded = set()
-            for token in exclude.split(';'):
-                hit, _cands = self._agent_resolve(token)
-                if hit:
-                    excluded.add(hit[1].namespace)
-            handles = [(k, h) for k, h in handles
-                       if h.namespace not in excluded]
-        if not handles:
-            return 'error: targets 全部被 exclude 排除'
-        # 结果按执行后真实状态判定 (start_plugin 对服务恒返回 None,
-        # 不能据返回值判成败); 统一返回 {namespace: 'ok'|'failed[: 原因]'}
-        if action == 'start':
-            ret = {}
-            for _, h in handles:
-                h._last_error = None
-                if h.alive and hidden and not h.is_service:
-                    # 已启动 + 静默指令 → 隐藏窗口 (hide 的逆操作也走 start,
-                    # 模型只需记 start/hide 两个动作)
+
+        if not targets:
+            return 'error: targets is required'
+        if isinstance(targets, str):
+            targets = targets.split(';')
+        if exclude:
+            if isinstance(exclude, str):
+                exclude = exclude.split(';')
+        if action not in ['start', 'stop', 'hide', 'get']:
+            return 'error: unknown action %r' % action
+        i = 0
+        res = {}
+        for item in self._resolve_targets(targets):
+            if not item[0]:
+                res[targets[i]] = 'failed[未匹配到插件]'
+            elif isinstance(item[1], list) and len(item[1]) != 1:
+                res[targets[i]] = 'failed[匹配到多个候选: {}]'.format('|'.join([f'{h.get_name()}({h.namespace})' for h in item[1]]))
+            h = item[1][0] if isinstance(item[1], list) else item[1]
+            if self._get_handle_from_resolve_item(item, exclude):
+                # TODO exec
+                res[targets[i]] = 'ok'
+                if action == 'get':
+                    res[targets[i]] = self._info_for(h)
+                elif action == 'start':
+                    self.start_plugin(h, hidden=hidden)
+                elif action == 'stop':
+                    self.stop_plugin(h)
+                elif action == 'hide':
                     self.hide_plugin(h)
-                    ret[h.namespace] = 'ok' if not h.visible else 'failed'
-                    continue
-                self.start_plugin(h, self._ctrl_app, hidden=hidden)
-                if h.alive:
-                    ret[h.namespace] = 'ok'
-                else:
-                    # 带回失败原因 (init error 等) — 模型可据此判断是
-                    # 重试还是放弃, 而不是对着干巴巴的 failed 瞎试
-                    err2 = h._last_error
-                    ret[h.namespace] = ('failed: %s' % err2) if err2 else 'failed'
-        else:
-            op, check = {
-                'stop': (self.stop_plugin, lambda h: not h.alive),
-                'hide': (self.hide_plugin, lambda h: not h.visible),
-            }.get(action, (None, None))
-            if op is None:
-                return 'error: unknown action %r' % action
-            ret = {}
-            for _, h in handles:
-                op(h)
-                ret[h.namespace] = 'ok' if check(h) else 'failed'
-        if err:
-            # 部分目标未匹配: 附在结果里 (不阻塞已匹配目标的执行),
-            # 模型拿到明确事实, 不会对未执行目标幻觉成功
-            ret['_errors'] = err
-        return ret
-
-    def _agent_targets(self, targets):
-        """解析 agent 传入的分号分隔目标串.
-
-        返回 (handles, error_str|None) — 部分目标解析失败不阻塞其余
-        目标, 失败信息 (含候选清单与工具指引) 由 error_str 返回,
-        调用方并入结果 (结果的 _errors 键)。
-        """
-        resolved, errs = self._resolve_agent_tokens(targets)
-        if errs:
-            # 兜底重扫一次: 插件目录可能刚放入新插件。重扫仅毫秒级
-            # (目录遍历 + mtime 比对, 仅新插件才 AST 解析), 比失败后
-            # 让模型二次调用省一整轮 LLM 往返
-            try:
-                self.load(self._plugin_path)
-            except Exception:
-                pass
-            resolved, errs = self._resolve_agent_tokens(targets)
-        if not errs:
-            return resolved, None
-        lines = []
-        for token, cands in errs:
-            if cands:
-                opts = '; '.join('%s(%s)' % (h.get_name(), h.namespace)
-                                 for _, h in cands)
-                lines.append('%r 匹配到多个候选: %s' % (token, opts))
             else:
-                lines.append('%r 未匹配到插件' % token)
-        avail = '; '.join('%s(%s)' % (h.get_name(), h.namespace)
-                          for h in self.plugins.values())
-        # 错误尾部互相指引 — 模型首次选错工具时第二轮必中
-        return None, ('error: %s. 可用插件: %s.' % (' | '.join(lines), avail))
+                res[targets[i]] = 'failed[被exclude排除]'
+            i = i + 1 
+        return res
 
-    def _resolve_agent_tokens(self, targets):
-        """逐 token 解析目标串 → (resolved pairs, [(token, 候选), ...])."""
-        resolved, errs = [], []
-        for token in targets.split(';'):
-            token = token.strip()
-            if not token:
-                continue
-            if token == '*':
-                resolved.extend(self.plugins.items())
-                continue
-            hit, cands = self._agent_resolve(token)
-            if hit:
-                resolved.append(hit)
-            else:
-                errs.append((token, cands))
-        return resolved, errs
-
-    def _agent_resolve(self, token):
-        """单个目标解析: namespace 精确 → 显示名(中/英)精确 → 唯一包含匹配.
-
-        返回 ((key, Handle) | None, 候选 list); 候选仅在歧义/模糊
-        多中时非空, 供错误提示使用.
-        """
-        token = token.strip()
-        if not token:
-            return None, []
-        hit = self._resolve_one(token)
-        if hit:
-            return hit, []
-        tl = token.lower()
-
-        def names(h):
-            return {n.lower() for n in
-                    (h._name_raw, h._name_zh, h._name_en) if n}
-
-        pairs = list(self.plugins.items())
-        exact = [p for p in pairs if tl in names(p[1])]
-        if len(exact) == 1:
-            return exact[0], []
-        if exact:
-            return None, exact
-        fuzzy = [p for p in pairs
-                 if any(tl in n or n in tl for n in names(p[1]))]
-        if len(fuzzy) == 1:
-            return fuzzy[0], []
-        return None, fuzzy
-
-    def _svc_list_capabilities(self):
+    def _svc_list_plugin_agent_tools(self):
         """全部已发现插件的 agent 能力声明 (含未启动插件, 不执行插件代码)."""
         caps = []
         for key, h in self.plugins.items():

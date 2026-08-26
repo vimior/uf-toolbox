@@ -140,7 +140,7 @@ class AgentService(ServicePlugin):
         manager 经 AST 扫描已获知各插件声明; 能力执行时才懒启动插件.
         """
         try:
-            caps = self.services.call('plugins@list_capabilities')
+            caps = self.services.call('plugins@list_agent_tools')
         except KeyError:
             return
         for entry in caps or []:

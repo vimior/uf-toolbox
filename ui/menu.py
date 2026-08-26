@@ -454,8 +454,9 @@ class MenuUI(AppState, tk.Tk):
     def _show_plugin_window(self, plugin):
         """Open a plugin window — delegated to PluginManager for lifecycle + setup."""
         try:
-            _, menu_changed = self._pm.start_plugin(plugin, self)
-            if menu_changed:
+            was_loaded = plugin.loaded
+            self._pm.start_plugin(plugin)
+            if plugin.loaded and not was_loaded:
                 self._refresh_plugins_menu()
         except Exception as e:
             logger.error(f'[Plugin:{plugin.get_name(self.current_lang_name)}] show error, {str(e)}')
