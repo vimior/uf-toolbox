@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 """AgentService — 后台 agent 服务 (ServicePlugin, 无 UI).
 
-服务接口 (agent@): ask / stop / clear_session / list_tools /
-confirm_result / register_tool / reload_config
-事件 (agent@): chunk / tool_call / tool_result / done / error
+服务接口 (agent@): chat / stop / clear_session / list_tools / confirm / register_tool
+事件 (agent@stream): stream
 store (agent@): status (busy|idle)
 
 线程模型 (同 notify_service): agent 工作线程 → 事件队列 →
@@ -121,40 +120,17 @@ class AgentService(ServicePlugin):
     # ---- 生命周期 ----
 
     def on_start(self):
-        self.services.register('ask', self._svc_ask)
+        self.services.register('chat', self._svc_chat)
         self.services.register('stop', self._svc_stop)
         self.services.register('clear_session', self._svc_clear_session)
         self.services.register('get_session', self._svc_get_session)
         self.services.register('list_tools', self._svc_list_tools)
-        self.services.register('confirm_result', self._svc_confirm_result)
+        self.services.register('confirm', self._svc_confirm_result)
         self.services.register('register_tool', self._svc_register_tool)
         self.root.bind('<<AgentPoll>>', self._on_poll)
         self.store.commit('status', 'idle')
         # 内置 6 工具 (core/tools/) 暂不注册 — 垂直场景价值低, 通用能力
         # 由插件承接; 恢复: 重新 import register_builtin 并在此调用 (幂等)
-        self._load_declared_tools()
-
-    def _load_declared_tools(self):
-        """从 manager 拉取全部插件的 agent_tools 声明建注册表 (不执行插件代码).
-
-        manager 经 AST 扫描已获知各插件声明; 能力执行时才懒启动插件.
-        """
-        try:
-            caps = self.services.call('plugins@list_agent_tools')
-        except KeyError:
-            return
-        for entry in caps or []:
-            for name, spec in (entry.get('tools') or {}).items():
-                if not isinstance(spec, dict):
-                    continue
-                ref = spec.get('fn_ref') or ''
-                if '@' not in ref:
-                    continue
-                schema = make_schema(name, spec.get('description', ''),
-                                      spec.get('params') or [])
-                registry.register(name, spec.get('description', ''), schema,
-                                  fn_ref=ref,
-                                  dangerous=bool(spec.get('dangerous')))
 
     def on_stop(self):
         self._running = False
@@ -169,7 +145,7 @@ class AgentService(ServicePlugin):
 
     # ---- 服务接口 (面板/其他插件/定时任务调用) ----
 
-    def _svc_ask(self, question, carry=True, win=None, local_first=True):
+    def _svc_chat(self, question, carry=True, win=None, local_first=True):
         """发起提问 — 立即返回 task_id, 结果经 agent@* 事件流推送.
 
         carry=False 单轮问答: 只发当前问题, 不读不写会话历史。
@@ -246,17 +222,18 @@ class AgentService(ServicePlugin):
                       else json.dumps(result, ensure_ascii=False))
         self._q_put(('tool_call', task_id, name, args))
         self._q_put(('tool_result', task_id, name, result_str, None))
-        self._q_put(('done', task_id, result_str, 'local'))
+        verb = '打开' if action == 'start' else '关闭'
+        content = '已帮你%s: %s (本地匹配执行, 未调用模型)' % (verb, ', '.join(targets))
         if carry:
             # 本地操作有副作用 — 写会话让后续"关掉它"类指代有上下文
             verb = '打开' if action == 'start' else '关闭'
             self._session.append({'role': 'user', 'content': question})
             self._session.append({
                 'role': 'assistant',
-                'content': '已帮你%s: %s (本地匹配执行, 未调用模型)'
-                           % (verb, ', '.join(targets))})
+                'content': content})
             self._session = self._trim_session(self._session)
             self._save_session()
+        self._q_put(('done', task_id, content, 'local'))
         return True
 
     def _svc_stop(self, task_id):
@@ -285,10 +262,19 @@ class AgentService(ServicePlugin):
         with self._lock:
             return list(self._session)
 
-    def _svc_list_tools(self):
-        return [{'name': t['name'], 'description': t['description'],
-                 'dangerous': t['dangerous'], 'builtin': 'fn' in t,
-                 'fn_ref': t.get('fn_ref')} for t in registry.list_tools()]
+    def _svc_list_tools(self, detail=False):
+        tools = []
+        for t in registry.list_tools():
+            tool = {
+                'name': t['name'], 'description': t['description'],
+                'dangerous': t['dangerous'], 'builtin': 'fn' in t,
+            }
+            if 'fn' not in t and 'fn_ref' in t:
+                tool['fn_ref'] = t['fn_ref']
+            if detail and 'schema' in t:
+                tool['schema'] = t['schema']
+            tools.append(tool)
+        return tools
 
     def _svc_confirm_result(self, task_id, ok):
         """确认回传 (主线程弹窗后调用) — 唤醒工作线程."""
@@ -303,7 +289,7 @@ class AgentService(ServicePlugin):
                            dangerous=False):
         """运行时注册能力 (动态场景): fn_ref 形如 'net_tools@diag'.
 
-        声明式注册 (_load_declared_tools) 是主渠道; 此接口供插件在
+        声明式注册是主渠道(插件管理扫描时自动注册); 此接口供插件在
         运行时按需补充。能力函数将在 agent 工作线程执行 — 必须线程
         安全、不得操作 UI。非法输入返回 False (不抛异常)。
         """
@@ -543,24 +529,8 @@ class AgentService(ServicePlugin):
 
     def _dispatch(self, msg):
         kind = msg[0]
-        if kind == 'chunk':
-            self.app.emit('chunk', msg[1], msg[2])
-        elif kind == 'local':
-            self.app.emit('local', msg[1], msg[2])
-        elif kind == 'progress':
-            self.app.emit('progress', msg[1], msg[2], msg[3])
-        elif kind == 'timing':
-            self.app.emit('timing', msg[1], msg[2], msg[3], msg[4])
-        elif kind == 'tool_call':
-            self.app.emit('tool_call', msg[1], msg[2], msg[3])
-        elif kind == 'tool_result':
-            self.app.emit('tool_result', msg[1], msg[2], msg[3],
-                          msg[4] if len(msg) > 4 else None)
-        elif kind == 'done':
-            self.app.emit('done', msg[1], msg[2],
-                          msg[3] if len(msg) > 3 else None)
-        elif kind == 'error':
-            self.app.emit('error', msg[1], msg[2])
+        if kind in ['chunk', 'local', 'progress', 'timing', 'tool_call', 'tool_result', 'done', 'error']:
+            self.app.emit('stream', msg[1], kind, msg[2:])
         elif kind == 'confirm':
             self._handle_confirm(msg)
         elif kind == 'status':

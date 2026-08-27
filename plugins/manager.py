@@ -99,7 +99,8 @@ class PluginManager:
 
             if cls is not None:
                 # Eager — class attributes are available directly
-                self._agent_tools = getattr(cls, 'agent_tools', None)
+                self._agent_tools = None
+                agent_tools = getattr(cls, 'agent_tools', None)
                 self._name_raw = cls.name
                 self._name_zh = getattr(cls, 'name_zh', None)
                 self._name_en = getattr(cls, 'name_en', None)
@@ -120,7 +121,7 @@ class PluginManager:
             else:
                 # Lazy — use metadata from AST parsing (or defaults)
                 meta = metadata or {}
-                self._agent_tools = meta.get('agent_tools')
+                agent_tools = meta.get('agent_tools')
                 self._name_raw = meta.get('name') or module_name or 'Unnamed'
                 self._name_zh = meta.get('name_zh')
                 self._name_en = meta.get('name_en')
@@ -132,6 +133,7 @@ class PluginManager:
                 self.priority = meta.get('priority', 0)
                 self.auto_start = meta.get('auto_start', False)
                 self.start_hidden = meta.get('start_hidden', False)
+            self._mgr.register_plugin_agent_tools(self, agent_tools)
 
         @property
         def is_service(self):
@@ -588,8 +590,12 @@ class PluginManager:
         app.services.register('list',  self._service_list_plugins, ns=NS)
         app.services.register('check', self._service_check_plugin, ns=NS)
         app.services.register('get',   self._service_get_plugin,   ns=NS)
+        app.services.register('flush', self.flush,                 ns=NS)
         self._start_builtin_services()
         self.register_agent_tools()
+
+    def flush(self):
+        self.load(self._plugin_path)
 
     def _start_builtin_services(self):
         """Start built-in services that are not exported via __init__.py.
@@ -620,14 +626,14 @@ class PluginManager:
     def _auto_start_plugins(self):
         """Load plugins then auto-start those whose ``auto_start`` flag is set."""
         self._ctrl_app.services.unregister('auto_start', NS)
-        self.load(self._plugin_path)
+        self.flush()
         for h in self.plugins.values():
             if h.auto_start and not h.alive:
                 self.start_plugin(h)
 
     def _service_list_plugins(self, refresh=False):
         if refresh:
-            self.load(self._plugin_path)
+            self.flush()
         return [self._info_for(h) for h in self.plugins.values()]
 
     def _service_check_plugin(self, target, timeout=None):
@@ -648,7 +654,7 @@ class PluginManager:
         ret = self._resolve_one(target)
         if not ret[0] or not isinstance(ret[1], self.Handle):
             # 没有精准匹配到, 重新load一遍
-            self.load(self._plugin_path)
+            self.flush()
             ret = self._resolve_one(target)
             if not ret[0] or not isinstance(ret[1], self.Handle):
                 # 还是没有精准匹配到, 当作不存在
@@ -671,7 +677,7 @@ class PluginManager:
 
         ret = self._resolve_one(target)
         if not ret[0]:
-            self.load(self._plugin_path)
+            self.flush()
             ret = self._resolve_one(target)
             if not ret[0]:
                 return None
@@ -737,7 +743,7 @@ class PluginManager:
         for target in targets:
             ret = self._resolve_one(target)
             if loaded and (not ret[0] or isinstance(ret[1], list)):
-                self.load(self._plugin_path)
+                self.flush()
                 loaded = False
                 ret = self._resolve_one(target)
             all_ret.append(ret)
@@ -985,6 +991,7 @@ class PluginManager:
                         h._name_zh = meta.get('name_zh')
                         h._name_en = meta.get('name_en')
                         h.priority = meta.get('priority', 0)
+                        self.register_plugin_agent_tools(h, meta.get('agent_tools'))
                     continue
 
                 mod_name, cls_name, meta = self._parse_metadata(pkg_dir)
@@ -1029,7 +1036,6 @@ class PluginManager:
             # 注册 agent 工具
             # 惰性 import — 保持模块 standalone (无 app 时不引入项目依赖)。
             from plugins.ai_assistant.core.registry import registry as agent_registry
-            self._ctrl_app.services.register('list_agent_tools', self._svc_list_plugin_agent_tools, ns=NS)
             agent_registry.register('plugins_operation', fn=self.agent_plugins)
 
     def agent_plugins(self,
@@ -1108,29 +1114,51 @@ class PluginManager:
                 res[targets[i]] = 'failed[未匹配到插件]'
             elif isinstance(item[1], list) and len(item[1]) != 1:
                 res[targets[i]] = 'failed[匹配到多个候选: {}]'.format('|'.join([f'{h.get_name()}({h.namespace})' for h in item[1]]))
-            h = item[1][0] if isinstance(item[1], list) else item[1]
-            if self._get_handle_from_resolve_item(item, exclude):
-                # TODO exec
-                res[targets[i]] = 'ok'
-                if action == 'get':
-                    res[targets[i]] = self._info_for(h)
-                elif action == 'start':
-                    self.start_plugin(h, hidden=hidden)
-                elif action == 'stop':
-                    self.stop_plugin(h)
-                elif action == 'hide':
-                    self.hide_plugin(h)
             else:
-                res[targets[i]] = 'failed[被exclude排除]'
+                h = item[1][0] if isinstance(item[1], list) else item[1]
+                if self._get_handle_from_resolve_item(item, exclude):
+                    res[targets[i]] = 'ok'
+                    if action == 'get':
+                        res[targets[i]] = self._info_for(h)
+                    elif action == 'start':
+                        self.start_plugin(h, hidden=hidden)
+                    elif action == 'stop':
+                        self.stop_plugin(h)
+                    elif action == 'hide':
+                        self.hide_plugin(h)
+                else:
+                    res[targets[i]] = 'failed[被exclude排除]'
             i = i + 1 
         return res
 
-    def _svc_list_plugin_agent_tools(self):
-        """全部已发现插件的 agent 能力声明 (含未启动插件, 不执行插件代码)."""
-        caps = []
-        for key, h in self.plugins.items():
+    def register_plugin_agent_tools(self, h, agent_tools):
+        try:
+            if agent_tools == h._agent_tools:
+                return
+            from plugins.ai_assistant.core.registry import registry as agent_registry
+            from plugins.ai_assistant.core.schema import make_schema
+            plugin_name = h.namespace or h.getname()
             tools = h._agent_tools
-            if isinstance(tools, dict) and tools:
-                caps.append({'plugin': h.namespace or key, 'tools': tools})
-        return caps
-
+            if tools and isinstance(tools, dict):
+                for name, spec in tools.items():
+                    tool_name = '{}__{}'.format(plugin_name, name)
+                    agent_registry.unregister(tool_name)
+            tools = agent_tools
+            h._agent_tools = agent_tools
+            if not agent_tools or not isinstance(agent_tools, dict):
+                return
+            for name, spec in tools.items():
+                if not isinstance(spec, dict):
+                    continue
+                ref = spec.get('fn_ref') or ''
+                if '@' not in ref:
+                    continue
+                tool_name = '{}__{}'.format(plugin_name, name)
+                schema = make_schema(tool_name, spec.get('description', ''), spec.get('params') or [])
+                agent_registry.register(
+                    tool_name, spec.get('description', ''),
+                    schema,
+                    fn_ref=ref,
+                    dangerous=bool(spec.get('dangerous')))
+        except Exception as e:
+            self.logger.error('register_plugin_agent_tools err: {}'.format(str(e)))

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """AgentPanel — Agent 交互面板 (聊天 UI), 纯前端消费 agent 服务.
 
-与服务通信: services.call('agent@ask', ...) 发起, 订阅 agent@* 事件
+与服务通信: services.call('agent@chat', ...) 发起, 订阅 agent@stream 事件
 渲染流式输出。AgentService 由 manager 内置启动 (BUILTIN_SERVICES),
 面板不负责服务的生命周期。
 """
@@ -171,14 +171,7 @@ class AgentPanel(GuiPlugin):
         self._config.reload()
 
         # 服务事件订阅 (框架在插件销毁时自动清理)
-        self.app.on('agent@chunk', self._on_chunk)
-        self.app.on('agent@local', self._on_local)
-        self.app.on('agent@progress', self._on_progress)
-        self.app.on('agent@timing', self._on_timing)
-        self.app.on('agent@tool_call', self._on_tool_call)
-        self.app.on('agent@tool_result', self._on_tool_result)
-        self.app.on('agent@done', self._on_done)
-        self.app.on('agent@error', self._on_error)
+        self.app.on('agent@stream', self._on_stream)
         # # 主题切换时刷新 markdown tag 颜色
         # self.app.on('app@theme:changed', self._on_theme_changed)
 
@@ -188,6 +181,10 @@ class AgentPanel(GuiPlugin):
         self._on_local_first_check()
         self._txt_chat.see(tk.END)
         self._update_combobox(self._config.providers)
+        try:
+            self.services.call('plugins@flush')
+        except:
+            pass
 
     # ---- UI ----
 
@@ -575,8 +572,11 @@ class AgentPanel(GuiPlugin):
 
     def on_settings_closed(self):
         self._settings_win = None
-        self._cfg_provider.config(state=tk.NORMAL)
-        self._cfg_model.config(state=tk.NORMAL)
+        try:
+            self._cfg_provider.config(state=tk.NORMAL)
+            self._cfg_model.config(state=tk.NORMAL)
+        except:
+            pass
 
     def _add_row_tag(self, name, result, summary=None):
         try:
@@ -668,7 +668,7 @@ class AgentPanel(GuiPlugin):
             self._append_chat(l['err_empty'] + '\n', 'ai_err')
             return
         carry = self._carry.get()
-        tid = self._svc('ask', text, carry, win=self, local_first=self._local_first.get())
+        tid = self._svc('chat', text, carry, win=self, local_first=self._local_first.get())
         if tid is None or tid < 0:
             if tid is not None and tid == -2:
                 self._append_chat(l['err_no_api_key'] + '\n', 'ai_err')
@@ -710,24 +710,17 @@ class AgentPanel(GuiPlugin):
         self._btn_send.config(text=self._l['send'],
                               bg=self.theme['Button']['bg'])
 
-    def _on_progress(self, task_id, phase, round_no):
+    def _on_progress(self, phase, round_no):
         """阶段进展 — 状态行实时反映所处步骤 (第 N 轮请求/执行工具)."""
-        if task_id != self._task_id:
-            return
         if phase == 'request':
-            self._lbl_status.config(
-                text=self._l['waiting_round'] % round_no)
+            self._lbl_status.config(text=self._l['waiting_round'] % round_no)
 
-    def _on_tool_call(self, task_id, name, _args):
-        if task_id != self._task_id:
-            return
+    def _on_tool_call(self, name, _args):
         self._lbl_status.config(text=self._l['running_tool'] % name)
 
-    def _on_timing(self, task_id, kind, label, elapsed):
+    def _on_timing(self, kind, label, elapsed):
         """耗时事件入缓冲 — 即来即打会把正文切碎 (每轮 3 行), done 时
         由 _timing_line 合成一行紧凑时间线; 实时进展由状态行表达."""
-        if task_id != self._task_id:
-            return
         self._timings.append((kind, label, elapsed))
 
     def _timing_line(self):
@@ -749,9 +742,27 @@ class AgentPanel(GuiPlugin):
         total = l['time_total'] % (time.monotonic() - self._t_send)
         return ' · '.join([total] + segs)
 
-    def _on_chunk(self, task_id, text):
+    def _on_stream(self, task_id, kind, msg):
         if task_id != self._task_id:
             return
+        if kind == 'chunk':
+            self._on_chunk(msg[0])
+        elif kind == 'local':
+            self._on_local(msg[0])
+        elif kind == 'progress':
+            self._on_progress(msg[0], msg[1])
+        elif kind == 'timing':
+            self._on_timing(msg[0], msg[1], msg[2])
+        elif kind == 'tool_call':
+            self._on_tool_call(msg[0], msg[1])
+        elif kind == 'tool_result':
+            self._on_tool_result(msg[0], msg[1], msg[2] if len(msg) > 2 else None)
+        elif kind == 'done':
+            self._on_done(msg[0], msg[1] if len(msg) > 1 else None)
+        elif kind == 'error':
+            self._on_error(msg[0])
+
+    def _on_chunk(self, text):
         self._set_thinking(False)   # 首个 chunk 到达, 结束静默期
         self._pending.append(text)
         if self._after_job is None:
@@ -766,9 +777,7 @@ class AgentPanel(GuiPlugin):
             self._txt_chat.append_markdown(text, 'ai_body')
             self._txt_chat.see(tk.END)   # 每次输出都跟随到底
 
-    def _on_tool_result(self, task_id, name, result, summary=None):
-        if task_id != self._task_id:
-            return
+    def _on_tool_result(self, name, result, summary=None):
         self._flush_chunks()   # 先落攒批文本, 保证工具行接在流式输出之后
         self._txt_chat.flush()   # 工具行插入前强制渲染未稳定段
         self._add_row_tag(name, result, summary)
@@ -821,22 +830,20 @@ class AgentPanel(GuiPlugin):
             line = line[:120] + '…'
         return line
 
-    def _on_local(self, task_id, text):
+    def _on_local(self, text):
         """内置问答单行应答: 内联接在 'Agent:' 同行.
 
         发送时标签已打印为 'Agent:\\n' 且本地路径此前无任何追加。
         注意缓冲末尾: 'Agent:' + 真实 \\n + Text 隐含 \\n — end-1c 是
         隐含换行处 (真实换行之后, 会插到下一行), end-2c 才是标签行尾。
         """
-        if task_id != self._task_id:
-            return
         self._txt_chat.insert('end-2c', ' %s' % text, 'ai_assistant')
 
-    def _on_done(self, task_id, text, usage=None):
-        if task_id != self._task_id:
-            return
+    def _on_done(self, text, usage=None):
         self._flush_chunks()
         self._txt_chat.flush()   # 渲染流式末段残留
+        if text and usage and usage == 'local':
+            self._append_chat(text, 'ai_assistant')
         if isinstance(usage, dict):
             # 输入后附命中·命中率 (llm 归一化键; 全零=端点未报缓存, 不显示)
             prompt = usage.get('prompt_tokens', 0)
@@ -884,9 +891,7 @@ class AgentPanel(GuiPlugin):
         """token 数格式化: <1000 完整显示, 否则缩写 k (不用 M — 0.1M 才跳动太粗)."""
         return str(n) if n < 1000 else '%.1fk' % (n / 1000)
 
-    def _on_error(self, task_id, err):
-        if task_id != self._task_id:
-            return
+    def _on_error(self, err):
         self._flush_chunks()
         self._txt_chat.reset()   # 丢弃未渲染的流式残留
         self._append_chat('\n[%s]\n' % err, 'ai_err')
