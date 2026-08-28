@@ -33,7 +33,7 @@ _SUFFIXES = ('一下', '吧', '呢', '啊', '呀', '哈')
 _QUESTION_HINTS = ('怎么', '怎样', '如何', '为什么', '为何',
                    '吗', '嘛', 'how to', 'why', 'what')
 # 多目标分隔
-_SEPS = re.compile(r'[、，,；;]|\s+and\s+|\s*&\s*|和|与|跟')
+_SEPS = re.compile(r'[、，,；;]|\s+and\s+|\s*&\s*|和|与|跟|以及')
 # 句首尾标点
 _PUNCT = ' \t\r\n!?！?。.~～'
 

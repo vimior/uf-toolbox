@@ -768,15 +768,15 @@ class PluginManager:
             return False, []
         exact = [] # 精确的(不区分大小写)
         fuzzy = [] # 模糊的(包含匹配)
-        token = target.lower()
+        token = self._norm(target)
 
         def names(key, h):
             _names = []
             for name in [key, h.namespace, h._name_raw, h._name_zh, h._name_en]:
                 if not name or not isinstance(name, str):
                     continue
-                _name = name.lower()
-                if _name not in _names:
+                _name = self._norm(name)
+                if _name and _name not in _names:
                     _names.append(_name)
             return _names
 
@@ -797,6 +797,11 @@ class PluginManager:
         if fuzzy:
             return True, fuzzy
         return False, []
+
+    @staticmethod
+    def _norm(s):
+        """归一化匹配串: 小写 + 去 -_ 和空格 (uf-teleop ≡ UFTeleop)."""
+        return s.lower().replace('-', '').replace('_', '').replace(' ', '')
 
     # ===============================================
 

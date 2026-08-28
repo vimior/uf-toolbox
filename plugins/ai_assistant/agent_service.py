@@ -26,7 +26,6 @@ from .core.basic_qa import match_basic_qa
 from .core.llm import LLMError, OpenAIClient
 from .core.local_intent import extract_open
 from .core.registry import registry
-from .core.schema import make_schema
 
 _SESSION_PATH = os.path.join(CONFIG_DIR, 'agent_session.json')
 _MAX_SESSION_MSGS = 24   # 会话历史上限 (含工具交换 ≈ 5 轮问答), 超限自动截断
@@ -188,7 +187,7 @@ class AgentService(ServicePlugin):
 
         置信门复用工具自身 resolver (namespace/名称精确 → 唯一模糊,
         失败返回 error 字符串且无副作用), 本地层不做第二套名称匹配;
-        start 动作插件未命中且单目标时兜底 tools_operation launch;
+        start 动作插件未命中时兜底 tools_operation launch;
         全部未命中返回 False — 静默交 LLM (零回归)。
 
         主线程执行安全: plugins_operation 内部 _run_on_ui 检测到主线程
@@ -204,37 +203,75 @@ class AgentService(ServicePlugin):
             return False
         args = {'action': action, 'targets': ';'.join(targets)}
         result = entry['fn'](args)
-        if isinstance(result, str) and result.startswith('error'):
-            # 插件未命中 → 单目标 start 兜底外部工具 (stop 无对应)
-            if action != 'start' or len(targets) != 1:
-                return False
-            entry = registry.get('tools_operation')
-            if entry is None:
-                return False
-            name = 'tools_operation'
-            args = {'action': 'launch', 'target': targets[0]}
-            result = entry['fn'](args)
-            if not (isinstance(result, str) and result.startswith('ok')):
-                return False
+        succeed_plugins = []
+        failed_plugins = []
+        if isinstance(result, dict):
+            for target, res in result.items():
+                if isinstance(res, str) and res.startswith('failed'):
+                    failed_plugins.append(target)
+                else:
+                    succeed_plugins.append(target)
+        # elif isinstance(result, str) and result.startswith('error'):
+        else:
+            failed_plugins = targets
         # 与 LLM 路径同事件流 — 面板照常出工具行, 'local' 哨兵跳过
         # tokens/耗时; result_str 形态对齐 agent 循环 (dict→JSON)
         result_str = (result if isinstance(result, str)
                       else json.dumps(result, ensure_ascii=False))
         self._q_put(('tool_call', task_id, name, args))
         self._q_put(('tool_result', task_id, name, result_str, None))
+
         verb = '打开' if action == 'start' else '关闭'
-        content = '已帮你%s: %s (本地匹配执行, 未调用模型)' % (verb, ', '.join(targets))
+        contents = []
+        if succeed_plugins:
+            contents.append('已帮你{}插件: {}'.format(verb, '/'.join(succeed_plugins)))
+
+        succeed_tools = []
+        failed_targets = []
+
+        if action == 'start' and len(failed_plugins):
+            name = 'tools_operation'
+            entry = registry.get(name)
+            if entry is None:
+                return False
+            args = {'action': 'launch', 'targets': ';'.join(failed_plugins)}
+            result = entry['fn'](args)
+            if isinstance(result, dict):
+                for target, res in result.items():
+                    if isinstance(res, str) and (res.startswith('failed') or res.startswith('error')):
+                        failed_targets.append(target)
+                    else:
+                        succeed_tools.append(target)
+            # elif isinstance(result, str) and result.startswith('error'):
+            else:
+                failed_targets = failed_plugins
+
+            # 与 LLM 路径同事件流 — 面板照常出工具行, 'local' 哨兵跳过
+            # tokens/耗时; result_str 形态对齐 agent 循环 (dict→JSON)
+            result_str = (result if isinstance(result, str)
+                            else json.dumps(result, ensure_ascii=False))
+            self._q_put(('tool_call', task_id, name, args))
+            self._q_put(('tool_result', task_id, name, result_str, None))
+        else:
+            failed_targets = failed_targets
+        
+        if succeed_tools:
+            contents.append('已帮你{}工具: {}'.format(verb, '/'.join(succeed_tools)))
+        if failed_targets:
+            contents.append('无法{}: {}'.format(verb, '/'.join(failed_targets)))
         if carry:
             # 本地操作有副作用 — 写会话让后续"关掉它"类指代有上下文
-            verb = '打开' if action == 'start' else '关闭'
             self._session.append({'role': 'user', 'content': question})
             self._session.append({
                 'role': 'assistant',
-                'content': content})
+                'content': '\n'.join(contents)})
             self._session = self._trim_session(self._session)
             self._save_session()
-        self._q_put(('done', task_id, content, 'local'))
-        return True
+        self._q_put(('chunk', task_id, '\n'.join(contents)))
+        if succeed_plugins or succeed_tools:
+            self._q_put(('done', task_id, '', 'local'))
+            return True
+        return False
 
     def _svc_stop(self, task_id):
         ev = self._stops.get(task_id)

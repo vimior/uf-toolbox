@@ -895,6 +895,7 @@ class AgentPanel(GuiPlugin):
         self._flush_chunks()
         self._txt_chat.reset()   # 丢弃未渲染的流式残留
         self._append_chat('\n[%s]\n' % err, 'ai_err')
+        self._txt_chat.flush()
         self._task_id = None
         self._timings = []
         self._set_thinking(False)

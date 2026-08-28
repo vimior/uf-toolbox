@@ -28,6 +28,8 @@ class ToolManager:
         self.logger = logger
         self.app = app
         self._running = {}  # name -> [Popen, ...]
+        self.flatten_tools = []
+        self.scan() # update self.flatten_tools
         self.register_agent_tools()
 
     # -- public API -----------------------------------------------------------
@@ -74,6 +76,7 @@ class ToolManager:
         # Build final tools list: only un-consumed ID'd tools + un-identified
         all_tools = [t for tid, t in tools_by_id.items() if tid not in consumed_ids]
         all_tools += all_tools_no_id
+        self.flatten_tools = self.flatten({'tools': all_tools, 'groups': all_groups})
         if tab:
             all_groups = [g for g in all_groups if g.get('tab', 'tools') == tab]
             all_tools = [t for t in all_tools if t.get('tab', 'tools') == tab]
@@ -207,7 +210,7 @@ class ToolManager:
             return None
         exe_path = os.path.join(tools_dir, exe)
         if not os.path.isfile(exe_path):
-            resolved = shutil.which(exe)
+            resolved = shutil.which(str(exe))
             if resolved:
                 exe_path = resolved
         tool_id = entry.get('id', '')
@@ -306,14 +309,14 @@ class ToolManager:
 
     def agent_tools(self,
         action: Literal['list', 'launch'],
-        target: str = '',
+        targets: str = '',
         run_as_admin: bool = False,
         tab: str = ''):
         """
-        启动外部程序: launch必须传target
+        启动外部程序: launch必须传targets
 
         action: launch=启动指定工具(首选:直接传名称即可,支持模糊匹配,未命中自动返回可用清单);list=列出全部工具(仅需要浏览有哪些工具时用)
-        target: 仅launch: 外部程序的id/显示名/exe文件名(支持模糊,唯一匹配即可)
+        targets: 仅launch,外部程序的id/显示名/exe文件名(中英文,支持模糊), 多个用";"分隔;
         run_as_admin: 仅launch: 是否以管理员方式打开
         tab: 分组标签过滤(如tools/system),省略=全部
         """
@@ -329,28 +332,25 @@ class ToolManager:
                 else t['name'] for t in tools) or '(无可用工具)'
         if action != 'launch':
             return 'error: unknown action %r' % action
-        if not target.strip():
-            return 'error: target is required'
-        tool, cands, all_tools = self.resolve(target, lang, tab=tab,
-                                              path=path)
-        if tool is None:
-            # 错误尾部互相指引 — 模型首次选错工具时第二轮必中
-            # hint = ' 如果你要打开的是 UF Toolbox 插件, 请改用 plugins_operation'
-            hint = ''
-            avail = '; '.join('%s(%s)' % (t.get('name'), t.get('id'))
-                              for t in all_tools) or '(无)'
-            if cands:
-                opts = '; '.join('%s(%s)' % (t.get('name'), t.get('id'))
-                                 for t in cands)
-                return ('error: %r 匹配到多个工具: %s. 可用工具: %s.%s'
-                        % (target, opts, avail, hint))
-            return ('error: %r 未匹配到工具. 可用工具: %s.%s'
-                    % (target, avail, hint))
-        try:
-            self.launch(tool, run_as_admin=run_as_admin)
-        except Exception as e:
-            return 'error: 启动失败: %s' % e
-        return 'ok: 已启动 %s' % tool.get('name')
+        if not targets.strip():
+            return 'error: targets is required'
+        i = 0
+        res = {}
+        targets = targets.split(';')
+        for item in self._resolve_targets(targets, lang=lang, tab=tab, path=path):
+            if not item[0]:
+                res[targets[i]] = 'failed[未匹配到工具]'
+            elif isinstance(item[1], list) and len(item[1]) != 1:
+                res[targets[i]] = 'failed[匹配到多个候选: {}]'.format('|'.join([f"{t['name']}({t['id']})" for t in item[1]]))
+            else:
+                t = item[1][0] if isinstance(item[1], list) else item[1]
+                try:
+                    self.launch(t, run_as_admin=run_as_admin)
+                    res[targets[i]] = 'ok: 已启动 %s' % t.get('name')
+                except Exception as e:
+                    res[targets[i]] = 'error: 启动失败: %s' % e
+            i = i + 1 
+        return res
 
     # -- agent 支持: 扁平化 + 名称解析 ----------------------------------------
         
@@ -375,56 +375,89 @@ class ToolManager:
         """归一化匹配串: 小写 + 去 -_ 和空格 (uf-teleop ≡ UFTeleop)."""
         return s.lower().replace('-', '').replace('_', '').replace(' ', '')
 
-    @classmethod
-    def _match_map(cls, tool):
-        """工具的分层匹配键 (归一化): id 全串 / id 末段 / 显示名 / exe basename.
-
-        分层原因: 同一 exe 可能被多个工具引用 (cmd.exe → 运行/管理员运行/
-        安全中心), basename 同级比较必然歧义; id 末段先比可唯一命中。
-        """
-        m = {}
-        tid = tool.get('id')
-        if tid:
-            m['id'] = cls._norm(tid)
-            m['id_tail'] = cls._norm(tid.split('/')[-1])
-        if tool.get('name'):
-            m['name'] = cls._norm(tool['name'])
-        base = os.path.basename(tool.get('_exe_path', ''))
-        for ext in cls._STRIP_EXTS:
-            if base.lower().endswith(ext):
-                base = base[:-len(ext)]
+    @staticmethod
+    def _fliter_ext(s):
+        fliter_s = s
+        for ext in ('.exe', '.bat', '.cmd', '.sh', '.py'):
+            if s.lower().endswith(ext):
+                fliter_s = s[:-len(ext)]
                 break
-        if base:
-            m['base'] = cls._norm(base)
-        return m
+        return fliter_s
 
-    _TIERS = ('id', 'id_tail', 'name', 'base')
+    def _resolve_targets(self, targets, lang='en', tab=None, path=None, loaded=True):
+        """多个目标解析, 匹配规则参看_resolve_one
 
-    def resolve(self, query, lang='en', tab=None, path=None):
-        """按名称解析工具: id → id末段 → 显示名 → exe名 分层精确 → 唯一模糊.
-
-        返回 (tool | None, candidates, all_tools) — candidates 仅在
-        歧义/多候选时非空, 供错误提示; query 未匹配任何工具时为空。
-        匹配归一化 (小写, 去 -_ 空格); query 带扩展名会被剥掉。
+        :targets: 要解析的目录列表
+        :return: list, list里每一项如下
+            规则1匹配上: (True, tool)
+            规则2匹配上: (True, [...])
+            规则3匹配上: (True, [...])
+            否则:       (False, []) 
         """
-        q = query.strip()
-        for ext in self._STRIP_EXTS:
-            if q.lower().endswith(ext):
-                q = q[:-len(ext)]
-                break
-        nq = self._norm(q)
-        tools = self.flatten(self.scan(lang, tab=tab, path=path))
-        if not nq:
-            return None, [], tools
-        maps = [(t, self._match_map(t)) for t in tools]
-        for tier in self._TIERS:
-            hits = [t for t, m in maps if m.get(tier) == nq]
-            if len(hits) == 1:
-                return hits[0], [], tools
-            if hits:
-                return None, hits, tools
-        fuzzy = [t for t, m in maps
-                    if any(nq in k or k in nq for k in m.values())]
-        if len(fuzzy) == 1:
-            return fuzzy[0], [], tools
-        return None, fuzzy, tools
+        if not targets:
+            return []
+        if isinstance(targets, str):
+            targets = [targets]
+        all_ret = []
+        flatten_tools = self.flatten_tools
+        for target in targets:
+            ret = self._resolve_one(target, flatten_tools=flatten_tools)
+            if loaded and (not ret[0] or isinstance(ret[1], list)):
+                flatten_tools = self.flatten(self.scan(lang=lang, tab=tab, path=path))
+                loaded = False
+                ret = self._resolve_one(target, flatten_tools=flatten_tools)
+            all_ret.append(ret)
+        return all_ret
+
+    def _resolve_one(self, target, flatten_tools=None):
+        """单个目标解析, 匹配规则:
+        1. 完整匹配: target 和 id/name/exe_base_path 完全一样
+        2. (忽略大小写)完整匹配: target 和 id/name/exe_base_path 完全一样
+        3. (忽略大小写)包含关系: target 和 id/name/exe_base_path 有包含关系
+
+        :return:
+            规则1匹配上: 返回(True, handle)
+            规则2匹配上: 返回(True, [...])
+            规则3匹配上: 返回(True, [...])
+            否则: 返回(False, []) 
+        """
+        if not target or not isinstance(target, str):
+            return False, []
+        target = target.strip()
+        if not target:
+            return False, []
+        exact = [] # 精确的(不区分大小写)
+        fuzzy = [] # 模糊的(包含匹配)
+        token = self._fliter_ext(self._norm(target))
+
+        def names(keys):
+            _names = []
+            for key in keys:
+                if not key or not isinstance(key, str):
+                    continue
+                _name = self._fliter_ext(self._norm(key))
+                if _name and _name not in _names:
+                    _names.append(_name)
+            return _names
+
+        flatten_tools = self.flatten_tools if not flatten_tools else flatten_tools
+        for t in flatten_tools:
+            tid = t.get('id')
+            name = t.get('name')
+            base_name = os.path.basename(t.get('_exe_path', ''))
+            if target in [tid, name, base_name]:
+                return True, t
+            _names = names([tid, name, base_name])
+            if token in _names:
+                if t not in exact:
+                    exact.append(t)
+            else:
+                for n in _names:
+                    if token in n or n in token:
+                        if t not in fuzzy:
+                            fuzzy.append(t)
+        if exact:
+            return True, exact
+        if fuzzy:
+            return True, fuzzy
+        return False, []
