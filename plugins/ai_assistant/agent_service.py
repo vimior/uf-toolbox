@@ -20,15 +20,16 @@ import threading
 
 from plugins.plugin import ServicePlugin
 
-from .config import Config, load_json, CONFIG_DIR
+from .config import Config, CONFIG_DIR
 from .core.agent import Agent
 from .core.basic_qa import match_basic_qa
 from .core.llm import LLMError, OpenAIClient
 from .core.local_intent import extract_open
 from .core.registry import registry
+from .core.session_store import SessionStore
 
-_SESSION_PATH = os.path.join(CONFIG_DIR, 'agent_session.json')
-_MAX_SESSION_MSGS = 24   # 会话历史上限 (含工具交换 ≈ 5 轮问答), 超限自动截断
+_DB_PATH = os.path.join(CONFIG_DIR, 'agent_sessions.db')
+_MAX_SESSION_MSGS = 24   # 上下文窗口 (发给 LLM 的历史条数); 库存全量不限
 
 # 行为约束 — 防止模型重做历史任务/调用无关工具 (弱模型的常见热身行为)
 _SYSTEM_PROMPT = """\
@@ -113,7 +114,20 @@ class AgentService(ServicePlugin):
         self._config = Config()
         # 设置到软件app里面，这样插件就可以共用同一个config实例了
         setattr(self.app._app, 'agent_config', self._config)
-        self._session = self._load_session()
+        # ---- 多会话存储 ----
+        # self._session 保持 list 形态 (当前会话的内存缓存), worker 内
+        # 的 _sessionize/_trim_session 等逻辑不变; 落库为增量写穿透
+        # (_saved_len 记录已落盘条数). 历史窗口 _MAX_SESSION_MSGS 只
+        # 限制发给 LLM 的上下文, 库中消息全量保留.
+        self._store = SessionStore(_DB_PATH)
+        recent = self._store.list()
+        if recent:
+            self._session_id = recent[0]['id']
+            self._session = self._store.messages(self._session_id)
+        else:
+            self._session_id = self._store.create()
+            self._session = []
+        self._saved_len = len(self._session)
         self._win = self.root
 
     # ---- 生命周期 ----
@@ -123,6 +137,11 @@ class AgentService(ServicePlugin):
         self.services.register('stop', self._svc_stop)
         self.services.register('clear_session', self._svc_clear_session)
         self.services.register('get_session', self._svc_get_session)
+        self.services.register('list_sessions', self._svc_list_sessions)
+        self.services.register('create_session', self._svc_create_session)
+        self.services.register('switch_session', self._svc_switch_session)
+        self.services.register('delete_session', self._svc_delete_session)
+        self.services.register('rename_session', self._svc_rename_session)
         self.services.register('list_tools', self._svc_list_tools)
         self.services.register('confirm', self._svc_confirm_result)
         self.services.register('register_tool', self._svc_register_tool)
@@ -139,6 +158,11 @@ class AgentService(ServicePlugin):
             c['event'].set()    # 释放等待中的工作线程
         try:
             self.root.unbind('<<AgentPoll>>')
+        except Exception:
+            pass
+        try:
+            self._save_session()
+            self._store.close()
         except Exception:
             pass
 
@@ -261,12 +285,12 @@ class AgentService(ServicePlugin):
             contents.append('无法{}: {}'.format(verb, '/'.join(failed_targets)))
         if carry:
             # 本地操作有副作用 — 写会话让后续"关掉它"类指代有上下文
-            self._session.append({'role': 'user', 'content': question})
-            self._session.append({
-                'role': 'assistant',
-                'content': '\n'.join(contents)})
-            self._session = self._trim_session(self._session)
-            self._save_session()
+            self._commit(self._session_id, [
+                {'role': 'user', 'content': question},
+                {'role': 'assistant',
+                 'content': '\n'.join(contents)},
+            ])
+            self._auto_title(self._session_id, question)
         self._q_put(('chunk', task_id, '\n'.join(contents)))
         if succeed_plugins or succeed_tools:
             self._q_put(('done', task_id, '', 'local'))
@@ -284,20 +308,73 @@ class AgentService(ServicePlugin):
         return ev is not None or c is not None
 
     def _svc_clear_session(self):
-        """清空会话历史 — 先终止进行中的提问, 防 worker 回填畸形历史."""
+        """清空当前会话消息 — 先终止进行中的提问, 防 worker 回填畸形历史."""
         for ev in list(self._stops.values()):
             ev.set()
         for c in list(self._confirms.values()):
             c['event'].set()    # 释放阻塞中的确认等待 (同 on_stop)
         with self._lock:
+            self._store.clear(self._session_id)
             self._session = []
-        self._save_session()
+            self._saved_len = 0
         return True
 
     def _svc_get_session(self):
-        """返回会话历史拷贝 (面板回显用) — 外部修改不影响服务."""
+        """返回当前会话历史拷贝 (面板回显用) — 外部修改不影响服务."""
         with self._lock:
             return list(self._session)
+
+    # ---- 多会话管理 ----
+
+    def _svc_list_sessions(self):
+        """全部会话 (按最后消息时间倒序): [{id,title,usage,msg_count,...}]"""
+        return self._store.list()
+
+    def _svc_create_session(self):
+        """新建空会话并切换, 返回新会话 id."""
+        with self._lock:
+            self._save_session()
+            self._session_id = self._store.create()
+            self._session = []
+            self._saved_len = 0
+        return self._session_id
+
+    def _svc_switch_session(self, sid):
+        """切换到已有会话 (不存在返回 False)."""
+        with self._lock:
+            if not self._store.exists(sid):
+                return False
+            if sid != self._session_id:
+                self._save_session()
+                self._session_id = sid
+                self._session = self._store.messages(sid)
+                self._saved_len = len(self._session)
+        return True
+
+    def _svc_delete_session(self, sid):
+        """删除会话; 若删的是当前会话则切到最近的其他会话 (没有则新建).
+
+        :return: 删除后的当前会话 id
+        """
+        with self._lock:
+            self._store.delete(sid)
+            if sid != self._session_id:
+                return self._session_id
+            rest = self._store.list()
+            if rest:
+                self._session_id = rest[0]['id']
+                self._session = self._store.messages(self._session_id)
+            else:
+                self._session_id = self._store.create()
+                self._session = []
+            self._saved_len = len(self._session)
+            return self._session_id
+
+    def _svc_rename_session(self, sid, title):
+        if not self._store.exists(sid):
+            return False
+        self._store.rename(sid, title)
+        return True
 
     def _svc_list_tools(self, detail=False):
         tools = []
@@ -341,6 +418,9 @@ class AgentService(ServicePlugin):
     # ---- 工作线程 ----
 
     def _worker(self, task_id, question, stop, carry):
+        # 捕获会话 id: 用户中途切换会话, 本轮写回仍落在发起时的会话,
+        # 不串到新会话 (历史窗口 likewise 以捕获的会话为准)
+        sid = self._session_id
         try:
             current_config = self._config.current
             client = OpenAIClient(current_config['url'],
@@ -356,11 +436,16 @@ class AgentService(ServicePlugin):
             # system 约束置顶 (不进 session); 历史仅在 carry 时携带
             msgs = [{'role': 'system', 'content': _SYSTEM_PROMPT}]
             if carry:
-                msgs.extend(list(self._session[-_MAX_SESSION_MSGS:]))
+                with self._lock:
+                    if sid == self._session_id:
+                        hist = list(self._session[-_MAX_SESSION_MSGS:])
+                    else:
+                        hist = self._store.messages(sid)[-_MAX_SESSION_MSGS:]
+                msgs.extend(hist)
             msgs.append(user_msg)
             if carry:
-                with self._lock:
-                    self._session.append(user_msg)
+                self._commit(sid, [user_msg], trim=False)
+                self._auto_title(sid, question)
             base_len = len(msgs)   # agent 原地回填工具交换, 结束后按此截取新增段
             last_args = None
             for event in agent.run(msgs, stop_event=stop):
@@ -379,38 +464,42 @@ class AgentService(ServicePlugin):
                     self._q_put(('tool_result', task_id, event[1], event[2],
                                  self._tool_summary(tool_map, event[1],
                                                     event[2], last_args)))
-                elif kind == 'done' and event[1] is not None:
-                    if carry and not stop.is_set():
-                        with self._lock:
+                elif kind == 'done':
+                    usage = event[2] if len(event) > 2 else None
+                    if isinstance(usage, dict):
+                        # 会话级 token 累计 — 面板状态栏按会话展示
+                        try:
+                            self._store.add_usage(sid, usage)
+                        except Exception:
+                            pass
+                    if event[1] is not None:
+                        if carry and not stop.is_set():
                             # 完整工具交换写回 session — 多轮历史须含调用过程,
                             # 否则模型学到"问→直接答"模式, 倾向于不调工具编结果
-                            self._session.extend(
-                                self._sessionize(msgs[base_len:]))
-                            self._session.append({'role': 'assistant',
-                                                  'content': event[1]})
-                            self._session = self._trim_session(self._session)
-                    self._q_put(('done', task_id, event[1],
-                                 event[2] if len(event) > 2 else None))
-                elif kind == 'done':
-                    # 停止/轮数耗尽轮: 工具交换补齐配对后写回 (防下轮重做)
-                    if carry:
-                        with self._lock:
-                            self._session.extend(self._sessionize(
-                                self._close_tool_pairs(msgs[base_len:])))
+                            self._commit(
+                                sid,
+                                self._sessionize(msgs[base_len:])
+                                + [{'role': 'assistant',
+                                    'content': event[1]}])
+                        self._q_put(('done', task_id, event[1], usage))
+                    else:
+                        # 停止/轮数耗尽轮: 工具交换补齐配对后写回 (防下轮重做)
+                        if carry:
                             note = ('[该请求已被用户停止]' if stop.is_set()
                                     else '[已达最大工具调用轮数]')
-                            self._session.append({'role': 'assistant',
-                                                  'content': note})
-                            self._session = self._trim_session(self._session)
-                    self._q_put(('done', task_id, '',
-                                 event[2] if len(event) > 2 else None))
-            self._save_session()
+                            self._commit(
+                                sid,
+                                self._sessionize(
+                                    self._close_tool_pairs(
+                                        msgs[base_len:]))
+                                + [{'role': 'assistant', 'content': note}])
+                        self._q_put(('done', task_id, '', usage))
         except LLMError as e:
             self._q_put(('error', task_id, str(e)))
-            self._mark_failed(carry, stop, str(e))
+            self._mark_failed(sid, carry, stop, str(e))
         except Exception as e:
             self._q_put(('error', task_id, 'internal: %s' % e))
-            self._mark_failed(carry, stop, 'internal: %s' % e)
+            self._mark_failed(sid, carry, stop, 'internal: %s' % e)
         finally:
             with self._lock:
                 self._stops.pop(task_id, None)
@@ -466,14 +555,12 @@ class AgentService(ServicePlugin):
                 return s[i:]
         return []
 
-    def _mark_failed(self, carry, stop, err):
+    def _mark_failed(self, sid, carry, stop, err):
         """失败轮写回 session — 让后续轮次知道该任务已尝试过 (防重做)."""
         if not carry or stop.is_set():
             return
-        with self._lock:
-            self._session.append({'role': 'assistant',
-                                  'content': '[上次请求执行失败: %s]' % err})
-            self._session = self._trim_session(self._session)
+        self._commit(sid, [{'role': 'assistant',
+                            'content': '[上次请求执行失败: %s]' % err}])
 
     @staticmethod
     def _tool_summary(tool_map, name, result, args):
@@ -593,16 +680,48 @@ class AgentService(ServicePlugin):
         self._busy = max(0, n)
         self.store.commit('status', 'busy' if self._busy > 0 else 'idle')
 
-    def _load_session(self):
-        s = load_json(_SESSION_PATH, [])
-        return s if isinstance(s, list) else []
-
-    # ---- 持久化 ---
+    # ---- 会话持久化 (sqlite 增量写穿透) ---
 
     def _save_session(self):
+        """当前会话增量落盘: 只插内存缓存中未落盘的尾巴.
+
+        调用方须已持有 self._lock (或处于单线程调用栈). 非当前会话的
+        写回走 _commit 内对 store.append 的直调, 不经此方法.
+        """
         try:
-            os.makedirs(CONFIG_DIR, exist_ok=True)
-            with open(_SESSION_PATH, 'w', encoding='utf-8') as f:
-                json.dump(self._session, f, ensure_ascii=False, indent=2)
-        except OSError:
+            new = self._session[self._saved_len:]
+            if new:
+                self._store.append(self._session_id, new)
+                self._saved_len = len(self._session)
+        except Exception:
+            pass
+
+    def _commit(self, sid, msgs, trim=True):
+        """追加消息到指定会话.
+
+        当前会话: 同步内存缓存并按窗口对齐 trim, 增量落盘;
+        非当前会话 (用户中途切换过): 直写库, 内存缓存不动.
+        调用方无须持锁 — 本方法自锁.
+        """
+        if not msgs:
+            return
+        with self._lock:
+            if sid == self._session_id:
+                self._session.extend(msgs)
+                if trim:
+                    self._session = self._trim_session(self._session)
+                self._save_session()
+            else:
+                try:
+                    self._store.append(sid, msgs)
+                except Exception:
+                    pass
+
+    def _auto_title(self, sid, question):
+        """首条用户消息自动生成会话标题 (10 字 — 侧栏 180px 宽度约束)."""
+        try:
+            title = ' '.join(str(question).split())[:10]
+            if title:
+                self._store.set_title_if_untitled(sid, title)
+        except Exception:
             pass

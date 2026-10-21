@@ -16,7 +16,7 @@ _extra_hidden = [
     # network / web (~170 KB total)
     'urllib.request', 'urllib.parse', 'webbrowser',
     # config / file / db (~830 KB total)
-    'configparser', 'logging.handlers', 'zipfile', 'shutil', 'code', 'ssl', '_ssl',
+    'configparser', 'logging.handlers', 'zipfile', 'shutil', 'code', 'ssl', '_ssl', 'sqlite3',
     'serial', 'serial.tools', 'serial.tools.list_ports', 'websocket', 'difflib',
     # introspection — plugins may load dynamically (~160 KB total)
     'inspect', 'pkgutil', 'importlib.util',

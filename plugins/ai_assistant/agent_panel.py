@@ -66,6 +66,12 @@ LANG = {
                     '• 系统通知 —— 如「弹个窗告诉我该下班了」\n'
                     '也可以直接聊天提问; 点击工具调用行可展开完整结果。'),
         'confirm_clear': '确定清空会话历史？此操作不可恢复',
+        'new_session': '＋ 新会话',
+        'delete_session': '删除会话',
+        'rename_session': '重命名',
+        'rename_prompt': '输入新的会话名称:',
+        'confirm_delete_session': '确定删除该会话？此操作不可恢复',
+        'untitled_session': '新会话',
         'tokens': 'tokens: 共 %s, 输入 %s, 输出 %s',
         'cache_detail': ' (命中 %s, 占比 %d%%)',
         'stat_hit_fmt': ' (%s %s, 占比 %d%%)',
@@ -114,6 +120,12 @@ LANG = {
                     'Or just chat. Click a tool-call row to expand '
                     'its full result.'),
         'confirm_clear': 'Clear conversation history? This cannot be undone',
+        'new_session': '＋ New chat',
+        'delete_session': 'Delete chat',
+        'rename_session': 'Rename',
+        'rename_prompt': 'Enter a new name for this chat:',
+        'confirm_delete_session': 'Delete this conversation? This cannot be undone',
+        'untitled_session': 'New chat',
         'tokens': 'tokens: total %s, in %s, out %s',
         'cache_detail': ' (hit %s, %d%%)',
         'stat_hit_fmt': ' (%s %s, %d%%)',
@@ -152,12 +164,14 @@ class AgentPanel(GuiPlugin):
         self._timings = []          # 耗时事件缓冲 (done 时合成一行时间线)
         self._after_job = None
         self._t_send = None         # 本次提问起点 (总耗时统计)
-        self._total_tokens = 0      # 面板存续期累计 token 消耗
-        self._total_hit = 0         # 其中缓存命中 (端点不报则恒 0, 不显示)
-        self._total_prompt = 0      # 累计输入
-        self._total_completion = 0  # 累计输出
+        self._sess_totals = {}      # sid → 会话级 token 累计 (状态栏右侧按会话展示)
         self._settings_win = None   # 设置窗口单实例引用
         self._tool_rows = []        # 工具折叠行状态 (点击展开/收起完整结果)
+        # 多会话侧栏状态
+        self._current_sid = None    # 当前会话 id (跟随服务端的当前会话)
+        self._sid_map = []          # 侧栏列表项 index → session id
+        self._sid_titles = {}       # session id → 标题 (重命名初始值)
+        self._sessions_after = None # 侧栏刷新防抖任务
         # 输入历史 (持久化, 上下箭头回填)
         hist = load_json(_HIST_PATH, [])
         self._hist = hist if isinstance(hist, list) else []
@@ -176,7 +190,12 @@ class AgentPanel(GuiPlugin):
         # self.app.on('app@theme:changed', self._on_theme_changed)
 
         self._build_ui()
-        self.app.emit('app@window:set-geometry', self, w=750, h=580)
+        self.app.emit('app@window:set-geometry', self, w=920, h=580)
+        self._refresh_sessions()
+        if self._sid_map:
+            # 服务端启动时恢复的是最近会话 (= 列表第一项)
+            self._current_sid = self._sid_map[0]
+            self._lst_sessions.selection_set(0)
         self._restore_session()
         self._on_local_first_check()
         self._txt_chat.see(tk.END)
@@ -330,6 +349,32 @@ class AgentPanel(GuiPlugin):
     def _build_ui(self):
         t, l = self.theme, self._l
 
+        # 会话侧栏 (最左, 先 pack 占住左边): 新建按钮 + 会话列表
+        side = self.components.Frame(self, bg=t['bar'], width=180)
+        side.pack(side=tk.LEFT, fill=tk.Y, padx=(8, 0), pady=(0, 8))
+        side.pack_propagate(False)
+        self.components.Button(side, text=l['new_session'], pady=2,
+                               command=self._new_session
+                               ).pack(fill=tk.X, padx=0, pady=(6, 4))
+        lst_frame = self.components.Frame(side, bg=t['bar'])
+        lst_frame.pack(fill=tk.BOTH, expand=True, padx=0, pady=(2, 0))
+        self._lst_sessions = self.components.Listbox(
+            lst_frame, font=self.components.font(10), activestyle='none',
+            exportselection=False)
+        sb = self.components.Scrollbar(lst_frame,
+                                       command=self._lst_sessions.yview)
+        self._lst_sessions.configure(yscrollcommand=sb.set)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+        self._lst_sessions.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self._lst_sessions.bind('<<ListboxSelect>>', self._on_session_select)
+        self._lst_sessions.bind('<Button-1>', self._on_list_press)
+        self._lst_sessions.bind('<Double-Button-1>', self._on_session_rename)
+        self._lst_sessions.bind('<Button-3>', self._on_session_menu)
+        # 右键菜单 — 建一次, 弹出前清空重加 (同代理菜单模式, 防泄漏)
+        self._sess_menu = tk.Menu(
+            self, tearoff=0, activebackground=t['accent'],
+            activeforeground=t['accent_fg'])
+
         # 配置行: 端点 / 模型 …… 设置 (最右)
         cfg_bar = self.components.Frame(self, bg=t['bar'])
         cfg_bar.pack(fill=tk.X, padx=8, pady=(8, 0))
@@ -373,7 +418,7 @@ class AgentPanel(GuiPlugin):
         # 左侧"思考中…"等阶段状态, 右侧上轮/累计 token 消耗
         chat_bg = self._txt_chat.cget('bg')
         status_bar = self.components.Frame(chat_frame, bg=chat_bg, height=24)
-        status_bar.pack(fill=tk.X, side=tk.BOTTOM)
+        status_bar.pack(fill=tk.X, side=tk.BOTTOM, padx=(0, 8))
         status_bar.pack_propagate(False)
         self._lbl_status = self.components.Label(
             status_bar, bg=chat_bg, fg=t['hint'], text='')
@@ -456,6 +501,185 @@ class AgentPanel(GuiPlugin):
         else:
             self._append_chat(self._l['local_not_first_help'] + '\n', 'ai_user')
 
+    # ---- 多会话侧栏 ----
+
+    def _refresh_sessions(self):
+        """从服务拉取会话列表刷新侧栏 (按最后消息时间倒序)."""
+        sessions = self._svc('list_sessions') or []
+        self._sid_map = [s['id'] for s in sessions]
+        self._sid_titles = {s['id']: s.get('title', '') for s in sessions}
+        for s in sessions:
+            if s.get('usage'):
+                self._sess_totals[s['id']] = s['usage']
+        lst = self._lst_sessions
+        lst.delete(0, tk.END)
+        for s in sessions:
+            lst.insert(tk.END, s.get('title') or self._l['untitled_session'])
+        if self._current_sid in self._sid_map:
+            idx = self._sid_map.index(self._current_sid)
+            lst.selection_set(idx)
+            lst.see(idx)
+
+    def _schedule_refresh_sessions(self):
+        """done 后防抖刷新侧栏 — 首条消息后标题自动生成, 需要回写显示."""
+        if self._sessions_after is not None:
+            try:
+                self.after_cancel(self._sessions_after)
+            except Exception:
+                pass
+        self._sessions_after = self.after(300, self._do_refresh_sessions)
+
+    def _do_refresh_sessions(self):
+        self._sessions_after = None
+        self._refresh_sessions()
+
+    def _on_list_press(self, event):
+        """记录按下位置是否命中真实列表项.
+
+        Tk Listbox 点在尾部空白处会选中最近条目 — 以条目 bbox 判定,
+        空白处的点击不触发切换/重命名/菜单.
+        """
+        idx = self._lst_sessions.nearest(event.y)
+        bbox = self._lst_sessions.bbox(idx)
+        self._press_on_item = bool(bbox) and bbox[1] <= event.y < bbox[1] + bbox[3]
+
+    def _restore_list_selection(self):
+        """列表选中态回齐当前会话 (撤销空白点击造成的错位选中)."""
+        if self._current_sid in self._sid_map:
+            idx = self._sid_map.index(self._current_sid)
+            self._lst_sessions.selection_clear(0, tk.END)
+            self._lst_sessions.selection_set(idx)
+
+    def _on_session_select(self, _event=None):
+        """侧栏选中切换会话 — 进行中的生成先中断 (服务写回仍落在旧会话)."""
+        if not getattr(self, '_press_on_item', False):
+            self._restore_list_selection()
+            return
+        sel = self._lst_sessions.curselection()
+        if not sel or sel[0] >= len(self._sid_map):
+            return
+        sid = self._sid_map[sel[0]]
+        if sid == self._current_sid:
+            return
+        if self._task_id is not None:
+            self._stop_current()
+        if not self._svc('switch_session', sid):
+            return
+        self._current_sid = sid
+        self._reset_chat_view()
+        self._restore_session()
+
+    def _new_session(self):
+        """新建空会话并切换过去."""
+        if self._task_id is not None:
+            self._stop_current()
+        sid = self._svc('create_session')
+        if sid is None:
+            return
+        self._current_sid = sid
+        self._reset_chat_view()
+        self._show_welcome()
+        self._refresh_sessions()
+        self._update_tokens_label()
+
+    def _hit_item(self, y):
+        """列表 y 坐标命中的条目 index — 空白处返回 None."""
+        idx = self._lst_sessions.nearest(y)
+        bbox = self._lst_sessions.bbox(idx)
+        if not (0 <= idx < len(self._sid_map)):
+            return None
+        if not bbox or not (bbox[1] <= y < bbox[1] + bbox[3]):
+            return None
+        return idx
+
+    def _on_session_menu(self, event):
+        """会话列表右键 — 弹出操作菜单 (重命名/删除)."""
+        idx = self._hit_item(event.y)
+        if idx is None:
+            return
+        self._menu_sid = self._sid_map[idx]
+        menu = self._sess_menu
+        menu.delete(0, 'end')
+        menu.add_command(label=self._l['rename_session'],
+                         command=self._rename_menu_session)
+        menu.add_command(label=self._l['delete_session'],
+                         command=self._delete_menu_session)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _rename_menu_session(self):
+        self._rename_session(getattr(self, '_menu_sid', None))
+
+    def _on_session_rename(self, event):
+        """双击会话项 — 弹窗重命名."""
+        idx = self._hit_item(event.y)
+        if idx is None:
+            return
+        self._rename_session(self._sid_map[idx])
+
+    def _rename_session(self, sid):
+        if sid is None:
+            return
+        l = self._l
+        old = (getattr(self, '_sid_titles', {}) or {}).get(sid, '')
+        name = self.components.askstring(
+            l['rename_session'], l['rename_prompt'],
+            initialvalue=old, parent=self)
+        if not name or not name.strip() or name.strip() == old:
+            return
+        if self._svc('rename_session', sid, name.strip()):
+            self._refresh_sessions()
+
+    def _delete_menu_session(self):
+        self._delete_session(getattr(self, '_menu_sid', None))
+
+    def _delete_session(self, sid):
+        if sid is None:
+            return
+        l = self._l
+        if not self.components.askyesno(l['title'],
+                                        l['confirm_delete_session'],
+                                        parent=self):
+            return
+        if sid == self._current_sid and self._task_id is not None:
+            self._stop_current()
+        cur = self._svc('delete_session', sid)
+        if cur is None:
+            return
+        self._sess_totals.pop(sid, None)
+        if cur != self._current_sid:
+            # 删的是当前会话 — 服务已切到新会话, 重渲染视图
+            self._current_sid = cur
+            self._reset_chat_view()
+            self._restore_session()
+        self._refresh_sessions()
+
+    def _reset_chat_view(self):
+        """清空聊天视图与面板瞬态 (不动服务端会话).
+
+        切换/删除会话后重渲染前调用; Tk tag/mark 在文本删除后仍存活,
+        显式释放防高水位平台期占用.
+        """
+        w = self._txt_chat
+        w.delete('1.0', tk.END)
+        w.reset()   # 清 markdown 缓冲与代码块状态
+        for row in self._tool_rows:
+            try:
+                w.tag_delete(row['tag'])
+                w.mark_unset(row['mark_at'])
+                w.mark_unset(row['mark_start'])
+                w.mark_unset(row['mark_end'])
+            except tk.TclError:
+                pass
+        self._tool_rows = []
+        self._task_id = None
+        self._timings = []
+        self._set_thinking(False)
+        self._btn_send.config(text=self._l['send'],
+                              bg=self.theme['Button']['bg'])
+
     def on_destroy(self):
         """面板销毁 — 取消 pending 的攒批刷新, 防回调操作已销毁的部件."""
         if self._after_job is not None:
@@ -464,6 +688,12 @@ class AgentPanel(GuiPlugin):
             except Exception:
                 pass
             self._after_job = None
+        if self._sessions_after is not None:
+            try:
+                self.after_cancel(self._sessions_after)
+            except Exception:
+                pass
+            self._sessions_after = None
         self._pending = []
 
     # ---- 配置 ----
@@ -641,6 +871,7 @@ class AgentPanel(GuiPlugin):
         except Exception as e:
             print('restore_session err:', str(e))
         self._txt_chat.flush()
+        self._update_tokens_label()
         if not history:
             self._show_welcome()
 
@@ -856,23 +1087,9 @@ class AgentPanel(GuiPlugin):
             line = self._l['tokens'] % (
                 usage.get('total_tokens', 0), prompt_s, completion)
             self._append_chat('\n%s\n' % line, 'ai_meta')
-            # 状态栏右侧: 累计拆分 (basic_qa 本地应答无 usage, 不更新)
-            self._total_tokens += usage.get('total_tokens', 0)
-            self._total_hit += hit
-            self._total_prompt += prompt
-            self._total_completion += completion
-            l, fmt = self._l, self._fmt_tokens
-            stat = '%s %s [%s %s' % (l['stat_total'],
-                                     fmt(self._total_tokens),
-                                     l['stat_in'], fmt(self._total_prompt))
-            if self._total_hit:
-                pct = round(100.0 * self._total_hit / self._total_prompt) \
-                    if self._total_prompt else 0
-                stat += l['stat_hit_fmt'] % (l['stat_hit'],
-                                             fmt(self._total_hit), pct)
-            stat += ', %s %s]' % (l['stat_out'],
-                                  fmt(self._total_completion))
-            self._lbl_tokens.config(text=stat)
+            # 状态栏右侧: 按会话累计拆分 (basic_qa 本地应答无 usage, 不更新)
+            self._add_usage(usage)
+            self._update_tokens_label()
         if self._t_send is not None:
             # 内置问答本地命中 (usage='local' 哨兵) 跳过 — 0.0s 纯噪音
             if usage != 'local':
@@ -885,11 +1102,44 @@ class AgentPanel(GuiPlugin):
         self._set_thinking(False)
         self._btn_send.config(text=self._l['send'],
                               bg=self.theme['Button']['bg'])
+        self._schedule_refresh_sessions()   # 首条消息后标题自动生成
 
     @staticmethod
     def _fmt_tokens(n):
         """token 数格式化: <1000 完整显示, 否则缩写 k (不用 M — 0.1M 才跳动太粗)."""
         return str(n) if n < 1000 else '%.1fk' % (n / 1000)
+
+    # ---- 会话级 token 累计 (状态栏右侧) ----
+
+    _USAGE_KEYS = ('total_tokens', 'prompt_tokens', 'completion_tokens',
+                   'cache_hit')
+
+    def _add_usage(self, usage):
+        """usage 累计到当前会话 (内存态, 服务端已同步落库)."""
+        if self._current_sid is None or not isinstance(usage, dict):
+            return
+        t = self._sess_totals.setdefault(self._current_sid, {})
+        for k in self._USAGE_KEYS:
+            t[k] = int(t.get(k) or 0) + int(usage.get(k) or 0)
+
+    def _update_tokens_label(self):
+        """状态栏右侧刷新为当前会话的累计拆分 (无累计则清空)."""
+        t = self._sess_totals.get(self._current_sid) or {}
+        total = int(t.get('total_tokens') or 0)
+        if not total:
+            self._lbl_tokens.config(text='')
+            return
+        prompt = int(t.get('prompt_tokens') or 0)
+        completion = int(t.get('completion_tokens') or 0)
+        hit = int(t.get('cache_hit') or 0)
+        l, fmt = self._l, self._fmt_tokens
+        stat = '%s %s [%s %s' % (l['stat_total'], fmt(total),
+                                 l['stat_in'], fmt(prompt))
+        if hit:
+            pct = round(100.0 * hit / prompt) if prompt else 0
+            stat += l['stat_hit_fmt'] % (l['stat_hit'], fmt(hit), pct)
+        stat += ', %s %s]' % (l['stat_out'], fmt(completion))
+        self._lbl_tokens.config(text=stat)
 
     def _on_error(self, err):
         self._flush_chunks()
@@ -909,24 +1159,15 @@ class AgentPanel(GuiPlugin):
 
     def _clear_chat(self):
         l = self._l
-        # 清空不可逆 (磁盘会话文件被覆盖) — 弹窗确认
+        # 清空不可逆 (服务端该会话消息被删除) — 弹窗确认
         if not self.components.askyesno(l['title'], l['confirm_clear'],
                                         parent=self):
             return
         # 服务端会先终止进行中的提问, 面板按钮经 done 事件自动复位
         self._svc('clear_session')
-        w = self._txt_chat
-        w.delete('1.0', tk.END)
-        w.reset()   # 清 markdown 缓冲与代码块状态 (delete 已销毁嵌入按钮)
-        # Tk tag/mark 在文本删除后仍存活 — 显式释放, 防高水位平台期占用
-        for row in self._tool_rows:
-            try:
-                w.tag_delete(row['tag'])
-                w.mark_unset(row['mark_at'])
-                w.mark_unset(row['mark_start'])
-                w.mark_unset(row['mark_end'])
-            except tk.TclError:
-                pass
-        self._tool_rows = []   # 折叠行状态随内容清空
+        self._sess_totals.pop(self._current_sid, None)
+        self._reset_chat_view()
         self._show_welcome()   # 清空=重新开始, 重新给出能力引导
         self._on_local_first_check()
+        self._refresh_sessions()
+        self._update_tokens_label()

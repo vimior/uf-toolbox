@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 
-__version__ = '1.0.0'
+__version__ = '1.1.0'
 
 if sys.platform == 'win32':
     FONT_FAMILY = 'Microsoft YaHei'
