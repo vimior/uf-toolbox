@@ -6,6 +6,7 @@ import unittest
 
 from unittest.mock import Mock, MagicMock, PropertyMock, call, patch
 from plugins.manager import PluginManager
+from plugins.plugin import HookInfo
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -60,10 +61,12 @@ nsal_issubclass = __builtins__['issubclass']
 
 
 def _patched_issubclass(cls, base):
-    if base.__name__ == 'GuiPlugin' and getattr(cls, '_mock_gui', False):
-        return True
-    if base.__name__ == 'ServicePlugin' and getattr(cls, '_mock_svc', False):
-        return True
+    bases = base if isinstance(base, tuple) else (base,)
+    for b in bases:
+        if b.__name__ == 'GuiPlugin' and getattr(cls, '_mock_gui', False):
+            return True
+        if b.__name__ == 'ServicePlugin' and getattr(cls, '_mock_svc', False):
+            return True
     return nsal_issubclass(cls, base)
 
 
@@ -349,27 +352,28 @@ class TestResolveOne(unittest.TestCase):
 
     def test_by_registry_key(self):
         self._add('plugin_a')
-        result = self.mgr._resolve_one('plugin_a')
-        self.assertIsNotNone(result)
-        self.assertEqual(result[0], 'plugin_a')
+        found, h = self.mgr._resolve_one('plugin_a')
+        self.assertTrue(found)
+        self.assertEqual(h.namespace, 'plugin_a')
 
     def test_by_pid(self):
         self._add('plugin_a', pid='my_id')
-        result = self.mgr._resolve_one('my_id')
-        self.assertIsNotNone(result)
-        self.assertEqual(result[0], 'plugin_a')
+        found, h = self.mgr._resolve_one('my_id')
+        self.assertTrue(found)
+        self.assertEqual(h.namespace, 'my_id')
 
     def test_not_found(self):
-        self.assertIsNone(self.mgr._resolve_one('nobody'))
+        found, handles = self.mgr._resolve_one('nobody')
+        self.assertFalse(found)
+        self.assertEqual(handles, [])
 
     def test_pid_takes_priority_when_matches_both(self):
         """If a key matches one handle's pid, and another handle's key, pid wins."""
         self._add('plugin_a', pid='x')
         self._add('y')  # key='y', pid='y'
-        # 'y' matches plugin_a's pid 'x'? No.
-        # 'y' matches y's key → found
-        result = self.mgr._resolve_one('y')
-        self.assertEqual(result[0], 'y')
+        found, h = self.mgr._resolve_one('y')
+        self.assertTrue(found)
+        self.assertEqual(h._key, 'y')
 
 
 # ===========================================================================
@@ -387,57 +391,68 @@ class TestResolveTargets(unittest.TestCase):
                 metadata={'name': name, 'namespace': pid},
                 module_name=name, class_name='C', key=name)
 
-    def test_wildcard_returns_all(self):
-        result = self.mgr._resolve_targets('*')
-        self.assertEqual(len(result), 3)
+    def _handles(self, ret):
+        """Flatten _resolve_targets result into handles."""
+        out = []
+        for found, item in ret:
+            if not found:
+                continue
+            if isinstance(item, list):
+                out.extend(item)
+            else:
+                out.append(item)
+        return out
 
     def test_single_string_by_key(self):
         result = self.mgr._resolve_targets('a')
         self.assertEqual(len(result), 1)
-        self.assertEqual(result[0][0], 'a')
+        found, h = result[0]
+        self.assertTrue(found)
+        self.assertEqual(h._key, 'a')
 
     def test_single_string_by_pid(self):
         result = self.mgr._resolve_targets('pid_b')
         self.assertEqual(len(result), 1)
-        self.assertEqual(result[0][0], 'b')
+        found, h = result[0]
+        self.assertTrue(found)
+        self.assertEqual(h._key, 'b')
 
     def test_list_of_targets(self):
         result = self.mgr._resolve_targets(['a', 'pid_c'])
         self.assertEqual(len(result), 2)
-        keys = {r[0] for r in result}
+        keys = {h._key for h in self._handles(result)}
         self.assertEqual(keys, {'a', 'c'})
 
-    def test_unknown_target_in_list_warning(self):
-        """List of targets with unknown entries logs warning."""
-        with self.assertLogs(self.mgr.logger, level='WARNING') as cm:
-            result = self.mgr._resolve_targets(['unknown', 'a'])
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0][0], 'a')
-        self.assertTrue(any('unknown target' in msg for msg in cm.output))
-
-    def test_unknown_target_string_no_warning(self):
-        """Single-string unknown returns empty list without warning."""
-        result = self.mgr._resolve_targets('unknown')
-        self.assertEqual(len(result), 0)
-
-    def test_exclude_string(self):
-        result = self.mgr._resolve_targets('*', exclude='pid_a')
+    def test_unknown_target_in_list(self):
+        """List of unknown targets returns (False, []) entries."""
+        result = self.mgr._resolve_targets(['unknown', 'a'])
         self.assertEqual(len(result), 2)
-        keys = {r[0] for r in result}
-        self.assertEqual(keys, {'b', 'c'})
+        self.assertFalse(result[0][0])  # 'unknown' not matched
+        self.assertTrue(result[1][0])   # 'a' matched
 
-    def test_exclude_list(self):
-        result = self.mgr._resolve_targets('*', exclude=['pid_a', 'pid_c'])
+    def test_unknown_target_string(self):
+        """Single-string unknown returns one (False, []) entry."""
+        result = self.mgr._resolve_targets('unknown')
         self.assertEqual(len(result), 1)
-        self.assertEqual(result[0][0], 'b')
+        self.assertFalse(result[0][0])
 
-    def test_exclude_no_match(self):
-        result = self.mgr._resolve_targets('*', exclude='pid_x')
-        self.assertEqual(len(result), 3)
+    def test_flush_on_list_match(self):
+        """Non-exact match triggers a flush retry."""
+        with patch.object(self.mgr, 'flush') as mock_flush:
+            result = self.mgr._resolve_targets('pid_a')  # exact, no flush
+            self.assertTrue(result[0][0])
+            mock_flush.assert_not_called()
 
-    def test_exclude_none(self):
-        result = self.mgr._resolve_targets('*', exclude=None)
-        self.assertEqual(len(result), 3)
+        with patch.object(self.mgr, 'flush'):
+            # 'pid' is a substring of all pids → fuzzy list match
+            result = self.mgr._resolve_targets('pid')
+            self.assertTrue(result[0][0])
+            self.assertIsInstance(result[0][1], list)
+
+    def test_empty_targets(self):
+        self.assertEqual(self.mgr._resolve_targets(''), [])
+        self.assertEqual(self.mgr._resolve_targets([]), [])
+        self.assertEqual(self.mgr._resolve_targets(None), [])
 
 
 # ===========================================================================
@@ -457,11 +472,13 @@ class TestPluginInfo(_EagerTestBase, unittest.TestCase):
         h2 = PluginManager.Handle(_EagerService, self.app, self.mgr, key='s')
         self.mgr.plugins = {'a': h1, 's': h2}
 
-        info = self.mgr._service_get_plugin()
-        self.assertIn('pa', info)
-        self.assertIn('mock_svc', info)
-        self.assertEqual(info['pa']['type'], 'GuiPlugin')
-        self.assertEqual(info['mock_svc']['type'], 'ServicePlugin')
+        info = self.mgr._service_list_plugins()
+        namespaces = {i['namespace'] for i in info}
+        self.assertIn('pa', namespaces)
+        self.assertIn('mock_svc', namespaces)
+        types = {i['namespace']: i['type'] for i in info}
+        self.assertEqual(types['pa'], 'GuiPlugin')
+        self.assertEqual(types['mock_svc'], 'ServicePlugin')
 
     def test_get_plugin_single(self):
         h = PluginManager.Handle(_EagerGui, self.app, self.mgr, key='g')
@@ -514,37 +531,34 @@ class TestLifecycle(_EagerTestBase, unittest.TestCase):
     def test_start_plugin_starts_unstarted(self):
         win = make_mock_win()
         with patch.object(PluginManager.Handle, 'start', return_value=win) as mock_start:
-            result, menu = self.mgr.start_plugin(self.handle, self.app)
+            result = self.mgr.start_plugin(self.handle)
             mock_start.assert_called_once()
-            self.assertEqual(result, win)
-            self.assertFalse(menu)  # already loaded
+            self.assertIsInstance(result, HookInfo)
+            self.assertEqual(result.namespace, 'mock_gui')
 
-    def test_start_plugin_menu_changed_for_lazy_handle(self):
-        """When a lazy handle loads and becomes eager, menu_changed is True."""
-        h = PluginManager.Handle(None, self.app, self.mgr,
-                                 metadata={'name': 'T'},
-                                 module_name='m', class_name='C', key='k')
-        self.assertFalse(h.loaded)
+    def test_start_plugin_returns_hookinfo_when_alive(self):
+        """start_plugin returns HookInfo for an already-alive GUI plugin."""
         win = make_mock_win()
-        with patch.object(PluginManager.Handle, 'start', return_value=win):
-            # After start(), _ensure_loaded sets _cls, so loaded becomes True
-            with patch.object(PluginManager.Handle, 'loaded',
-                              PropertyMock(side_effect=[False, True])):
-                result, menu = self.mgr.start_plugin(h, self.app)
-                self.assertTrue(menu)
+        self.handle._inst = win
+        with patch.object(PluginManager.Handle, 'show') as mock_show:
+            result = self.mgr.start_plugin(self.handle)
+            mock_show.assert_called_once()
+            self.assertIsInstance(result, HookInfo)
 
     def test_stop_plugin_stops_alive(self):
         win = make_mock_win()
         self.handle._inst = win
         self.handle._cls = _EagerGui  # ensure is_service works
         with patch.object(PluginManager.Handle, 'close') as mock_close:
-            self.mgr.stop_plugin(self.handle)
+            result = self.mgr.stop_plugin(self.handle)
             mock_close.assert_called_once()
+            self.assertIsInstance(result, HookInfo)
 
     def test_stop_plugin_noop_not_alive(self):
         with patch.object(PluginManager.Handle, 'close') as mock_close:
-            self.mgr.stop_plugin(self.handle)
+            result = self.mgr.stop_plugin(self.handle)
             mock_close.assert_not_called()
+            self.assertIsInstance(result, HookInfo)
 
     def test_show_plugin_noop_for_service(self):
         h_svc = PluginManager.Handle(_EagerService, self.app, self.mgr, key='s')
@@ -558,6 +572,13 @@ class TestLifecycle(_EagerTestBase, unittest.TestCase):
             self.mgr.hide_plugin(self.handle)
             mock_hide.assert_not_called()
 
+    def test_hide_plugin_delegates_when_alive(self):
+        win = make_mock_win()
+        self.handle._inst = win
+        with patch.object(PluginManager.Handle, 'hide') as mock_hide:
+            self.mgr.hide_plugin(self.handle)
+            mock_hide.assert_called_once()
+
 
 # ===========================================================================
 #  Manager — control events
@@ -565,7 +586,7 @@ class TestLifecycle(_EagerTestBase, unittest.TestCase):
 
 
 class TestAutoStart(_EagerTestBase, unittest.TestCase):
-    """PluginManager._on_auto_start — loads then auto-starts eligible plugins."""
+    """PluginManager._auto_start_plugins — loads then auto-starts eligible plugins."""
 
     def setUp(self):
         self.app = make_mock_app()
@@ -575,72 +596,65 @@ class TestAutoStart(_EagerTestBase, unittest.TestCase):
         h = PluginManager.Handle(_EagerGui, self.app, self.mgr, key='g')
         h.auto_start = True
         self.mgr.plugins['g'] = h
-        with patch.object(self.mgr, 'load'):
-            with patch.object(PluginManager.Handle, 'start') as mock_start:
-                with patch.object(PluginManager.Handle, 'is_service',
-                                  PropertyMock(return_value=False)):
-                    self.mgr._on_auto_start()
-                    mock_start.assert_called_once()
+        with patch.object(self.mgr, 'flush'):
+            with patch.object(self.mgr, 'start_plugin') as mock_start:
+                self.mgr._auto_start_plugins()
+                mock_start.assert_called_once_with(h)
 
     def test_auto_start_skips_already_alive(self):
         h = PluginManager.Handle(_EagerGui, self.app, self.mgr, key='g')
         h.auto_start = True
         h._inst = make_mock_win()
         self.mgr.plugins['g'] = h
-        with patch.object(self.mgr, 'load'):
-            with patch.object(PluginManager.Handle, 'start') as mock_start:
-                self.mgr._on_auto_start()
+        with patch.object(self.mgr, 'flush'):
+            with patch.object(self.mgr, 'start_plugin') as mock_start:
+                self.mgr._auto_start_plugins()
                 mock_start.assert_not_called()
 
     def test_auto_start_skips_not_auto_start(self):
         h = PluginManager.Handle(_EagerGui, self.app, self.mgr, key='g')
         h.auto_start = False
         self.mgr.plugins['g'] = h
-        with patch.object(self.mgr, 'load'):
-            with patch.object(PluginManager.Handle, 'start') as mock_start:
-                self.mgr._on_auto_start()
+        with patch.object(self.mgr, 'flush'):
+            with patch.object(self.mgr, 'start_plugin') as mock_start:
+                self.mgr._auto_start_plugins()
                 mock_start.assert_not_called()
 
 
 class TestControlEvents(_EagerTestBase, unittest.TestCase):
-    """_setup_control_events is called in __init__ — verifies registrations."""
+    """_register_services is called in __init__ — verifies registrations."""
 
     def setUp(self):
         self.app = make_mock_app()
         self.mgr = PluginManager(make_logger(), self.app)
 
-    def test_control_events_registered_in_init(self):
-        bus = self.app._infra.eventbus
-        self.assertEqual(bus.on.call_count, 1)
-        events = {call[0][0] for call in bus.on.call_args_list}
-        self.assertEqual(events, {
-            'plugins@auto-start',
-        })
-
-    def test_info_service_registered_in_init(self):
+    def test_plugins_services_registered_in_init(self):
         svc = self.app._infra.services
         svc.register.assert_has_calls([
+            call('auto_start', self.mgr._auto_start_plugins, ns='plugins'),
             call('start', self.mgr._service_start_plugin, ns='plugins'),
             call('stop', self.mgr._service_stop_plugin, ns='plugins'),
             call('show', self.mgr._service_show_plugin, ns='plugins'),
             call('hide', self.mgr._service_hide_plugin, ns='plugins'),
-            call('get', self.mgr._service_get_plugin, ns='plugins'),
+            call('list', self.mgr._service_list_plugins, ns='plugins'),
             call('check', self.mgr._service_check_plugin, ns='plugins'),
-            call('list_capabilities', self.mgr._svc_list_capabilities,
-                 ns='plugins'),
+            call('get', self.mgr._service_get_plugin, ns='plugins'),
+            call('flush', self.mgr.flush, ns='plugins'),
         ], any_order=True)
 
     def test_stop_plugin_delegates(self):
         h = PluginManager.Handle(_EagerGui, self.app, self.mgr, key='g')
         h._inst = make_mock_win()
         self.mgr.plugins['g'] = h
+        # service methods schedule on the UI thread via after(0)
+        self.app.after.side_effect = lambda _ms, fn: fn()
 
         with patch.object(self.mgr, 'stop_plugin') as mock_stop:
             self.mgr._service_stop_plugin('mock_gui')
             mock_stop.assert_called_once_with(h)
 
     def test_hide_plugin_with_exclude(self):
-        """Wildcard hide excludes the caller."""
+        """List hide excludes the caller by namespace."""
         h1 = PluginManager.Handle(None, self.app, self.mgr,
                                   metadata={'name': 'A', 'namespace': 'pa'},
                                   module_name='a', class_name='C', key='a')
@@ -650,9 +664,10 @@ class TestControlEvents(_EagerTestBase, unittest.TestCase):
         h1._inst = make_mock_win()
         h2._inst = make_mock_win()
         self.mgr.plugins = {'a': h1, 'b': h2}
+        self.app.after.side_effect = lambda _ms, fn: fn()
 
         with patch.object(self.mgr, 'hide_plugin') as mock_hide:
-            self.mgr._service_hide_plugin('*', exclude='pa')
+            self.mgr._service_hide_plugin(['pa', 'pb'], exclude='pa')
             mock_hide.assert_called_once_with(h2)  # only 'pb', not 'pa'
 
 

@@ -220,7 +220,7 @@ class TestAgentTasksFnArgs(unittest.TestCase):
 
     def test_create_once_with_fn_args(self):
         r = self.svc.agent_tasks(
-            'create_once', task_id='off', delay='60',
+            'create_once', task_id='off', schedule='60',
             fn_ref='notify@canvas',
             fn_args='{"text":"该下班了","pattern":"sun"}')
         self.assertEqual(r, 'off')
@@ -231,39 +231,42 @@ class TestAgentTasksFnArgs(unittest.TestCase):
     def test_create_every_with_fn_args(self):
         # every/daily/weekly/cron 经 **common 透传 kwargs
         r = self.svc.agent_tasks(
-            'create_every', task_id='ev', interval=10,
+            'create_every', task_id='ev', schedule='10',
             fn_ref='notify@toast', fn_args='{"text":"hi"}')
         self.assertEqual(r, 'ev')
         self.assertEqual(self.svc._tasks['ev']['kwargs'], {'text': 'hi'})
 
     def test_fn_args_invalid_json(self):
         r = self.svc.agent_tasks(
-            'create_once', task_id='bad', delay='60',
+            'create_once', task_id='bad', schedule='60',
             fn_ref='notify@toast', fn_args='{oops')
         self.assertTrue(r.startswith('error:'), r)
         self.assertNotIn('bad', self.svc._tasks)
 
     def test_fn_args_non_object(self):
         r = self.svc.agent_tasks(
-            'create_once', task_id='bad2', delay='60',
+            'create_once', task_id='bad2', schedule='60',
             fn_ref='notify@toast', fn_args='[1,2]')
         self.assertTrue(r.startswith('error:'), r)
         self.assertNotIn('bad2', self.svc._tasks)
 
     def test_no_fn_args_defaults_empty(self):
         r = self.svc.agent_tasks(
-            'create_once', task_id='plain', delay='60',
+            'create_once', task_id='plain', schedule='60',
             fn_ref='notify@toast')
         self.assertEqual(r, 'plain')
         self.assertEqual(self.svc._tasks['plain']['kwargs'], {})
 
     def test_fire_passes_kwargs_to_service(self):
         received = {}
+        # _call_target 会先经 plugins@check 判断目标插件是否在线
+        self.app.services.register(
+            'plugins@check', lambda ns, timeout=None: 1)
         self.app.services.register(
             'notify@canvas',
             lambda text=None, **kw: received.update({'text': text, **kw}))
         self.svc.agent_tasks(
-            'create_once', task_id='fire', delay='60',
+            'create_once', task_id='fire', schedule='60',
             fn_ref='notify@canvas',
             fn_args='{"text":"该下班了","pattern":"sun"}')
         ok, _result, _ms = self.svc._call_target(
