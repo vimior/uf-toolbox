@@ -361,7 +361,6 @@ mypy .
 - [工具配置指南](docs/tool-guide-zh.md)（[English](docs/tool-guide.md)）
 - [插件开发指南](docs/plugin-guide-zh.md)（[English](docs/plugin-guide.md)）
 - [任务调度器说明](docs/task-scheduler-zh.md)（[English](docs/task-scheduler.md)）
-- [Agent 助手设计文档](docs/agent-assistant-zh.md)
 
 ## 许可证
 
