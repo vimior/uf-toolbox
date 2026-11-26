@@ -6,7 +6,7 @@ import os
 _spec_dir = os.path.abspath(SPECPATH)
 _extra_hidden = [
     # system / process
-    'psutil', 'ctypes', '__future__', 'tempfile',
+    'psutil', 'ctypes', 'ctypes.wintypes', '__future__', 'tempfile',
     # tkinter sub-modules (often missed by analysis)
     'tkinter.font', 'tkinter.ttk', 'tkinter.messagebox',
     'tkinter.filedialog', 'tkinter.scrolledtext', 'colorsys',

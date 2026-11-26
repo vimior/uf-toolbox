@@ -18,6 +18,75 @@ from ui.settings import SettingsUI
 from ui.about import AboutUI
 
 
+# ================================================================
+#  Window icon (Windows)
+# ================================================================
+#: (icon path, width, height) → HICON — loaded once, reused by every
+#: window.  Calling ``wm iconbitmap`` per window makes Tk load a new
+#: HICON each time and leaks ~18 GDI + ~6 USER handles per window;
+#: after enough plugin open/close cycles the process hits the Windows
+#: 10 000-handle limit and new windows/menus stop rendering.
+_WIN_ICONS = {}
+
+
+def _win_hicon(ico_path, cx, cy):
+    """Load (and cache) one HICON from *ico_path* at the given size."""
+    if not ico_path or cx <= 0 or cy <= 0:
+        return None
+    key = (ico_path, cx, cy)
+    if key in _WIN_ICONS:
+        return _WIN_ICONS[key]
+    try:
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.WinDLL('user32', use_last_error=True)
+        user32.LoadImageW.argtypes = [
+            wintypes.HINSTANCE, wintypes.LPCWSTR, wintypes.UINT,
+            ctypes.c_int, ctypes.c_int, wintypes.UINT]
+        user32.LoadImageW.restype = wintypes.HANDLE
+        hicon = user32.LoadImageW(None, ico_path, 1, cx, cy, 0x10)  # IMAGE_ICON, LR_LOADFROMFILE
+    except Exception:
+        hicon = None
+    if hicon:
+        _WIN_ICONS[key] = int(hicon)
+        return int(hicon)
+    return None
+
+
+def _apply_win_icon(win, ico_path):
+    """Set *win*'s small/big icons using the shared HICON cache."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        win.update_idletasks()
+        try:
+            hwnd = int(win.wm_frame(), 16)
+        except (ValueError, tk.TclError):
+            hwnd = win.winfo_id()
+        if not hwnd:
+            return
+        user32 = ctypes.WinDLL('user32', use_last_error=True)
+        user32.SendMessageW.argtypes = [
+            wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+        user32.SendMessageW.restype = ctypes.c_ssize_t
+        user32.GetSystemMetrics.argtypes = [ctypes.c_int]
+        user32.GetSystemMetrics.restype = ctypes.c_int
+        # (WM_SETICON index, system metric pair)
+        targets = (
+            (0, 49, 50),   # ICON_SMALL, SM_CXSMICON, SM_CYSMICON
+            (1, 11, 12),   # ICON_BIG,   SM_CXICON,   SM_CYICON
+        )
+        for index, cx_metric, cy_metric in targets:
+            hicon = _win_hicon(
+                ico_path,
+                user32.GetSystemMetrics(cx_metric),
+                user32.GetSystemMetrics(cy_metric))
+            if hicon:
+                user32.SendMessageW(hwnd, 0x0080, index, hicon)  # WM_SETICON
+    except Exception:
+        pass
+
+
 class UFToolBox(MenuUI, LogUI, SettingsUI, AboutUI, tk.Tk):
     """Plugin-host application with MRO-based architecture."""
 
@@ -111,14 +180,12 @@ class UFToolBox(MenuUI, LogUI, SettingsUI, AboutUI, tk.Tk):
             win.geometry(''.join(parts))
 
     def _set_window_icon(self, win, ico_path=None, png_path=None):
-        """Cross-platform window icon: iconphoto on Linux, iconbitmap on Windows."""
+        """Cross-platform window icon: shared HICON + WM_SETICON on Windows,
+        cached PhotoImage via iconphoto elsewhere."""
         _ico_path = self.ico_path if ico_path is None else ico_path
         _png_path = self.png_path if png_path is None else png_path
         if sys.platform == 'win32':
-            try:
-                win.iconbitmap(_ico_path)
-            except Exception:
-                pass
+            _apply_win_icon(win, _ico_path)
         else:
             # Try tk.PhotoImage first (no PIL dependency), fall back to PIL
             path = _png_path if _png_path and os.path.exists(_png_path) else _ico_path
@@ -131,8 +198,7 @@ class UFToolBox(MenuUI, LogUI, SettingsUI, AboutUI, tk.Tk):
                 try:
                     if self._icon is None:
                         from PIL import Image, ImageTk
-                        img = Image.open(path)
-                        icon = ImageTk.PhotoImage(img)
+                        self._icon = ImageTk.PhotoImage(Image.open(path))
                     win.iconphoto(True, self._icon)
                     win._icon_ref = self._icon
                 except Exception:
